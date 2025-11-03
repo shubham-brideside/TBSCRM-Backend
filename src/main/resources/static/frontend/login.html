@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Brideside CRM</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Login</h1>
+            <p class="subtitle">Sign in to Brideside CRM</p>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password *</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+            
+            <div id="message" class="message"></div>
+            
+            <p class="link-text">
+                Need to create admin? <a href="create-admin.html">Create Admin</a>
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://localhost:8080/api';
+        
+        // Function to handle login
+        async function performLogin(email, password) {
+            try {
+                const messageDiv = document.getElementById('message');
+                if (messageDiv) {
+                    messageDiv.className = 'message';
+                    messageDiv.textContent = 'Logging in...';
+                }
+                
+                if (!email || !password) {
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = 'Please enter both email and password';
+                    }
+                    return;
+                }
+                
+                const formData = {
+                    email: email.trim(),
+                    password: password
+                };
+                
+                console.log('Attempting login for:', email);
+                
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                console.log('Login response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Login response data:', data);
+                
+                if (response.ok && data.success) {
+                    // Store token and user info
+                    localStorage.setItem('token', data.data.token);
+                    localStorage.setItem('user', JSON.stringify(data.data));
+                    
+                    if (messageDiv) {
+                        messageDiv.className = 'message success';
+                        messageDiv.textContent = 'Login successful! Redirecting...';
+                    }
+                    
+                    // Check if user is admin
+                    if (data.data.role === 'ADMIN') {
+                        setTimeout(() => {
+                            window.location.href = 'users.html';
+                        }, 1000);
+                    } else {
+                        if (messageDiv) {
+                            messageDiv.textContent = 'Login successful! User dashboard coming soon...';
+                        }
+                    }
+                } else {
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = data.message || 'Invalid email or password';
+                    }
+                    console.error('Login failed:', data);
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                const messageDiv = document.getElementById('message');
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Error: ' + error.message;
+                }
+            }
+        }
+        
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, initializing login page');
+            
+            // Check if token exists (simple check, don't rely on auth.js)
+            const token = localStorage.getItem('token');
+            if (token) {
+                // Try to check if isTokenExpired is available, otherwise just check if token exists
+                if (typeof isTokenExpired !== 'undefined') {
+                    if (!isTokenExpired(token)) {
+                        console.log('Valid token found, redirecting to users page');
+                        window.location.href = 'users.html';
+                        return;
+                    } else {
+                        console.log('Token expired, clearing');
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                    }
+                }
+            }
+            
+            // Attach form submit handler
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm) {
+                loginForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    console.log('Form submitted manually');
+                    
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                    
+                    performLogin(email, password);
+                });
+                console.log('Form submit handler attached');
+            } else {
+                console.error('Login form not found!');
+            }
+            
+            // Auto-fill and auto-submit from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailParam = urlParams.get('email');
+            const passwordParam = urlParams.get('password');
+            
+            console.log('URL params - email:', emailParam, 'password:', passwordParam ? '***' : null);
+            
+            if (emailParam || passwordParam) {
+                const emailInput = document.getElementById('email');
+                const passwordInput = document.getElementById('password');
+                
+                if (emailParam && emailInput) {
+                    emailInput.value = decodeURIComponent(emailParam);
+                }
+                if (passwordParam && passwordInput) {
+                    passwordInput.value = decodeURIComponent(passwordParam);
+                }
+                
+                // Auto-submit if both email and password are provided
+                if (emailParam && passwordParam) {
+                    console.log('Auto-submitting login with URL parameters');
+                    // Clear URL parameters to avoid resubmission on refresh
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    // Perform login immediately
+                    performLogin(decodeURIComponent(emailParam), decodeURIComponent(passwordParam));
+                }
+            }
+        });
+    </script>
+    <script src="auth.js" onerror="console.error('Failed to load auth.js, but continuing anyway')"></script>
+</body>
+</html>
+

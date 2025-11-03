@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - Brideside CRM</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="auth.js"></script>
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <h2>Brideside CRM</h2>
+            <div class="nav-links">
+                <span id="userInfo"></span>
+                <button onclick="logout()" class="btn btn-secondary">Logout</button>
+            </div>
+        </nav>
+        
+        <div class="card">
+            <div class="card-header">
+                <h1>User Management</h1>
+                <button onclick="showCreateUserForm()" class="btn btn-primary">Create New User</button>
+            </div>
+            
+            <!-- Create User Form -->
+            <div id="createUserForm" class="form-section" style="display: none;">
+                <h3>Create New User</h3>
+                <form id="userForm">
+                    <input type="hidden" id="userId" name="userId">
+                    <div class="form-group">
+                        <label for="userEmail">Email *</label>
+                        <input type="email" id="userEmail" name="email" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userFirstName">First Name *</label>
+                        <input type="text" id="userFirstName" name="firstName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userLastName">Last Name *</label>
+                        <input type="text" id="userLastName" name="lastName" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="userRole">Role *</label>
+                        <select id="userRole" name="role" required onchange="updateManagerOptions()">
+                            <option value="">Select Role</option>
+                            <option value="ADMIN">Admin</option>
+                            <option value="CATEGORY_MANAGER">Category Manager</option>
+                            <option value="MANAGER">Manager</option>
+                            <option value="SALESREP">Salesrep</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="managerGroup" style="display: none;">
+                        <label for="userManager">Manager (Optional)</label>
+                        <select id="userManager" name="managerId">
+                            <option value="">No Manager</option>
+                        </select>
+                        <small>Select a manager to assign this user under in the hierarchy</small>
+                    </div>
+                    
+                    <button type="submit" id="submitUserButton" class="btn btn-primary">Create User & Send Invitation</button>
+                    <button type="button" onclick="hideCreateUserForm()" class="btn btn-secondary">Cancel</button>
+                </form>
+                <div id="createUserMessage" class="message"></div>
+            </div>
+            
+            <!-- Delete Confirmation Modal -->
+            <div id="deleteModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <h3>Delete User</h3>
+                    <p id="deleteModalMessage"></p>
+                    <div id="reassignSection" style="display: none;">
+                        <div class="form-group">
+                            <label for="reassignManager">Reassign subordinates to:</label>
+                            <select id="reassignManager" name="reassignManagerId">
+                                <option value="">Select Manager</option>
+                            </select>
+                            <small>Select a manager to reassign the subordinate(s) before deleting this user.</small>
+                        </div>
+                    </div>
+                    <div style="margin-top: 1rem; display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button onclick="closeDeleteModal()" class="btn btn-secondary">Cancel</button>
+                        <button onclick="confirmDelete()" class="btn btn-danger">Delete</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Users List -->
+            <div class="users-list">
+                <h3>All Users</h3>
+                <div id="usersTable" class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Email</th>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>Manager</th>
+                                <th>Active</th>
+                                <th>Password Set</th>
+                                <th>Created At</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="9">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+    
+    <script>
+        // Check authentication on page load
+        if (!checkAuthentication()) {
+            // User will be redirected to login by checkAuthentication()
+            // Stop execution
+            throw new Error('Authentication check failed');
+        }
+        
+        const user = getCurrentUser();
+        if (user) {
+            document.getElementById('userInfo').textContent = `${user.firstName} ${user.lastName} (${user.role})`;
+            
+            // Only Admin can create users
+            if (user.role !== 'ADMIN') {
+                document.querySelector('.card-header button').style.display = 'none';
+            }
+        }
+        
+        // Load users on page load
+        loadUsers();
+        
+        // Event delegation for dynamically generated buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.hasAttribute('data-action')) {
+                const action = e.target.getAttribute('data-action');
+                const userId = e.target.getAttribute('data-user-id');
+                const userName = e.target.getAttribute('data-user-name');
+                
+                console.log('Button clicked - action:', action, 'userId:', userId, 'userName:', userName);
+                
+                if (action === 'edit' && userId) {
+                    editUser(parseInt(userId));
+                } else if (action === 'delete' && userId) {
+                    // Parse userId first
+                    const parsedUserId = parseInt(userId);
+                    if (isNaN(parsedUserId) || parsedUserId <= 0) {
+                        alert('Error: Invalid user ID');
+                        console.error('Invalid userId:', userId);
+                        return;
+                    }
+                    
+                    // Get user name - try data attribute first, then table cell
+                    let name = userName ? userName.trim() : '';
+                    
+                    // Check if name is invalid (null, undefined, empty, or just spaces)
+                    if (!name || name === '' || name === 'null' || name === 'undefined' || /^[\s]*$/.test(name)) {
+                        // Try to get name from the table row (3rd column - index 2)
+                        const row = e.target.closest('tr');
+                        if (row) {
+                            const cells = row.querySelectorAll('td');
+                            if (cells.length >= 3) {
+                                name = cells[2].textContent.trim(); // Name is in 3rd column (index 2)
+                            }
+                        }
+                    }
+                    
+                    // Final validation
+                    if (name && name !== 'null' && name !== 'undefined' && name.trim() !== '') {
+                        console.log('Calling deleteUser with userId:', parsedUserId, 'userName:', name);
+                        deleteUser(parsedUserId, name.trim());
+                    } else {
+                        alert('Error: Could not determine user name. Please refresh the page and try again.');
+                        console.error('Could not determine user name. userId:', parsedUserId, 'userName from attribute:', userName, 'name after fallback:', name);
+                    }
+                }
+            }
+        });
+        
+        function showCreateUserForm() {
+            document.getElementById('createUserForm').style.display = 'block';
+        }
+        
+        function hideCreateUserForm() {
+            document.getElementById('createUserForm').style.display = 'none';
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = '';
+            document.getElementById('createUserMessage').textContent = '';
+            document.getElementById('managerGroup').style.display = 'none';
+            document.getElementById('submitUserButton').textContent = 'Create User & Send Invitation';
+        }
+        
+        async function editUser(userId) {
+            try {
+                const response = await authenticatedFetch(`${API_BASE_URL}/users/${userId}`);
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    const user = data.data;
+                    
+                    // Populate form with user data
+                    document.getElementById('userId').value = user.id;
+                    document.getElementById('userEmail').value = user.email;
+                    document.getElementById('userFirstName').value = user.firstName;
+                    document.getElementById('userLastName').value = user.lastName;
+                    document.getElementById('userRole').value = user.role;
+                    
+                    // Load managers for the role
+                    updateManagerOptions();
+                    
+                    // Show manager group if role requires it
+                    const role = user.role;
+                    if (role === 'CATEGORY_MANAGER' || role === 'MANAGER' || role === 'SALESREP') {
+                        document.getElementById('managerGroup').style.display = 'block';
+                    }
+                    
+                    // Set current manager if exists (wait for managers to load)
+                    if (user.managerId) {
+                        setTimeout(() => {
+                            document.getElementById('userManager').value = user.managerId;
+                        }, 500);
+                    }
+                    
+                    // Show form and change button text
+                    document.getElementById('createUserForm').style.display = 'block';
+                    document.getElementById('submitUserButton').textContent = 'Update User';
+                    document.querySelector('#createUserForm h3').textContent = 'Edit User';
+                    
+                    // Scroll to form
+                    document.getElementById('createUserForm').scrollIntoView({ behavior: 'smooth' });
+                }
+            } catch (error) {
+                alert('Error loading user: ' + error.message);
+            }
+        }
+        
+        function updateManagerOptions() {
+            const role = document.getElementById('userRole').value;
+            const managerGroup = document.getElementById('managerGroup');
+            const managerSelect = document.getElementById('userManager');
+            
+            // Show manager selection for roles that can have managers
+            if (role === 'CATEGORY_MANAGER' || role === 'MANAGER' || role === 'SALESREP') {
+                managerGroup.style.display = 'block';
+                
+                // Load available managers based on role
+                loadManagersForRole(role, managerSelect);
+            } else {
+                managerGroup.style.display = 'none';
+                managerSelect.innerHTML = '<option value="">No Manager</option>';
+            }
+        }
+        
+        async function loadManagersForRole(role, selectElement) {
+            selectElement.innerHTML = '<option value="">Loading...</option>';
+            
+            try {
+                const response = await authenticatedFetch(`${API_BASE_URL}/users`);
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    selectElement.innerHTML = '<option value="">No Manager</option>';
+                    
+                    // Filter available managers based on role hierarchy
+                    const availableManagers = data.data.filter(u => {
+                        if (role === 'CATEGORY_MANAGER') {
+                            // Category Managers can only have Admin as manager
+                            return u.role === 'ADMIN';
+                        } else if (role === 'MANAGER') {
+                            // Managers can have Admin or Category Manager as manager
+                            return u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER';
+                        } else if (role === 'SALESREP') {
+                            // Salesrep can have Admin, Category Manager, or Manager as manager
+                            return u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER' || u.role === 'MANAGER';
+                        }
+                        return false;
+                    });
+                    
+                    availableManagers.forEach(manager => {
+                        const option = document.createElement('option');
+                        option.value = manager.id;
+                        option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
+                        selectElement.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                selectElement.innerHTML = '<option value="">Error loading managers</option>';
+                console.error('Error loading managers:', error);
+            }
+        }
+        
+        document.getElementById('userForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const messageDiv = document.getElementById('createUserMessage');
+            messageDiv.className = 'message';
+            messageDiv.textContent = '';
+            
+            const userId = document.getElementById('userId').value;
+            const formData = {
+                email: document.getElementById('userEmail').value,
+                firstName: document.getElementById('userFirstName').value,
+                lastName: document.getElementById('userLastName').value,
+                role: document.getElementById('userRole').value
+            };
+            
+            // Add managerId if selected
+            const managerId = document.getElementById('userManager').value;
+            if (managerId) {
+                formData.managerId = parseInt(managerId);
+            } else {
+                formData.managerId = null;
+            }
+            
+            try {
+                let response;
+                if (userId) {
+                    // Update existing user
+                    response = await authenticatedFetch(`${API_BASE_URL}/users/${userId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify(formData)
+                    });
+                } else {
+                    // Create new user
+                    response = await authenticatedFetch(`${API_BASE_URL}/users`, {
+                        method: 'POST',
+                        body: JSON.stringify(formData)
+                    });
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    messageDiv.className = 'message success';
+                    messageDiv.textContent = userId 
+                        ? 'User updated successfully!' 
+                        : 'User created and invitation email sent successfully!';
+                    document.getElementById('userForm').reset();
+                    document.getElementById('userId').value = '';
+                    loadUsers();
+                    setTimeout(() => {
+                        hideCreateUserForm();
+                    }, 2000);
+                } else {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = data.message || 'Failed to save user';
+                }
+            } catch (error) {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Error: ' + error.message;
+            }
+        });
+        
+        async function loadUsers() {
+            try {
+                const response = await authenticatedFetch(`${API_BASE_URL}/users`);
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    const tbody = document.getElementById('usersTableBody');
+                    const currentUser = getCurrentUser();
+                    const isAdmin = currentUser && currentUser.role === 'ADMIN';
+                    
+                    if (data.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="9">No users found</td></tr>';
+                    } else {
+                        tbody.innerHTML = data.data.map(user => {
+                            // Check if this is the current user (can't delete yourself)
+                            const isCurrentUser = currentUser && currentUser.id === user.id;
+                            const canDelete = isAdmin && !isCurrentUser;
+                            
+                            return `
+                            <tr>
+                                <td>${user.id}</td>
+                                <td>${user.email}</td>
+                                <td>${user.firstName} ${user.lastName}</td>
+                                <td>${user.role}</td>
+                                <td>${user.managerName || '-'}</td>
+                                <td>${user.active ? 'Yes' : 'No'}</td>
+                                <td>${user.passwordSet ? 'Yes' : 'No'}</td>
+                                <td>${new Date(user.createdAt).toLocaleString()}</td>
+                                <td>
+                                    ${isAdmin ? `
+                                        ${!isCurrentUser ? `<button data-action="edit" data-user-id="${user.id}" class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px; margin-right: 5px;">Edit</button>` : ''}
+                                        ${canDelete ? (() => {
+                                            const firstName = (user.firstName || '').trim();
+                                            const lastName = (user.lastName || '').trim();
+                                            const fullName = `${firstName} ${lastName}`.trim();
+                                            return `<button data-action="delete" data-user-id="${user.id}" data-user-name="${fullName}" class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;">Delete</button>`;
+                                        })() : '-'}
+                                    ` : '-'}
+                                </td>
+                            </tr>
+                        `;
+                        }).join('');
+                    }
+                } else {
+                    document.getElementById('message').className = 'message error';
+                    document.getElementById('message').textContent = data.message || 'Failed to load users';
+                }
+            } catch (error) {
+                document.getElementById('message').className = 'message error';
+                document.getElementById('message').textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        let deleteUserId = null;
+        let deleteUserName = null;
+        
+        async function deleteUser(userId, userName) {
+            console.log('deleteUser called with userId:', userId, 'type:', typeof userId, 'userName:', userName, 'type:', typeof userName);
+            
+            // Validate userId
+            if (!userId || isNaN(userId) || userId <= 0) {
+                alert('Error: Invalid user ID');
+                console.error('Invalid userId:', userId);
+                return;
+            }
+            
+            // Validate userName
+            if (!userName || userName.trim() === '' || userName === 'null' || userName === 'undefined') {
+                alert('Error: Invalid user name');
+                console.error('Invalid userName:', userName);
+                return;
+            }
+            
+            deleteUserId = userId;
+            deleteUserName = userName;
+            
+            // First, check if user has subordinates
+            try {
+                console.log('Checking for subordinates...');
+                const response = await authenticatedFetch(`${API_BASE_URL}/users`);
+                const data = await response.json();
+                
+                console.log('Users response:', data);
+                
+                if (response.ok && data.success) {
+                    const subordinates = data.data.filter(u => u.managerId === userId);
+                    console.log('Found subordinates:', subordinates.length);
+                    
+                    if (subordinates.length > 0) {
+                        // Show modal with reassignment option
+                        const modalMessage = document.getElementById('deleteModalMessage');
+                        const reassignSection = document.getElementById('reassignSection');
+                        const deleteModal = document.getElementById('deleteModal');
+                        
+                        if (modalMessage) {
+                            modalMessage.textContent = 
+                                `User "${userName}" has ${subordinates.length} subordinate(s). Please select a manager to reassign them to before deleting.`;
+                        }
+                        
+                        if (reassignSection) {
+                            reassignSection.style.display = 'block';
+                        }
+                        
+                        // Load available managers
+                        await loadManagersForReassign();
+                        
+                        if (deleteModal) {
+                            deleteModal.style.display = 'block';
+                        } else {
+                            console.error('Delete modal not found!');
+                            alert('Error: Delete modal not found in the page');
+                        }
+                    } else {
+                        // No subordinates, show simple confirmation
+                        if (confirm(`Are you sure you want to delete user "${userName}"? This action cannot be undone.`)) {
+                            // Pass undefined instead of null to avoid issues
+                            await performDelete(userId, undefined);
+                        }
+                    }
+                } else {
+                    alert('Error loading users: ' + (data.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error in deleteUser:', error);
+                alert('Error checking user subordinates: ' + error.message);
+            }
+        }
+        
+        async function loadManagersForReassign() {
+            const selectElement = document.getElementById('reassignManager');
+            selectElement.innerHTML = '<option value="">Select Manager</option>';
+            
+            try {
+                const response = await authenticatedFetch(`${API_BASE_URL}/users`);
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    // Filter out the user being deleted and show only valid managers
+                    const availableManagers = data.data.filter(u => 
+                        u.id !== deleteUserId && 
+                        (u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER' || u.role === 'MANAGER')
+                    );
+                    
+                    availableManagers.forEach(manager => {
+                        const option = document.createElement('option');
+                        option.value = manager.id;
+                        option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
+                        selectElement.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading managers:', error);
+            }
+        }
+        
+        function closeDeleteModal() {
+            const deleteModal = document.getElementById('deleteModal');
+            if (deleteModal) {
+                deleteModal.style.display = 'none';
+            }
+            const reassignSection = document.getElementById('reassignSection');
+            if (reassignSection) {
+                reassignSection.style.display = 'none';
+            }
+            const reassignManager = document.getElementById('reassignManager');
+            if (reassignManager) {
+                reassignManager.value = '';
+            }
+            deleteUserId = null;
+            deleteUserName = null;
+        }
+        
+        // Close modal when clicking outside of it
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('deleteModal');
+            if (event.target === modal) {
+                closeDeleteModal();
+            }
+        });
+        
+        async function confirmDelete() {
+            const reassignManagerSelect = document.getElementById('reassignManager');
+            const reassignSection = document.getElementById('reassignSection');
+            
+            // Save userId and userName before closing modal (which resets them)
+            const userIdToDelete = deleteUserId;
+            const userNameToDelete = deleteUserName;
+            
+            let reassignManagerId = null;
+            
+            // Only check for reassignManagerId if the reassign section is visible
+            if (reassignSection && reassignSection.style.display !== 'none') {
+                if (reassignManagerSelect && reassignManagerSelect.value) {
+                    reassignManagerId = parseInt(reassignManagerSelect.value);
+                    if (isNaN(reassignManagerId)) {
+                        alert('Please select a valid manager to reassign subordinates to.');
+                        return;
+                    }
+                } else {
+                    alert('Please select a manager to reassign subordinates to, or delete the subordinates first.');
+                    return;
+                }
+            }
+            
+            // Validate that we have valid user info
+            if (!userIdToDelete || !userNameToDelete) {
+                alert('Error: Could not determine user information. Please try again.');
+                closeDeleteModal();
+                return;
+            }
+            
+            closeDeleteModal();
+            
+            if (confirm(`Are you sure you want to delete user "${userNameToDelete}"? This action cannot be undone.`)) {
+                await performDelete(userIdToDelete, reassignManagerId);
+            }
+        }
+        
+        async function performDelete(userId, reassignManagerId) {
+            console.log('performDelete called with userId:', userId, 'reassignManagerId:', reassignManagerId, 'type:', typeof reassignManagerId);
+            
+            if (!userId) {
+                alert('Error: Invalid user ID');
+                return;
+            }
+            
+            const messageDiv = document.getElementById('message');
+            if (messageDiv) {
+                messageDiv.className = 'message';
+                messageDiv.textContent = 'Deleting user...';
+            }
+            
+            try {
+                // Build URL - only include reassignManagerId if it's a valid positive number
+                let url = `${API_BASE_URL}/users/${userId}`;
+                
+                // Strict validation to ensure we never send "null" string
+                const managerId = reassignManagerId;
+                const isValidId = managerId != null && 
+                                 managerId !== undefined && 
+                                 managerId !== 'null' &&
+                                 managerId !== 'undefined' &&
+                                 typeof managerId === 'number' && 
+                                 !isNaN(managerId) && 
+                                 isFinite(managerId) &&
+                                 managerId > 0;
+                
+                if (isValidId) {
+                    url += `?reassignManagerId=${managerId}`;
+                    console.log('✓ Including reassignManagerId:', managerId);
+                } else {
+                    console.log('✗ NOT including reassignManagerId (value:', managerId, 'type:', typeof managerId, ')');
+                }
+                
+                console.log('Final DELETE URL:', url);
+                
+                const response = await authenticatedFetch(url, {
+                    method: 'DELETE'
+                });
+                
+                console.log('Delete response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Delete response data:', data);
+                
+                if (response.ok && data.success) {
+                    if (messageDiv) {
+                        messageDiv.className = 'message success';
+                        messageDiv.textContent = data.message || 'User deleted successfully';
+                    }
+                    // Reload users list
+                    await loadUsers();
+                } else {
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = data.message || 'Failed to delete user';
+                    }
+                }
+            } catch (error) {
+                console.error('Delete user error:', error);
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Error: ' + error.message;
+                }
+            }
+        }
+        
+        // logout() function is now in auth.js, no need to redefine
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accept Invitation - Brideside CRM</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Accept Invitation</h1>
+            <p class="subtitle">Set your password to complete your registration</p>
+            
+            <form id="setPasswordForm">
+                <input type="hidden" id="token" name="token">
+                
+                <div class="form-group">
+                    <label for="password">New Password *</label>
+                    <input type="password" id="password" name="password" required minlength="8">
+                    <small>Password must be at least 8 characters long</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password *</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required minlength="8">
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Set Password</button>
+            </form>
+            
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://localhost:8080/api';
+        
+        // Get token from URL query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        
+        if (!token) {
+            document.getElementById('message').className = 'message error';
+            document.getElementById('message').textContent = 'Invalid invitation link. No token provided.';
+            document.getElementById('setPasswordForm').style.display = 'none';
+        } else {
+            document.getElementById('token').value = token;
+        }
+        
+        document.getElementById('setPasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = 'message';
+            messageDiv.textContent = '';
+            
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (password !== confirmPassword) {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Passwords do not match';
+                return;
+            }
+            
+            const formData = {
+                token: token,
+                password: password,
+                confirmPassword: confirmPassword
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/users/set-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    messageDiv.className = 'message success';
+                    messageDiv.textContent = 'Password set successfully! Redirecting to login...';
+                    setTimeout(() => {
+                        window.location.href = 'login.html';
+                    }, 2000);
+                } else {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = data.message || 'Failed to set password';
+                }
+            } catch (error) {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
+
