@@ -40,10 +40,11 @@
         // Function to handle login
         async function performLogin(email, password) {
             try {
+                showLoader('Logging in...');
                 const messageDiv = document.getElementById('message');
                 if (messageDiv) {
                     messageDiv.className = 'message';
-                    messageDiv.textContent = 'Logging in...';
+                    messageDiv.textContent = '';
                 }
                 
                 if (!email || !password) {
@@ -84,15 +85,29 @@
                         messageDiv.textContent = 'Login successful! Redirecting...';
                     }
                     
-                    // Check if user is admin
-                    if (data.data.role === 'ADMIN') {
+                    // Redirect based on user role
+                    let redirectUrl = '';
+                    switch(data.data.role) {
+                        case 'ADMIN':
+                            redirectUrl = 'admin-dashboard.html';
+                            break;
+                        case 'CATEGORY_MANAGER':
+                            redirectUrl = 'category-manager-dashboard.html';
+                            break;
+                        case 'MANAGER':
+                            redirectUrl = 'manager-dashboard.html';
+                            break;
+                        case 'SALESREP':
+                            redirectUrl = 'salesrep-dashboard.html';
+                            break;
+                        default:
+                            redirectUrl = 'login.html';
+                    }
+                    
+                    if (redirectUrl) {
                         setTimeout(() => {
-                            window.location.href = 'users.html';
+                            window.location.href = redirectUrl;
                         }, 1000);
-                    } else {
-                        if (messageDiv) {
-                            messageDiv.textContent = 'Login successful! User dashboard coming soon...';
-                        }
                     }
                 } else {
                     if (messageDiv) {
@@ -108,6 +123,8 @@
                     messageDiv.className = 'message error';
                     messageDiv.textContent = 'Error: ' + error.message;
                 }
+            } finally {
+                hideLoader();
             }
         }
         
@@ -115,15 +132,35 @@
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, initializing login page');
             
-            // Check if token exists (simple check, don't rely on auth.js)
+            // Check if token exists and redirect to appropriate dashboard
             const token = localStorage.getItem('token');
             if (token) {
                 // Try to check if isTokenExpired is available, otherwise just check if token exists
                 if (typeof isTokenExpired !== 'undefined') {
                     if (!isTokenExpired(token)) {
-                        console.log('Valid token found, redirecting to users page');
-                        window.location.href = 'users.html';
-                        return;
+                        console.log('Valid token found, redirecting to dashboard');
+                        const user = getCurrentUser();
+                        if (user && user.role) {
+                            let redirectUrl = '';
+                            switch(user.role) {
+                                case 'ADMIN':
+                                    redirectUrl = 'admin-dashboard.html';
+                                    break;
+                                case 'CATEGORY_MANAGER':
+                                    redirectUrl = 'category-manager-dashboard.html';
+                                    break;
+                                case 'MANAGER':
+                                    redirectUrl = 'manager-dashboard.html';
+                                    break;
+                                case 'SALESREP':
+                                    redirectUrl = 'salesrep-dashboard.html';
+                                    break;
+                            }
+                            if (redirectUrl) {
+                                window.location.href = redirectUrl;
+                                return;
+                            }
+                        }
                     } else {
                         console.log('Token expired, clearing');
                         localStorage.removeItem('token');
@@ -179,6 +216,20 @@
         });
     </script>
     <script src="auth.js" onerror="console.error('Failed to load auth.js, but continuing anyway')"></script>
+    <script>
+        // Helper function to get current user (if auth.js loads after this)
+        function getCurrentUser() {
+            const userStr = localStorage.getItem('user');
+            if (!userStr) return null;
+            try {
+                return JSON.parse(userStr);
+            } catch (error) {
+                console.error('Error parsing user data:', error);
+                return null;
+            }
+        }
+    </script>
 </body>
 </html>
+
 

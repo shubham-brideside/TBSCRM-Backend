@@ -27,20 +27,18 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    username: ${MAIL_USERNAME:shubham@acceltancy.in}
+    password: ${MAIL_PASSWORD:cmehguwwjialwhvf}
     properties:
       mail:
         smtp:
           auth: true
           starttls:
             enable: true
-
-# MailerSend Configuration
-mailersend:
-  api-token: ${MAILERSEND_API_TOKEN:mlsn.136417a9d732c6a7b19b8c4531818f7e07c89c30444ef40fd80a5424897de2b4}
-  from-email: ${MAILERSEND_FROM_EMAIL:shubhamlohra35@gmail.com}
-  from-name: ${MAILERSEND_FROM_NAME:Brideside CRM}
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 
 server:
   port: 8080
@@ -53,9 +51,12 @@ jwt:
   expiration: 86400000 # 24 hours in milliseconds
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:3000}
+  frontend-url: ${FRONTEND_URL:http://localhost:8080/frontend}
   invitation-token-validity: 604800000 # 7 days in milliseconds
   password-reset-token-validity: 24 # 24 hours
+  email:
+    from: ${MAIL_FROM:shubham@acceltancy.in}
+    from-name: ${MAIL_FROM_NAME:Brideside CRM}
 
 springdoc:
   api-docs:

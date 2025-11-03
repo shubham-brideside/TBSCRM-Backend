@@ -2,55 +2,35 @@ package com.brideside.crm.service.impl;
 
 import com.brideside.crm.entity.User;
 import com.brideside.crm.service.EmailService;
-import com.mailersend.sdk.MailerSend;
-import com.mailersend.sdk.MailerSendResponse;
-import com.mailersend.sdk.emails.Email;
-import com.mailersend.sdk.exceptions.MailerSendException;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
-
-import jakarta.annotation.PostConstruct;
-
 
 @Service
 public class EmailServiceImpl implements EmailService {
 
     private static final Logger logger = LoggerFactory.getLogger(EmailServiceImpl.class);
-    
-    private MailerSend mailerSend;
 
-    @Value("${mailersend.api-token:}")
-    private String mailerSendApiToken;
+    @Autowired
+    private JavaMailSender mailSender;
 
-    @Value("${mailersend.from-email:noreply@bridesidecrm.com}")
+    @Value("${app.email.from:shubhamlohra35@gmail.com}")
     private String fromEmail;
 
-    @Value("${mailersend.from-name:Brideside CRM}")
+    @Value("${app.email.from-name:Brideside CRM}")
     private String fromName;
 
     @Value("${app.frontend-url:http://localhost:3000}")
     private String frontendUrl;
 
-    @PostConstruct
-    public void init() {
-        if (mailerSendApiToken != null && !mailerSendApiToken.isEmpty()) {
-            mailerSend = new MailerSend();
-            mailerSend.setToken(mailerSendApiToken);
-            logger.info("MailerSend SDK initialized successfully");
-        } else {
-            logger.warn("MailerSend API token is not configured. Email sending will be disabled.");
-        }
-    }
-
     @Override
     public void sendInvitationEmail(User user, String token) {
-        if (mailerSend == null || mailerSendApiToken == null || mailerSendApiToken.isEmpty()) {
-            logger.error("MailerSend API token is not configured. Cannot send invitation email to: {}", user.getEmail());
-            return;
-        }
-
         String subject = "Welcome to Brideside CRM - Complete Your Registration";
         String body = buildInvitationEmailBody(user, token);
 
@@ -59,11 +39,6 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public void sendPasswordResetEmail(User user, String token) {
-        if (mailerSend == null || mailerSendApiToken == null || mailerSendApiToken.isEmpty()) {
-            logger.error("MailerSend API token is not configured. Cannot send password reset email to: {}", user.getEmail());
-            return;
-        }
-
         String subject = "Brideside CRM - Password Reset Request";
         String body = buildPasswordResetEmailBody(user, token);
 
@@ -72,44 +47,33 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public void sendTestEmail(String toEmail, String subject, String message) {
-        if (mailerSend == null || mailerSendApiToken == null || mailerSendApiToken.isEmpty()) {
-            logger.error("MailerSend API token is not configured. Cannot send test email to: {}", toEmail);
-            throw new RuntimeException("MailerSend API token is not configured");
-        }
-
         sendEmail(toEmail, subject, message, true);
     }
 
     private void sendEmail(String toEmail, String subject, String text, boolean throwOnError) {
         try {
-            Email email = new Email();
-            
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
             // Set from address
-            email.setFrom(fromName, fromEmail);
-            
-            // Add recipient
-            email.addRecipient(null, toEmail);
-            
+            helper.setFrom(fromEmail, fromName);
+
+            // Set to address
+            helper.setTo(toEmail);
+
             // Set subject
-            email.setSubject(subject);
-            
+            helper.setSubject(subject);
+
             // Set plain text content
-            email.setPlain(text);
-            
-            // Send email using MailerSend SDK
-            MailerSendResponse response = mailerSend.emails().send(email);
-            
-            logger.info("Email sent successfully to: {}. Message ID: {}", toEmail, response.messageId);
-        } catch (MailerSendException e) {
+            helper.setText(text, false);
+
+            // Send email
+            mailSender.send(mimeMessage);
+
+            logger.info("Email sent successfully to: {}", toEmail);
+        } catch (MessagingException e) {
             String errorMessage = "Failed to send email to: " + toEmail;
             logger.error(errorMessage, e);
-            
-            if (e.getMessage() != null && e.getMessage().contains("domain must be verified")) {
-                logger.error("Domain verification issue:");
-                logger.error("1. The 'from.email' domain must be verified in your MailerSend account");
-                logger.error("2. Check your MailerSend dashboard to verify the domain: {}", fromEmail.split("@")[1]);
-                logger.error("3. Or use a verified email address in application.yml (mailersend.from-email)");
-            }
             
             if (throwOnError) {
                 throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
@@ -127,7 +91,7 @@ public class EmailServiceImpl implements EmailService {
     }
 
     private String buildInvitationEmailBody(User user, String token) {
-        String invitationLink = frontendUrl + "/accept-invitation?token=" + token;
+        String invitationLink = frontendUrl + "/accept-invitation.html?token=" + token;
         
         return "Dear " + user.getFirstName() + " " + user.getLastName() + ",\n\n" +
                 "You have been invited to join Brideside CRM.\n\n" +
@@ -140,7 +104,7 @@ public class EmailServiceImpl implements EmailService {
     }
 
     private String buildPasswordResetEmailBody(User user, String token) {
-        String resetLink = frontendUrl + "/reset-password?token=" + token;
+        String resetLink = frontendUrl + "/reset-password.html?token=" + token;
         
         return "Dear " + user.getFirstName() + " " + user.getLastName() + ",\n\n" +
                 "We received a request to reset your password for your Brideside CRM account.\n\n" +
@@ -152,4 +116,3 @@ public class EmailServiceImpl implements EmailService {
                 "Brideside CRM Team";
     }
 }
-

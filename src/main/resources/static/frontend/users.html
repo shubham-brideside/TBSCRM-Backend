@@ -307,7 +307,10 @@
             messageDiv.className = 'message';
             messageDiv.textContent = '';
             
+            const submitButton = document.getElementById('submitUserButton');
             const userId = document.getElementById('userId').value;
+            const isCreating = !userId;
+            
             const formData = {
                 email: document.getElementById('userEmail').value,
                 firstName: document.getElementById('userFirstName').value,
@@ -322,6 +325,10 @@
             } else {
                 formData.managerId = null;
             }
+            
+            // Show loader and disable button
+            showLoader(isCreating ? 'Creating user and sending invitation email...' : 'Updating user...');
+            setButtonLoading(submitButton, true);
             
             try {
                 let response;
@@ -359,11 +366,15 @@
             } catch (error) {
                 messageDiv.className = 'message error';
                 messageDiv.textContent = 'Error: ' + error.message;
+            } finally {
+                hideLoader();
+                setButtonLoading(submitButton, false);
             }
         });
         
         async function loadUsers() {
             try {
+                showLoader('Loading users...');
                 const response = await authenticatedFetch(`${API_BASE_URL}/users`);
                 const data = await response.json();
                 
@@ -412,6 +423,8 @@
             } catch (error) {
                 document.getElementById('message').className = 'message error';
                 document.getElementById('message').textContent = 'Error: ' + error.message;
+            } finally {
+                hideLoader();
             }
         }
         
@@ -588,10 +601,11 @@
                 return;
             }
             
+            showLoader('Deleting user...');
             const messageDiv = document.getElementById('message');
             if (messageDiv) {
                 messageDiv.className = 'message';
-                messageDiv.textContent = 'Deleting user...';
+                messageDiv.textContent = '';
             }
             
             try {
@@ -646,6 +660,8 @@
                     messageDiv.className = 'message error';
                     messageDiv.textContent = 'Error: ' + error.message;
                 }
+            } finally {
+                hideLoader();
             }
         }
         

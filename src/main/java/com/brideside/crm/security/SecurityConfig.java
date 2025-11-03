@@ -56,6 +56,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/users/set-password").permitAll() // Allow password setting via invitation token
                         .requestMatchers("/api/admin/create-admin").permitAll()
                         .requestMatchers("/api/admin/activate-admin").permitAll()
                         .requestMatchers("/api/admin/test-email").permitAll() // Added for email testing

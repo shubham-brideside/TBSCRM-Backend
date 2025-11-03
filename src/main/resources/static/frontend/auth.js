@@ -45,7 +45,7 @@ function isTokenExpired(token) {
 function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.location.href = 'login.html';
+    window.location.href = '/frontend/login.html';
 }
 
 /**
@@ -167,6 +167,51 @@ function getCurrentUser() {
     } catch (error) {
         console.error('Error parsing user data:', error);
         return null;
+    }
+}
+
+/**
+ * Show global loader overlay
+ * @param {string} message - Optional message to display
+ */
+function showLoader(message = 'Loading...') {
+    // Remove existing loader if any
+    hideLoader();
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'loader-overlay';
+    overlay.id = 'globalLoader';
+    overlay.innerHTML = `
+        <div class="loader-container">
+            <div class="loader-spinner"></div>
+            <p class="loader-text">${message}</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+/**
+ * Hide global loader overlay
+ */
+function hideLoader() {
+    const loader = document.getElementById('globalLoader');
+    if (loader) {
+        loader.remove();
+    }
+}
+
+/**
+ * Set button loading state
+ * @param {HTMLElement} button - Button element
+ * @param {boolean} loading - Whether to show loading state
+ */
+function setButtonLoading(button, loading) {
+    if (loading) {
+        button.classList.add('loading');
+        button.disabled = true;
+    } else {
+        button.classList.remove('loading');
+        button.disabled = false;
     }
 }
 
