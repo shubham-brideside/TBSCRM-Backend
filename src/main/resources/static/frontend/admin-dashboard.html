@@ -203,6 +203,7 @@
         // Load dashboard stats
         async function loadStats() {
             try {
+                showLoader('Loading dashboard...');
                 const response = await authenticatedFetch(`${API_BASE_URL}/users`);
                 if (response.ok) {
                     const data = await response.json();
@@ -215,6 +216,8 @@
                 }
             } catch (error) {
                 console.error('Error loading stats:', error);
+            } finally {
+                hideLoader();
             }
         }
         

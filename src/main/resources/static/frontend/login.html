@@ -39,21 +39,22 @@
         
         // Function to handle login
         async function performLogin(email, password) {
+            const messageDiv = document.getElementById('message');
+            if (messageDiv) {
+                messageDiv.className = 'message';
+                messageDiv.textContent = '';
+            }
+            
+            if (!email || !password) {
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Please enter both email and password';
+                }
+                return;
+            }
+            
             try {
                 showLoader('Logging in...');
-                const messageDiv = document.getElementById('message');
-                if (messageDiv) {
-                    messageDiv.className = 'message';
-                    messageDiv.textContent = '';
-                }
-                
-                if (!email || !password) {
-                    if (messageDiv) {
-                        messageDiv.className = 'message error';
-                        messageDiv.textContent = 'Please enter both email and password';
-                    }
-                    return;
-                }
                 
                 const formData = {
                     email: email.trim(),
@@ -219,6 +220,9 @@
     <script>
         // Helper function to get current user (if auth.js loads after this)
         function getCurrentUser() {
+            if (typeof window.getCurrentUser === 'function') {
+                return window.getCurrentUser();
+            }
             const userStr = localStorage.getItem('user');
             if (!userStr) return null;
             try {
