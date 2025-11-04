@@ -308,23 +308,23 @@ public class UserServiceImpl implements UserService {
             return true;
         }
         
-        // Category Manager can see Managers and Salesrep under them
+        // Category Manager can see Sales and Presales under them
         if (currentRole == Role.RoleName.CATEGORY_MANAGER) {
-            if (targetRole == Role.RoleName.MANAGER || targetRole == Role.RoleName.SALESREP) {
+            if (targetRole == Role.RoleName.SALES || targetRole == Role.RoleName.PRESALES) {
                 return isUnderUser(currentUser, targetUser);
             }
             return false;
         }
         
-        // Manager can see Salesrep under them
-        if (currentRole == Role.RoleName.MANAGER) {
-            if (targetRole == Role.RoleName.SALESREP) {
+        // Sales can see Presales under them
+        if (currentRole == Role.RoleName.SALES) {
+            if (targetRole == Role.RoleName.PRESALES) {
                 return isUnderUser(currentUser, targetUser);
             }
             return false;
         }
         
-        // Salesrep can only see themselves (already handled above)
+        // Presales can only see themselves (already handled above)
         return false;
     }
     
@@ -341,8 +341,8 @@ public class UserServiceImpl implements UserService {
         if (currentUser.getRole().getName() == Role.RoleName.CATEGORY_MANAGER) {
             if (targetUser.getManager() != null) {
                 User targetManager = targetUser.getManager();
-                // If target's manager is a Manager and reports to this Category Manager
-                if (targetManager.getRole().getName() == Role.RoleName.MANAGER &&
+                // If target's manager is a Sales and reports to this Category Manager
+                if (targetManager.getRole().getName() == Role.RoleName.SALES &&
                     targetManager.getManager() != null &&
                     targetManager.getManager().getId().equals(currentUser.getId())) {
                     return true;

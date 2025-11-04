@@ -49,8 +49,8 @@
                             <option value="">Select Role</option>
                             <option value="ADMIN">Admin</option>
                             <option value="CATEGORY_MANAGER">Category Manager</option>
-                            <option value="MANAGER">Manager</option>
-                            <option value="SALESREP">Salesrep</option>
+                            <option value="SALES">Sales</option>
+                            <option value="PRESALES">Presales</option>
                         </select>
                     </div>
                     
@@ -231,19 +231,22 @@
                     // Load managers for the role
                     updateManagerOptions();
                     
-                    // Show manager group if role requires it (only MANAGER and SALESREP)
+                    // Show manager group if role requires it (CATEGORY_MANAGER, SALES, or PRESALES)
                     const role = user.role;
-                    if (role === 'MANAGER' || role === 'SALESREP') {
+                    if (role === 'CATEGORY_MANAGER' || role === 'SALES' || role === 'PRESALES') {
                         document.getElementById('managerGroup').style.display = 'block';
                         document.getElementById('userManager').required = true;
                     }
                     
                     // Set current manager if exists (wait for managers to load)
+                    // For Category Manager, if no manager is set, Admin will be auto-selected by loadManagersForRole
                     if (user.managerId) {
                         setTimeout(() => {
                             document.getElementById('userManager').value = user.managerId;
                         }, 500);
                     }
+                    // Note: If user.managerId is null and role is CATEGORY_MANAGER, 
+                    // Admin will be auto-selected by loadManagersForRole() which is called by updateManagerOptions()
                     
                     // Show form and change button text
                     document.getElementById('createUserForm').style.display = 'block';
@@ -264,23 +267,24 @@
             const managerSelect = document.getElementById('userManager');
             const managerHelpText = document.getElementById('managerHelpText');
             
-            // Show manager selection only for MANAGER and SALESREP roles
-            // Category Manager should NOT have a manager (Admin is the only admin)
-            if (role === 'MANAGER' || role === 'SALESREP') {
+            // Show manager selection for CATEGORY_MANAGER, SALES, and PRESALES roles
+            if (role === 'CATEGORY_MANAGER' || role === 'SALES' || role === 'PRESALES') {
                 managerGroup.style.display = 'block';
                 managerSelect.required = true; // Make manager mandatory
                 
                 // Update help text based on role
-                if (role === 'MANAGER') {
+                if (role === 'CATEGORY_MANAGER') {
+                    managerHelpText.textContent = 'Admin is automatically selected as the manager (required)';
+                } else if (role === 'SALES') {
                     managerHelpText.textContent = 'Select a Category Manager as the manager (required)';
-                } else if (role === 'SALESREP') {
-                    managerHelpText.textContent = 'Select a Manager as the manager (required)';
+                } else if (role === 'PRESALES') {
+                    managerHelpText.textContent = 'Select a Sales as the manager (required)';
                 }
                 
                 // Load available managers based on role
                 loadManagersForRole(role, managerSelect);
             } else {
-                // Hide manager group for ADMIN and CATEGORY_MANAGER
+                // Hide manager group for ADMIN only
                 managerGroup.style.display = 'none';
                 managerSelect.required = false;
                 managerSelect.innerHTML = '<option value="">Select Manager</option>';
@@ -309,15 +313,20 @@
                             return false;
                         }
                         
-                        if (role === 'MANAGER') {
-                            // Managers can only have Category Manager as manager
+                        if (role === 'CATEGORY_MANAGER') {
+                            // Category Manager can only have Admin as manager
+                            const matches = u.role === 'ADMIN';
+                            console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches ADMIN: ${matches}`);
+                            return matches;
+                        } else if (role === 'SALES') {
+                            // Sales can only have Category Manager as manager
                             const matches = u.role === 'CATEGORY_MANAGER';
                             console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches CATEGORY_MANAGER: ${matches}`);
                             return matches;
-                        } else if (role === 'SALESREP') {
-                            // Salesrep can only have Manager as manager
-                            const matches = u.role === 'MANAGER';
-                            console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches MANAGER: ${matches}`);
+                        } else if (role === 'PRESALES') {
+                            // Presales can only have Sales as manager
+                            const matches = u.role === 'SALES';
+                            console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches SALES: ${matches}`);
                             return matches;
                         }
                         return false;
@@ -328,9 +337,14 @@
                     if (availableManagers.length === 0) {
                         const option = document.createElement('option');
                         option.value = '';
-                        const noManagerText = role === 'MANAGER' 
-                            ? 'No Category Managers available (they must be active and have set their password)'
-                            : 'No Managers available (they must be active and have set their password)';
+                        let noManagerText = 'No managers available';
+                        if (role === 'CATEGORY_MANAGER') {
+                            noManagerText = 'No Admin users available (Admin must be active and have set their password)';
+                        } else if (role === 'SALES') {
+                            noManagerText = 'No Category Managers available (they must be active and have set their password)';
+                        } else if (role === 'PRESALES') {
+                            noManagerText = 'No Sales available (they must be active and have set their password)';
+                        }
                         option.textContent = noManagerText;
                         option.disabled = true;
                         selectElement.appendChild(option);
@@ -341,6 +355,14 @@
                             option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
                             selectElement.appendChild(option);
                         });
+                        
+                        // Auto-select Admin for Category Manager role (if Admin is available)
+                        if (role === 'CATEGORY_MANAGER' && availableManagers.length > 0) {
+                            const adminUser = availableManagers.find(u => u.role === 'ADMIN');
+                            if (adminUser) {
+                                selectElement.value = adminUser.id;
+                            }
+                        }
                     }
                 }
             } catch (error) {
@@ -371,9 +393,13 @@
             const managerId = document.getElementById('userManager').value;
             
             // Validate manager is selected for roles that require it
-            if ((role === 'MANAGER' || role === 'SALESREP') && !managerId) {
+            if ((role === 'CATEGORY_MANAGER' || role === 'SALES' || role === 'PRESALES') && !managerId) {
+                let roleName = 'Category Manager';
+                if (role === 'SALES') roleName = 'Sales';
+                else if (role === 'PRESALES') roleName = 'Presales';
+                
                 messageDiv.className = 'message error';
-                messageDiv.textContent = 'Manager is required for ' + (role === 'MANAGER' ? 'Manager' : 'Salesrep') + ' role.';
+                messageDiv.textContent = 'Manager is required for ' + roleName + ' role.';
                 hideLoader();
                 setButtonLoading(submitButton, false);
                 return;
@@ -556,9 +582,9 @@
                     console.log('Found subordinates:', subordinates.length);
                     console.log('User role:', deleteUserRole);
                     
-                    // SALESREP cannot have subordinates, so never show manager dropdown for them
-                    // Only show manager dropdown if user has subordinates AND is not a SALESREP
-                    if (subordinates.length > 0 && deleteUserRole !== 'SALESREP') {
+                    // PRESALES cannot have subordinates, so never show manager dropdown for them
+                    // Only show manager dropdown if user has subordinates AND is not a PRESALES
+                    if (subordinates.length > 0 && deleteUserRole !== 'PRESALES') {
                         // Show modal with reassignment option
                         const modalMessage = document.getElementById('deleteModalMessage');
                         const reassignSection = document.getElementById('reassignSection');
@@ -583,7 +609,7 @@
                             alert('Error: Delete modal not found in the page');
                         }
                     } else {
-                        // No subordinates OR user is SALESREP, show simple confirmation
+                        // No subordinates OR user is PRESALES, show simple confirmation
                         const deleteModal = document.getElementById('deleteModal');
                         const modalMessage = document.getElementById('deleteModalMessage');
                         const reassignSection = document.getElementById('reassignSection');
@@ -642,8 +668,8 @@
                         const roleHierarchy = {
                             'ADMIN': 0,
                             'CATEGORY_MANAGER': 1,
-                            'MANAGER': 2,
-                            'SALESREP': 3
+                            'SALES': 2,
+                            'PRESALES': 3
                         };
                         
                         const deletingUserLevel = roleHierarchy[deleteUserRole] !== undefined ? roleHierarchy[deleteUserRole] : 999;

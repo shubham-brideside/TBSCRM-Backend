@@ -49,8 +49,8 @@ public class Role {
     public enum RoleName {
         ADMIN,
         CATEGORY_MANAGER,
-        MANAGER,
-        SALESREP
+        SALES,
+        PRESALES
     }
 }
 
