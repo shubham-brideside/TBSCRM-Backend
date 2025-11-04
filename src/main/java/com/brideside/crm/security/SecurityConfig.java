@@ -55,6 +55,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/").permitAll() // Allow root path
+                        .requestMatchers("/index.html").permitAll() // Allow index page
+                        .requestMatchers("/actuator/**").permitAll() // Allow health check endpoints for Azure
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/set-password").permitAll() // Allow password setting via invitation token
                         .requestMatchers("/api/admin/create-admin").permitAll()
