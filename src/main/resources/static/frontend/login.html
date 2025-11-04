@@ -35,7 +35,30 @@
     </div>
     
     <script>
-        const API_BASE_URL = 'http://localhost:8080/api';
+        // Dynamic API base URL - use current origin in production
+        const API_BASE_URL = (window.location.origin || 'http://localhost:8080') + '/api';
+        
+        // Loader functions - define early before they're used
+        function showLoader(message = 'Loading...') {
+            hideLoader(); // Remove existing loader if any
+            const overlay = document.createElement('div');
+            overlay.className = 'loader-overlay';
+            overlay.id = 'globalLoader';
+            overlay.innerHTML = `
+                <div class="loader-container">
+                    <div class="loader-spinner"></div>
+                    <p class="loader-text">${message}</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        
+        function hideLoader() {
+            const loader = document.getElementById('globalLoader');
+            if (loader) {
+                loader.remove();
+            }
+        }
         
         // Function to handle login
         async function performLogin(email, password) {

@@ -1,6 +1,7 @@
 // Authentication utility functions
 
-const API_BASE_URL = 'http://localhost:8080/api';
+// Dynamic API base URL - use current origin in production
+const API_BASE_URL = (window.location.origin || 'http://localhost:8080') + '/api';
 
 /**
  * Check if JWT token is expired

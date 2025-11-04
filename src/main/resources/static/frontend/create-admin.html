@@ -46,7 +46,8 @@
     </div>
     
     <script>
-        const API_BASE_URL = 'http://localhost:8080/api';
+        // Dynamic API base URL - use current origin in production
+        const API_BASE_URL = (window.location.origin || 'http://localhost:8080') + '/api';
         
         document.getElementById('createAdminForm').addEventListener('submit', async (e) => {
             e.preventDefault();
