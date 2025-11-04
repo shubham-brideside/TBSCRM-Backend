@@ -55,17 +55,27 @@
                     </div>
                     
                     <div class="form-group" id="managerGroup" style="display: none;">
-                        <label for="userManager">Manager (Optional)</label>
+                        <label for="userManager">Manager *</label>
                         <select id="userManager" name="managerId">
-                            <option value="">No Manager</option>
+                            <option value="">Select Manager</option>
                         </select>
-                        <small>Select a manager to assign this user under in the hierarchy</small>
+                        <small id="managerHelpText">Select a manager to assign this user under in the hierarchy</small>
                     </div>
                     
                     <button type="submit" id="submitUserButton" class="btn btn-primary">Create User & Send Invitation</button>
                     <button type="button" onclick="hideCreateUserForm()" class="btn btn-secondary">Cancel</button>
                 </form>
                 <div id="createUserMessage" class="message"></div>
+            </div>
+            
+            <!-- Success Message Modal -->
+            <div id="successModal" class="modal" style="display: none;">
+                <div class="modal-content" style="text-align: center;">
+                    <div style="font-size: 48px; color: #28a745; margin-bottom: 1rem;">✓</div>
+                    <h3 style="color: #28a745; margin-bottom: 1rem;">Success!</h3>
+                    <p id="successModalMessage" style="margin-bottom: 1.5rem; font-size: 1.1rem;"></p>
+                    <button onclick="closeSuccessModal()" class="btn btn-primary" style="min-width: 120px;">OK</button>
+                </div>
             </div>
             
             <!-- Delete Confirmation Modal -->
@@ -198,7 +208,9 @@
             document.getElementById('userId').value = '';
             document.getElementById('createUserMessage').textContent = '';
             document.getElementById('managerGroup').style.display = 'none';
+            document.getElementById('userManager').required = false;
             document.getElementById('submitUserButton').textContent = 'Create User & Send Invitation';
+            document.querySelector('#createUserForm h3').textContent = 'Create New User';
         }
         
         async function editUser(userId) {
@@ -219,10 +231,11 @@
                     // Load managers for the role
                     updateManagerOptions();
                     
-                    // Show manager group if role requires it
+                    // Show manager group if role requires it (only MANAGER and SALESREP)
                     const role = user.role;
-                    if (role === 'CATEGORY_MANAGER' || role === 'MANAGER' || role === 'SALESREP') {
+                    if (role === 'MANAGER' || role === 'SALESREP') {
                         document.getElementById('managerGroup').style.display = 'block';
+                        document.getElementById('userManager').required = true;
                     }
                     
                     // Set current manager if exists (wait for managers to load)
@@ -249,16 +262,29 @@
             const role = document.getElementById('userRole').value;
             const managerGroup = document.getElementById('managerGroup');
             const managerSelect = document.getElementById('userManager');
+            const managerHelpText = document.getElementById('managerHelpText');
             
-            // Show manager selection for roles that can have managers
-            if (role === 'CATEGORY_MANAGER' || role === 'MANAGER' || role === 'SALESREP') {
+            // Show manager selection only for MANAGER and SALESREP roles
+            // Category Manager should NOT have a manager (Admin is the only admin)
+            if (role === 'MANAGER' || role === 'SALESREP') {
                 managerGroup.style.display = 'block';
+                managerSelect.required = true; // Make manager mandatory
+                
+                // Update help text based on role
+                if (role === 'MANAGER') {
+                    managerHelpText.textContent = 'Select a Category Manager as the manager (required)';
+                } else if (role === 'SALESREP') {
+                    managerHelpText.textContent = 'Select a Manager as the manager (required)';
+                }
                 
                 // Load available managers based on role
                 loadManagersForRole(role, managerSelect);
             } else {
+                // Hide manager group for ADMIN and CATEGORY_MANAGER
                 managerGroup.style.display = 'none';
-                managerSelect.innerHTML = '<option value="">No Manager</option>';
+                managerSelect.required = false;
+                managerSelect.innerHTML = '<option value="">Select Manager</option>';
+                managerSelect.value = ''; // Clear the value
             }
         }
         
@@ -270,29 +296,52 @@
                 const data = await response.json();
                 
                 if (response.ok && data.success) {
-                    selectElement.innerHTML = '<option value="">No Manager</option>';
+                    selectElement.innerHTML = '<option value="">Select Manager</option>';
+                    
+                    console.log('Loading managers for role:', role);
+                    console.log('All users from API:', data.data);
                     
                     // Filter available managers based on role hierarchy
                     const availableManagers = data.data.filter(u => {
-                        if (role === 'CATEGORY_MANAGER') {
-                            // Category Managers can only have Admin as manager
-                            return u.role === 'ADMIN';
-                        } else if (role === 'MANAGER') {
-                            // Managers can have Admin or Category Manager as manager
-                            return u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER';
+                        // Only show active users who have set their password
+                        if (!u.active || !u.passwordSet) {
+                            console.log(`Skipping user ${u.id} (${u.email}): active=${u.active}, passwordSet=${u.passwordSet}`);
+                            return false;
+                        }
+                        
+                        if (role === 'MANAGER') {
+                            // Managers can only have Category Manager as manager
+                            const matches = u.role === 'CATEGORY_MANAGER';
+                            console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches CATEGORY_MANAGER: ${matches}`);
+                            return matches;
                         } else if (role === 'SALESREP') {
-                            // Salesrep can have Admin, Category Manager, or Manager as manager
-                            return u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER' || u.role === 'MANAGER';
+                            // Salesrep can only have Manager as manager
+                            const matches = u.role === 'MANAGER';
+                            console.log(`User ${u.id} (${u.email}) role: "${u.role}", matches MANAGER: ${matches}`);
+                            return matches;
                         }
                         return false;
                     });
                     
-                    availableManagers.forEach(manager => {
+                    console.log('Filtered available managers:', availableManagers);
+                    
+                    if (availableManagers.length === 0) {
                         const option = document.createElement('option');
-                        option.value = manager.id;
-                        option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
+                        option.value = '';
+                        const noManagerText = role === 'MANAGER' 
+                            ? 'No Category Managers available (they must be active and have set their password)'
+                            : 'No Managers available (they must be active and have set their password)';
+                        option.textContent = noManagerText;
+                        option.disabled = true;
                         selectElement.appendChild(option);
-                    });
+                    } else {
+                        availableManagers.forEach(manager => {
+                            const option = document.createElement('option');
+                            option.value = manager.id;
+                            option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
+                            selectElement.appendChild(option);
+                        });
+                    }
                 }
             } catch (error) {
                 selectElement.innerHTML = '<option value="">Error loading managers</option>';
@@ -303,23 +352,41 @@
         document.getElementById('userForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            // Clear both message divs to avoid conflicts
             const messageDiv = document.getElementById('createUserMessage');
             messageDiv.className = 'message';
             messageDiv.textContent = '';
+            
+            const mainMessageDiv = document.getElementById('message');
+            if (mainMessageDiv) {
+                mainMessageDiv.className = 'message';
+                mainMessageDiv.textContent = '';
+            }
             
             const submitButton = document.getElementById('submitUserButton');
             const userId = document.getElementById('userId').value;
             const isCreating = !userId;
             
+            const role = document.getElementById('userRole').value;
+            const managerId = document.getElementById('userManager').value;
+            
+            // Validate manager is selected for roles that require it
+            if ((role === 'MANAGER' || role === 'SALESREP') && !managerId) {
+                messageDiv.className = 'message error';
+                messageDiv.textContent = 'Manager is required for ' + (role === 'MANAGER' ? 'Manager' : 'Salesrep') + ' role.';
+                hideLoader();
+                setButtonLoading(submitButton, false);
+                return;
+            }
+            
             const formData = {
                 email: document.getElementById('userEmail').value,
                 firstName: document.getElementById('userFirstName').value,
                 lastName: document.getElementById('userLastName').value,
-                role: document.getElementById('userRole').value
+                role: role
             };
             
             // Add managerId if selected
-            const managerId = document.getElementById('userManager').value;
             if (managerId) {
                 formData.managerId = parseInt(managerId);
             } else {
@@ -349,17 +416,27 @@
                 const data = await response.json();
                 
                 if (response.ok && data.success) {
-                    messageDiv.className = 'message success';
-                    messageDiv.textContent = userId 
+                    // Clear form message
+                    messageDiv.className = 'message';
+                    messageDiv.textContent = '';
+                    
+                    const successMessage = userId 
                         ? 'User updated successfully!' 
                         : 'User created and invitation email sent successfully!';
+                    
+                    // Show success message in popup modal
+                    showSuccessModal(successMessage);
+                    
                     document.getElementById('userForm').reset();
                     document.getElementById('userId').value = '';
                     loadUsers();
+                    
+                    // Hide form after a short delay
                     setTimeout(() => {
                         hideCreateUserForm();
-                    }, 2000);
+                    }, 500);
                 } else {
+                    // Show error in form's message div (form is still visible)
                     messageDiv.className = 'message error';
                     messageDiv.textContent = data.message || 'Failed to save user';
                 }
@@ -416,13 +493,21 @@
                         `;
                         }).join('');
                     }
+                    // Don't clear messages here - let auto-hide timeouts handle it
+                    // This prevents clearing messages that were just set (like delete success)
                 } else {
-                    document.getElementById('message').className = 'message error';
-                    document.getElementById('message').textContent = data.message || 'Failed to load users';
+                    const messageDiv = document.getElementById('message');
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = data.message || 'Failed to load users';
+                    }
                 }
             } catch (error) {
-                document.getElementById('message').className = 'message error';
-                document.getElementById('message').textContent = 'Error: ' + error.message;
+                const messageDiv = document.getElementById('message');
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Error: ' + error.message;
+                }
             } finally {
                 hideLoader();
             }
@@ -430,6 +515,7 @@
         
         let deleteUserId = null;
         let deleteUserName = null;
+        let deleteUserRole = null;
         
         async function deleteUser(userId, userName) {
             console.log('deleteUser called with userId:', userId, 'type:', typeof userId, 'userName:', userName, 'type:', typeof userName);
@@ -460,10 +546,19 @@
                 console.log('Users response:', data);
                 
                 if (response.ok && data.success) {
+                    // Find the user being deleted to get their role
+                    const userToDelete = data.data.find(u => u.id === userId);
+                    if (userToDelete) {
+                        deleteUserRole = userToDelete.role;
+                    }
+                    
                     const subordinates = data.data.filter(u => u.managerId === userId);
                     console.log('Found subordinates:', subordinates.length);
+                    console.log('User role:', deleteUserRole);
                     
-                    if (subordinates.length > 0) {
+                    // SALESREP cannot have subordinates, so never show manager dropdown for them
+                    // Only show manager dropdown if user has subordinates AND is not a SALESREP
+                    if (subordinates.length > 0 && deleteUserRole !== 'SALESREP') {
                         // Show modal with reassignment option
                         const modalMessage = document.getElementById('deleteModalMessage');
                         const reassignSection = document.getElementById('reassignSection');
@@ -488,10 +583,29 @@
                             alert('Error: Delete modal not found in the page');
                         }
                     } else {
-                        // No subordinates, show simple confirmation
-                        if (confirm(`Are you sure you want to delete user "${userName}"? This action cannot be undone.`)) {
-                            // Pass undefined instead of null to avoid issues
-                            await performDelete(userId, undefined);
+                        // No subordinates OR user is SALESREP, show simple confirmation
+                        const deleteModal = document.getElementById('deleteModal');
+                        const modalMessage = document.getElementById('deleteModalMessage');
+                        const reassignSection = document.getElementById('reassignSection');
+                        
+                        // Hide reassign section
+                        if (reassignSection) {
+                            reassignSection.style.display = 'none';
+                        }
+                        
+                        // Set appropriate message
+                        if (modalMessage) {
+                            modalMessage.textContent = `Are you sure you want to delete user "${userName}"? This action cannot be undone.`;
+                        }
+                        
+                        // Show modal for confirmation
+                        if (deleteModal) {
+                            deleteModal.style.display = 'block';
+                        } else {
+                            // Fallback to browser confirm if modal not found
+                            if (confirm(`Are you sure you want to delete user "${userName}"? This action cannot be undone.`)) {
+                                await performDelete(userId, undefined);
+                            }
                         }
                     }
                 } else {
@@ -512,21 +626,51 @@
                 const data = await response.json();
                 
                 if (response.ok && data.success) {
-                    // Filter out the user being deleted and show only valid managers
-                    const availableManagers = data.data.filter(u => 
-                        u.id !== deleteUserId && 
-                        (u.role === 'ADMIN' || u.role === 'CATEGORY_MANAGER' || u.role === 'MANAGER')
-                    );
-                    
-                    availableManagers.forEach(manager => {
-                        const option = document.createElement('option');
-                        option.value = manager.id;
-                        option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
-                        selectElement.appendChild(option);
+                    // Filter based on hierarchy: show only users at same level or above
+                    const availableManagers = data.data.filter(u => {
+                        // Exclude the user being deleted
+                        if (u.id === deleteUserId) {
+                            return false;
+                        }
+                        
+                        // Only show active users who have set their password
+                        if (!u.active || !u.passwordSet) {
+                            return false;
+                        }
+                        
+                        // Get hierarchy levels (lower number = higher in hierarchy)
+                        const roleHierarchy = {
+                            'ADMIN': 0,
+                            'CATEGORY_MANAGER': 1,
+                            'MANAGER': 2,
+                            'SALESREP': 3
+                        };
+                        
+                        const deletingUserLevel = roleHierarchy[deleteUserRole] !== undefined ? roleHierarchy[deleteUserRole] : 999;
+                        const candidateUserLevel = roleHierarchy[u.role] !== undefined ? roleHierarchy[u.role] : 999;
+                        
+                        // Show only users at same level or above (lower or equal level number)
+                        return candidateUserLevel <= deletingUserLevel;
                     });
+                    
+                    if (availableManagers.length === 0) {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'No managers available';
+                        option.disabled = true;
+                        selectElement.appendChild(option);
+                    } else {
+                        availableManagers.forEach(manager => {
+                            const option = document.createElement('option');
+                            option.value = manager.id;
+                            option.textContent = `${manager.firstName} ${manager.lastName} (${manager.role})`;
+                            selectElement.appendChild(option);
+                        });
+                    }
                 }
             } catch (error) {
                 console.error('Error loading managers:', error);
+                selectElement.innerHTML = '<option value="">Error loading managers</option>';
             }
         }
         
@@ -545,13 +689,55 @@
             }
             deleteUserId = null;
             deleteUserName = null;
+            deleteUserRole = null;
         }
         
-        // Close modal when clicking outside of it
+        let successModalTimeout = null;
+        
+        // Function to show success modal
+        function showSuccessModal(message) {
+            const successModal = document.getElementById('successModal');
+            const successMessage = document.getElementById('successModalMessage');
+            if (successModal && successMessage) {
+                // Clear any existing timeout
+                if (successModalTimeout) {
+                    clearTimeout(successModalTimeout);
+                    successModalTimeout = null;
+                }
+                
+                successMessage.textContent = message;
+                successModal.style.display = 'block';
+                
+                // Auto-close modal after 3 seconds
+                successModalTimeout = setTimeout(() => {
+                    closeSuccessModal();
+                }, 3000);
+            }
+        }
+        
+        // Function to close success modal
+        function closeSuccessModal() {
+            const successModal = document.getElementById('successModal');
+            if (successModal) {
+                successModal.style.display = 'none';
+                // Clear timeout if modal is closed manually
+                if (successModalTimeout) {
+                    clearTimeout(successModalTimeout);
+                    successModalTimeout = null;
+                }
+            }
+        }
+        
+        // Close modals when clicking outside of them
         window.addEventListener('click', function(event) {
-            const modal = document.getElementById('deleteModal');
-            if (event.target === modal) {
+            const deleteModal = document.getElementById('deleteModal');
+            const successModal = document.getElementById('successModal');
+            
+            if (event.target === deleteModal) {
                 closeDeleteModal();
+            }
+            if (event.target === successModal) {
+                closeSuccessModal();
             }
         });
         
@@ -601,12 +787,14 @@
                 return;
             }
             
-            showLoader('Deleting user...');
+            // Clear any existing messages before starting delete operation
             const messageDiv = document.getElementById('message');
             if (messageDiv) {
                 messageDiv.className = 'message';
                 messageDiv.textContent = '';
             }
+            
+            showLoader('Deleting user...');
             
             try {
                 // Build URL - only include reassignManagerId if it's a valid positive number
@@ -642,16 +830,22 @@
                 console.log('Delete response data:', data);
                 
                 if (response.ok && data.success) {
-                    if (messageDiv) {
-                        messageDiv.className = 'message success';
-                        messageDiv.textContent = data.message || 'User deleted successfully';
-                    }
+                    // Show success message in popup modal
+                    const successMessage = data.message || 'User deleted successfully';
+                    showSuccessModal(successMessage);
+                    
                     // Reload users list
                     await loadUsers();
                 } else {
                     if (messageDiv) {
                         messageDiv.className = 'message error';
                         messageDiv.textContent = data.message || 'Failed to delete user';
+                        
+                        // Auto-hide error message after 5 seconds
+                        setTimeout(() => {
+                            messageDiv.className = 'message';
+                            messageDiv.textContent = '';
+                        }, 5000);
                     }
                 }
             } catch (error) {
