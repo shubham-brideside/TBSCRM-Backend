@@ -29,8 +29,23 @@
             <div id="message" class="message"></div>
             
             <p class="link-text">
-                Need to create admin? <a href="create-admin.html">Create Admin</a>
+                <a href="#" id="forgotPasswordLink">Forgot Password?</a>
             </p>
+            
+            <!-- Forgot Password Form (initially hidden) -->
+            <div id="forgotPasswordSection" style="display: none; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #e0e0e0;">
+                <h3>Reset Password</h3>
+                <p class="subtitle" style="margin-bottom: 1rem;">Enter your email address and we'll send you a link to reset your password.</p>
+                <form id="forgotPasswordForm">
+                    <div class="form-group">
+                        <label for="forgotEmail">Email *</label>
+                        <input type="email" id="forgotEmail" name="email" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Reset Link</button>
+                    <button type="button" class="btn btn-secondary" id="cancelForgotPassword" style="margin-left: 0.5rem;">Cancel</button>
+                </form>
+                <div id="forgotPasswordMessage" class="message" style="margin-top: 1rem;"></div>
+            </div>
         </div>
     </div>
     
@@ -152,9 +167,111 @@
             }
         }
         
+        // Function to handle forgot password
+        async function handleForgotPassword(email) {
+            const messageDiv = document.getElementById('forgotPasswordMessage');
+            if (messageDiv) {
+                messageDiv.className = 'message';
+                messageDiv.textContent = '';
+            }
+            
+            if (!email) {
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Please enter your email address';
+                }
+                return;
+            }
+            
+            try {
+                showLoader('Sending password reset email...');
+                
+                const formData = {
+                    email: email.trim()
+                };
+                
+                console.log('Sending forgot password request for:', email);
+                
+                const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                console.log('Forgot password response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Forgot password response data:', data);
+                
+                if (response.ok && data.success) {
+                    if (messageDiv) {
+                        messageDiv.className = 'message success';
+                        messageDiv.textContent = data.message || 'Password reset email sent! Please check your inbox.';
+                    }
+                    // Hide forgot password form after successful submission
+                    setTimeout(() => {
+                        document.getElementById('forgotPasswordSection').style.display = 'none';
+                        document.getElementById('loginForm').style.display = 'block';
+                        document.getElementById('forgotEmail').value = '';
+                    }, 3000);
+                } else {
+                    if (messageDiv) {
+                        messageDiv.className = 'message error';
+                        messageDiv.textContent = data.message || 'Failed to send password reset email. Please try again.';
+                    }
+                    console.error('Forgot password failed:', data);
+                }
+            } catch (error) {
+                console.error('Forgot password error:', error);
+                const messageDiv = document.getElementById('forgotPasswordMessage');
+                if (messageDiv) {
+                    messageDiv.className = 'message error';
+                    messageDiv.textContent = 'Error: ' + error.message;
+                }
+            } finally {
+                hideLoader();
+            }
+        }
+        
         // Initialize when DOM is ready
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, initializing login page');
+            
+            // Forgot password link click handler
+            const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+            if (forgotPasswordLink) {
+                forgotPasswordLink.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    document.getElementById('forgotPasswordSection').style.display = 'block';
+                    document.getElementById('loginForm').style.display = 'none';
+                    document.getElementById('message').textContent = '';
+                    document.getElementById('message').className = 'message';
+                });
+            }
+            
+            // Cancel forgot password handler
+            const cancelForgotPassword = document.getElementById('cancelForgotPassword');
+            if (cancelForgotPassword) {
+                cancelForgotPassword.addEventListener('click', function() {
+                    document.getElementById('forgotPasswordSection').style.display = 'none';
+                    document.getElementById('loginForm').style.display = 'block';
+                    document.getElementById('forgotEmail').value = '';
+                    document.getElementById('forgotPasswordMessage').textContent = '';
+                    document.getElementById('forgotPasswordMessage').className = 'message';
+                });
+            }
+            
+            // Forgot password form submit handler
+            const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+            if (forgotPasswordForm) {
+                forgotPasswordForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('forgotEmail').value;
+                    handleForgotPassword(email);
+                });
+            }
             
             // Check if token exists and redirect to appropriate dashboard
             const token = localStorage.getItem('token');
