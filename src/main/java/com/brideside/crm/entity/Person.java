@@ -1,4 +1,4 @@
-package com.brideside.crm.person;
+package com.brideside.crm.entity;
 
 import jakarta.persistence.*;
 import java.time.*;

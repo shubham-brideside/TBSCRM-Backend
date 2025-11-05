@@ -1,4 +1,7 @@
-package com.brideside.crm.person;
+package com.brideside.crm.mapper;
+
+import com.brideside.crm.dto.PersonDTO;
+import com.brideside.crm.entity.Person;
 
 public class PersonMapper {
     public static PersonDTO toDto(Person p) {

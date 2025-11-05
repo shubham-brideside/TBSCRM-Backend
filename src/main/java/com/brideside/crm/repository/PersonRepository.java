@@ -1,5 +1,6 @@
-package com.brideside.crm.person;
+package com.brideside.crm.repository;
 
+import com.brideside.crm.entity.Person;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;

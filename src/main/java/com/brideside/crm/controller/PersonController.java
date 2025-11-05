@@ -1,5 +1,9 @@
-package com.brideside.crm.person;
+package com.brideside.crm.controller;
 
+import com.brideside.crm.dto.PersonDTO;
+import com.brideside.crm.dto.PersonSummaryDTO;
+import com.brideside.crm.person.MergeRequest;
+import com.brideside.crm.service.PersonService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

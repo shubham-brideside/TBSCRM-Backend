@@ -1,4 +1,4 @@
-package com.brideside.crm.person;
+package com.brideside.crm.dto;
 
 public class PersonSummaryDTO {
     private PersonDTO person;
