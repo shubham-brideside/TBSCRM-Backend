@@ -5,7 +5,6 @@ import com.brideside.crm.dto.PersonSummaryDTO;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.mapper.PersonMapper;
 import com.brideside.crm.repository.PersonRepository;
-import com.brideside.crm.person.MergeRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;

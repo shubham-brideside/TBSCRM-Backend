@@ -26,6 +26,8 @@ public class ActivityMapper {
         d.setScheduleBy(e.getScheduleBy());
         d.setStatus(e.getStatus());
         d.setCallType(e.getCallType());
+        d.setDealId(e.getDealId());
+        d.setDateTime(e.getDateTime());
         return d;
     }
 
@@ -49,6 +51,8 @@ public class ActivityMapper {
         if (d.getScheduleBy() != null) e.setScheduleBy(d.getScheduleBy());
         if (d.getStatus() != null) e.setStatus(d.getStatus());
         if (d.getCallType() != null) e.setCallType(d.getCallType());
+        if (d.getDealId() != null) e.setDealId(d.getDealId());
+        if (d.getDateTime() != null) e.setDateTime(d.getDateTime());
     }
 }
 

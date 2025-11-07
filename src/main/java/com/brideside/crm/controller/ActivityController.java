@@ -36,7 +36,7 @@ public class ActivityController {
         return service.list(personId, dateFrom, dateTo, assignedUser, category, status, callType, done, pageable);
     }
 
-    @Operation(summary = "Create activity", description = "Create a new activity for a person")
+    @Operation(summary = "Create activity", description = "Create a new activity. For testing, only 'subject' is required. 'personId', 'dealId' and 'dateTime' are optional right now and will be enforced later.")
     @PostMapping
     public ResponseEntity<ActivityDTO> create(@Valid @RequestBody ActivityDTO dto) {
         return ResponseEntity.status(201).body(service.create(dto));

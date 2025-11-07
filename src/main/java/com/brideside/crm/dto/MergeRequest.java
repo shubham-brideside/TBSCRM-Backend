@@ -1,4 +1,4 @@
-package com.brideside.crm.person;
+package com.brideside.crm.dto;
 
 import java.util.List;
 
@@ -8,5 +8,4 @@ public class MergeRequest {
     public List<Long> getDuplicateIds() { return duplicateIds; }
     public void setDuplicateIds(List<Long> duplicateIds) { this.duplicateIds = duplicateIds; }
 }
-
 

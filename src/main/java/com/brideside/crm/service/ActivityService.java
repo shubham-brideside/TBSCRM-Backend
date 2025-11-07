@@ -2,6 +2,7 @@ package com.brideside.crm.service;
 
 import com.brideside.crm.dto.ActivityDTO;
 import com.brideside.crm.entity.Activity;
+import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.mapper.ActivityMapper;
 import com.brideside.crm.repository.ActivityRepository;
 import org.springframework.data.domain.Page;
@@ -20,9 +21,29 @@ public class ActivityService {
     }
 
     public ActivityDTO create(ActivityDTO dto) {
+        // Validate required fields
+        if (dto.getSubject() == null || dto.getSubject().trim().isEmpty()) {
+            throw new BadRequestException("Subject is required");
+        }
+        // personId and dealId are optional for now to allow testing without related records
+        // dateTime optional for now
+        
         Activity e = new Activity();
         ActivityMapper.updateEntity(dto, e);
-        return ActivityMapper.toDto(repository.save(e));
+        try {
+            return ActivityMapper.toDto(repository.save(e));
+        } catch (Exception ex) {
+            // Catch FK constraint violations and provide clearer error
+            String msg = ex.getMessage();
+            if (msg != null && msg.contains("foreign key constraint")) {
+                if (msg.contains("deal_id")) {
+                    throw new BadRequestException("Deal ID " + dto.getDealId() + " does not exist. Please provide a valid deal ID.");
+                } else if (msg.contains("person_id")) {
+                    throw new BadRequestException("Person ID " + dto.getPersonId() + " does not exist. Please provide a valid person ID.");
+                }
+            }
+            throw ex;
+        }
     }
 
     public ActivityDTO update(Long id, ActivityDTO dto) {
@@ -57,13 +78,31 @@ public class ActivityService {
             spec = spec.and((root, q, cb) -> cb.like(cb.lower(root.get("assignedUser")), "%" + assignedUser.toLowerCase() + "%"));
         }
         if (category != null && !category.isBlank()) {
-            spec = spec.and((root, q, cb) -> cb.equal(cb.lower(root.get("category")), category.toLowerCase()));
+            // Convert string to enum (case-insensitive)
+            try {
+                Activity.ActivityCategory categoryEnum = Activity.ActivityCategory.valueOf(category.toUpperCase().replace(" ", "_"));
+                spec = spec.and((root, q, cb) -> cb.equal(root.get("category"), categoryEnum));
+            } catch (IllegalArgumentException e) {
+                // Invalid category value, skip filter
+            }
         }
         if (status != null && !status.isBlank()) {
-            spec = spec.and((root, q, cb) -> cb.equal(cb.lower(root.get("status")), status.toLowerCase()));
+            // Convert string to enum (case-insensitive)
+            try {
+                Activity.ActivityStatus statusEnum = Activity.ActivityStatus.valueOf(status.toUpperCase().replace(" ", "_"));
+                spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), statusEnum));
+            } catch (IllegalArgumentException e) {
+                // Invalid status value, skip filter
+            }
         }
         if (callType != null && !callType.isBlank()) {
-            spec = spec.and((root, q, cb) -> cb.equal(cb.lower(root.get("callType")), callType.toLowerCase()));
+            // Convert string to enum (case-insensitive)
+            try {
+                Activity.CallType callTypeEnum = Activity.CallType.valueOf(callType.toUpperCase().replace(" ", "_"));
+                spec = spec.and((root, q, cb) -> cb.equal(root.get("callType"), callTypeEnum));
+            } catch (IllegalArgumentException e) {
+                // Invalid callType value, skip filter
+            }
         }
         if (done != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("done"), done));

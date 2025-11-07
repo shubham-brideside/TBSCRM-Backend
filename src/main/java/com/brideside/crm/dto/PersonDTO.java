@@ -1,20 +1,45 @@
 package com.brideside.crm.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
+@Schema(description = "Person data transfer object")
 public class PersonDTO {
+    @Schema(description = "Person ID (auto-generated, omit for POST requests)", type = "integer", format = "int64", accessMode = Schema.AccessMode.READ_ONLY)
     private Long id;
+    
     @NotBlank
+    @Schema(description = "Person name", required = true)
     private String name;
+    
+    @Schema(description = "Instagram ID")
     private String instagramId;
+    
+    @Schema(description = "Phone number")
     private String phone;
+    
+    @Schema(description = "Wedding date (format: dd/MM/yyyy)")
     private String weddingDate;
+    
+    @Schema(description = "Wedding venue")
     private String venue;
+    
+    @Schema(description = "Organization name")
     private String organization;
+    
+    @Schema(description = "Manager name")
     private String manager;
+    
+    @Schema(description = "Category")
     private String category;
+    
+    @Schema(description = "Source")
     private String source;
+    
+    @Schema(description = "Created date (format: dd/MM/yyyy)")
     private String createdDate;
+    
+    @Schema(description = "Event type")
     private String eventType;
 
     public Long getId() { return id; }
