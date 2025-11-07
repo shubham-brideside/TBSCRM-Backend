@@ -67,12 +67,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/create-admin").permitAll()
                         .requestMatchers("/api/admin/activate-admin").permitAll()
                         .requestMatchers("/api/admin/test-email").permitAll() // Added for email testing
-                        // TEMP: open new CRM entities for easier local testing
-                        .requestMatchers("/api/deals/**", 
-                                         "/api/pipelines/**", 
-                                         "/api/sources/**", 
-                                         "/api/persons/**", 
-                                         "/api/activities/**").permitAll()
+                        .requestMatchers("/api/persons/**").permitAll() // Temporarily open for testing
+                        .requestMatchers("/api/activities/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/frontend/**").permitAll()
                         .anyRequest().authenticated()

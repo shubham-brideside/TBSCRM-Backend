@@ -1,36 +1,46 @@
-package com.brideside.crm.entity;
+package com.brideside.crm.dto;
 
-import jakarta.persistence.*;
-import java.time.*;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 
-@Entity
-@Table(name = "persons")
-public class Person {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+@Schema(description = "Person data transfer object")
+public class PersonDTO {
+    @Schema(description = "Person ID (auto-generated, omit for POST requests)", type = "integer", format = "int64", accessMode = Schema.AccessMode.READ_ONLY)
     private Long id;
-
-    @Column(nullable = false)
+    
+    @NotBlank
+    @Schema(description = "Person name", required = true)
     private String name;
-
+    
+    @Schema(description = "Instagram ID")
     private String instagramId;
+    
+    @Schema(description = "Phone number")
     private String phone;
-    private String weddingDate; // DD/MM/YYYY for UI
+    
+    @Schema(description = "Wedding date (format: dd/MM/yyyy)")
+    private String weddingDate;
+    
+    @Schema(description = "Wedding venue")
     private String venue;
+    
+    @Schema(description = "Organization name")
     private String organization;
+    
+    @Schema(description = "Manager name")
     private String manager;
+    
+    @Schema(description = "Category")
     private String category;
+    
+    @Schema(description = "Source")
     private String source;
-    private String createdDate; // DD/MM/YYYY (UI column)
+    
+    @Schema(description = "Created date (format: dd/MM/yyyy)")
+    private String createdDate;
+    
+    @Schema(description = "Event type")
     private String eventType;
-
-    private Instant createdAt = Instant.now();
-    private Instant updatedAt = Instant.now();
-
-    @PreUpdate
-    public void preUpdate() {
-        this.updatedAt = Instant.now();
-    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -56,10 +66,6 @@ public class Person {
     public void setCreatedDate(String createdDate) { this.createdDate = createdDate; }
     public String getEventType() { return eventType; }
     public void setEventType(String eventType) { this.eventType = eventType; }
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-    public Instant getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 }
 
 
