@@ -25,20 +25,36 @@ public class ActivityService {
         if (dto.getSubject() == null || dto.getSubject().trim().isEmpty()) {
             throw new BadRequestException("Subject is required");
         }
-        // personId and dealId are optional for now to allow testing without related records
-        // dateTime optional for now
+        
+        // personId and dealId are optional - will be null by default
+        // This allows creating activities without linking to persons/deals initially
+        // When deal page is integrated, these can be set via frontend
+        // For now, frontend doesn't need to send these fields
+        
+        // Normalize personId and dealId: if 0 or negative, set to null
+        // Frontend might send 0 or empty string, we treat it as null
+        if (dto.getPersonId() != null && dto.getPersonId() <= 0) {
+            dto.setPersonId(null);
+        }
+        if (dto.getDealId() != null && dto.getDealId() <= 0) {
+            dto.setDealId(null);
+        }
         
         Activity e = new Activity();
         ActivityMapper.updateEntity(dto, e);
+        // personId and dealId will be null by default if not provided in DTO
+        // Mapper handles setting them to null explicitly
+        
         try {
             return ActivityMapper.toDto(repository.save(e));
         } catch (Exception ex) {
             // Catch FK constraint violations and provide clearer error
+            // Only throw if personId/dealId were actually provided (not null)
             String msg = ex.getMessage();
             if (msg != null && msg.contains("foreign key constraint")) {
-                if (msg.contains("deal_id")) {
+                if (msg.contains("deal_id") && dto.getDealId() != null) {
                     throw new BadRequestException("Deal ID " + dto.getDealId() + " does not exist. Please provide a valid deal ID.");
-                } else if (msg.contains("person_id")) {
+                } else if (msg.contains("person_id") && dto.getPersonId() != null) {
                     throw new BadRequestException("Person ID " + dto.getPersonId() + " does not exist. Please provide a valid person ID.");
                 }
             }

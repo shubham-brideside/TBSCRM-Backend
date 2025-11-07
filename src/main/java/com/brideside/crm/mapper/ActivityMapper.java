@@ -19,7 +19,9 @@ public class ActivityMapper {
         d.setOrganization(e.getOrganization());
         d.setDone(e.isDone());
         d.setCategory(e.getCategory());
+        // Map dealName from entity to both deal and dealName in DTO for frontend compatibility
         d.setDealName(e.getDealName());
+        d.setDeal(e.getDealName()); // Frontend expects 'deal' field
         d.setInstagramId(e.getInstagramId());
         d.setPhone(e.getPhone());
         d.setDueDate(e.getDueDate());
@@ -40,18 +42,27 @@ public class ActivityMapper {
         if (d.getPriority() != null) e.setPriority(d.getPriority());
         if (d.getAssignedUser() != null) e.setAssignedUser(d.getAssignedUser());
         if (d.getNotes() != null) e.setNotes(d.getNotes());
-        if (d.getPersonId() != null) e.setPersonId(d.getPersonId());
+        // personId and dealId are optional - set to null if not provided
+        // Frontend doesn't need to send these fields, they'll be null by default
+        // Will be used when person/deal pages are integrated
+        e.setPersonId(d.getPersonId()); // Can be null
+        e.setDealId(d.getDealId()); // Can be null, defaults to null
         if (d.getOrganization() != null) e.setOrganization(d.getOrganization());
         if (d.getDone() != null) e.setDone(d.getDone());
         if (d.getCategory() != null) e.setCategory(d.getCategory());
-        if (d.getDealName() != null) e.setDealName(d.getDealName());
+        // Handle both 'deal' and 'dealName' - prefer 'deal' if both are provided
+        // Frontend sends 'deal' field, but we store it as 'dealName' in entity
+        if (d.getDeal() != null) {
+            e.setDealName(d.getDeal());
+        } else if (d.getDealName() != null) {
+            e.setDealName(d.getDealName());
+        }
         if (d.getInstagramId() != null) e.setInstagramId(d.getInstagramId());
         if (d.getPhone() != null) e.setPhone(d.getPhone());
         if (d.getDueDate() != null) e.setDueDate(d.getDueDate());
         if (d.getScheduleBy() != null) e.setScheduleBy(d.getScheduleBy());
         if (d.getStatus() != null) e.setStatus(d.getStatus());
         if (d.getCallType() != null) e.setCallType(d.getCallType());
-        if (d.getDealId() != null) e.setDealId(d.getDealId());
         if (d.getDateTime() != null) e.setDateTime(d.getDateTime());
     }
 }

@@ -34,8 +34,8 @@ public class ActivityDTO {
     @Schema(description = "Activity notes")
     private String notes;
 
-    // Temporarily optional for testing without linking
-    @Schema(description = "Person ID (optional)", type = "integer", format = "int64")
+    // Optional - can be null. Will be used when person page is linked to activities
+    @Schema(description = "Person ID (optional, can be null)", type = "integer", format = "int64", example = "null")
     private Long personId;
     
     @Schema(description = "Organization name")
@@ -48,8 +48,11 @@ public class ActivityDTO {
     @Schema(description = "Category of the activity", allowableValues = {"ACTIVITY", "CALL", "MEETING_SCHEDULER"})
     private Activity.ActivityCategory category; // ACTIVITY, CALL, MEETING_SCHEDULER
     
-    @Schema(description = "Deal name")
+    @Schema(description = "Deal name (legacy field, use 'deal' instead)")
     private String dealName;
+    
+    @Schema(description = "Deal name (format: 'Person Name + Organization', e.g., 'Isshita + TBS'). This is the preferred field name. If both 'deal' and 'dealName' are provided, 'deal' takes precedence.")
+    private String deal;
     
     @Schema(description = "Instagram ID")
     private String instagramId;
@@ -69,9 +72,10 @@ public class ActivityDTO {
     @Schema(description = "Type of call (only for CALL category)", allowableValues = {"INBOUND", "OUTBOUND", "MISSED"})
     private Activity.CallType callType;  // INBOUND, OUTBOUND, MISSED (for Calls only)
 
-    // Temporarily optional for testing without linking
-    @Schema(description = "Deal ID (optional)", type = "integer", format = "int64")
-    private Long dealId;      // each activity belongs to one deal
+    // Optional - defaults to null. Will be used when deal page is integrated
+    // One person can have multiple deals, each deal can have multiple activities
+    @Schema(description = "Deal ID (optional, defaults to null - will be used when deal page is integrated)", type = "integer", format = "int64", example = "null")
+    private Long dealId;      // each activity belongs to one deal (when deal is linked)
 
     @Schema(description = "Optional canonical timestamp for the activity")
     private String dateTime;  // optional canonical timestamp for the activity
@@ -104,6 +108,8 @@ public class ActivityDTO {
     public void setCategory(Activity.ActivityCategory category) { this.category = category; }
     public String getDealName() { return dealName; }
     public void setDealName(String dealName) { this.dealName = dealName; }
+    public String getDeal() { return deal; }
+    public void setDeal(String deal) { this.deal = deal; }
     public String getInstagramId() { return instagramId; }
     public void setInstagramId(String instagramId) { this.instagramId = instagramId; }
     public String getPhone() { return phone; }
