@@ -34,10 +34,11 @@ public class ActivityController {
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "callType", required = false) String callType,
             @RequestParam(name = "done", required = false) Boolean done,
+            @RequestParam(name = "filter", required = false) String filter,
             @ParameterObject @PageableDefault(size = 25, sort = {"date"}) Pageable pageable
     ) {
-        logger.debug("Listing activities - PersonId filter: {}, Category: {}, Status: {}", personId, category, status);
-        return service.list(personId, dateFrom, dateTo, assignedUser, category, status, callType, done, pageable);
+        logger.debug("Listing activities - PersonId filter: {}, Category: {}, Status: {}, Filter: {}", personId, category, status, filter);
+        return service.list(personId, dateFrom, dateTo, assignedUser, category, status, callType, done, filter, pageable);
     }
 
     @Operation(summary = "Create activity", description = "Create a new activity. Only 'subject' is required. 'personId' and 'dealId' are optional and will default to null. When creating from a person page, include personId to link the activity. Activities with personId will appear in the main activity list when no personId filter is applied.")
