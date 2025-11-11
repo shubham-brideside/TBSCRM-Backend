@@ -2,6 +2,7 @@ package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.CreateUserRequest;
 import com.brideside.crm.dto.SetPasswordRequest;
+import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.dto.UpdateUserRequest;
 import com.brideside.crm.dto.UserResponse;
 import com.brideside.crm.entity.InvitationToken;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -77,12 +79,7 @@ public class UserServiceImpl implements UserService {
         user.setPasswordSet(false);
         user.setPassword("TEMPORARY_PASSWORD"); // Temporary, will be set when user accepts invitation
 
-        // Set manager if provided
-        if (request.getManagerId() != null) {
-            User manager = userRepository.findById(request.getManagerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Manager not found with id: " + request.getManagerId()));
-            user.setManager(manager);
-        }
+        user.setManager(resolveManagerForRole(roleName, request.getManagerId(), null));
 
         user = userRepository.save(user);
 
@@ -198,25 +195,16 @@ public class UserServiceImpl implements UserService {
         user.setLastName(request.getLastName());
         user.setRole(role);
 
-        // Update manager if provided
-        if (request.getManagerId() != null) {
-            // Prevent user from being their own manager
-            if (request.getManagerId().equals(id)) {
+        User newManager = resolveManagerForRole(roleName, request.getManagerId(), user.getManager());
+        if (newManager != null) {
+            if (newManager.getId().equals(id)) {
                 throw new BadRequestException("User cannot be their own manager");
             }
-            
-            User manager = userRepository.findById(request.getManagerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Manager not found with id: " + request.getManagerId()));
-            
-            // Prevent circular manager relationships
-            if (isCircularManagerRelationship(id, manager.getId())) {
+            if (isCircularManagerRelationship(id, newManager.getId())) {
                 throw new BadRequestException("Cannot set manager: this would create a circular manager relationship");
             }
-            
-            user.setManager(manager);
-        } else {
-            user.setManager(null);
         }
+        user.setManager(newManager);
 
         user = userRepository.save(user);
         return convertToResponse(user);
@@ -290,6 +278,14 @@ public class UserServiceImpl implements UserService {
         // Delete the user
         userRepository.delete(user);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TeamDtos.UserSummary> managerOptions(Role.RoleName roleName) {
+        return getManagerCandidates(roleName).stream()
+                .map(TeamDtos::toSummary)
+                .collect(Collectors.toList());
+    }
     
     /**
      * Check if current user can access target user based on role hierarchy
@@ -359,6 +355,57 @@ public class UserServiceImpl implements UserService {
     private User getCurrentUser(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("Current user not found"));
+    }
+
+    private User resolveManagerForRole(Role.RoleName roleName, Long managerId, User existingManager) {
+        Set<Role.RoleName> allowedRoles = getAllowedManagerRoles(roleName);
+        if (allowedRoles.isEmpty()) {
+            if (managerId != null) {
+                throw new BadRequestException("Selected role does not support assigning a manager");
+            }
+            return null;
+        }
+        if (managerId == null) {
+            if (existingManager != null && existingManager.getRole() != null &&
+                    allowedRoles.contains(existingManager.getRole().getName())) {
+                return existingManager;
+            }
+            return null;
+        }
+        User manager = userRepository.findById(managerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Manager not found with id: " + managerId));
+        if (Boolean.FALSE.equals(manager.getActive())) {
+            throw new BadRequestException("Manager must be an active user");
+        }
+        if (manager.getRole() == null || !allowedRoles.contains(manager.getRole().getName())) {
+            throw new BadRequestException("Manager role is not permitted for selected user role");
+        }
+        return manager;
+    }
+
+    private Set<Role.RoleName> getAllowedManagerRoles(Role.RoleName roleName) {
+        if (roleName == null) {
+            return Set.of(Role.RoleName.CATEGORY_MANAGER, Role.RoleName.SALES);
+        }
+        switch (roleName) {
+            case ADMIN:
+            case CATEGORY_MANAGER:
+                return Set.of();
+            case SALES:
+                return Set.of(Role.RoleName.CATEGORY_MANAGER);
+            case PRESALES:
+                return Set.of(Role.RoleName.SALES);
+            default:
+                return Set.of();
+        }
+    }
+
+    private List<User> getManagerCandidates(Role.RoleName roleName) {
+        Set<Role.RoleName> allowedRoles = getAllowedManagerRoles(roleName);
+        if (allowedRoles.isEmpty()) {
+            return List.of();
+        }
+        return userRepository.findByRole_NameInAndActiveTrue(allowedRoles);
     }
 
     private UserResponse convertToResponse(User user) {

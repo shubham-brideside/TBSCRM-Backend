@@ -3,8 +3,10 @@ package com.brideside.crm.controller;
 import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.CreateUserRequest;
 import com.brideside.crm.dto.SetPasswordRequest;
+import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.dto.UpdateUserRequest;
 import com.brideside.crm.dto.UserResponse;
+import com.brideside.crm.entity.Role;
 import com.brideside.crm.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -46,6 +48,24 @@ public class UserController {
         String currentUserEmail = getCurrentUserEmail();
         List<UserResponse> users = userService.getAllUsers(currentUserEmail);
         return ResponseEntity.ok(ApiResponse.success("Users retrieved successfully", users));
+    }
+
+    @GetMapping("/managers")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List eligible managers for a role", description = "Returns managers allowed for the specified role. Only accessible by ADMIN.")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public ResponseEntity<ApiResponse<List<TeamDtos.UserSummary>>> managerOptions(
+            @RequestParam(name = "forRole", required = false) String forRole) {
+        Role.RoleName roleName = null;
+        if (forRole != null && !forRole.isBlank()) {
+            try {
+                roleName = Role.RoleName.valueOf(forRole.toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Invalid role value. Allowed: ADMIN, CATEGORY_MANAGER, SALES, PRESALES"));
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.success("Managers fetched", userService.managerOptions(roleName)));
     }
 
     @GetMapping("/{id}")
