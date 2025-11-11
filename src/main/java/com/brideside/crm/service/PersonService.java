@@ -2,92 +2,76 @@ package com.brideside.crm.service;
 
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.dto.PersonSummaryDTO;
+import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
+import com.brideside.crm.entity.Role;
+import com.brideside.crm.entity.User;
+import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.mapper.PersonMapper;
+import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
+import com.brideside.crm.repository.PersonSpecifications;
+import com.brideside.crm.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
-import java.util.*;
-
-import static com.brideside.crm.repository.PersonSpecifications.*;
+import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class PersonService {
-    private final PersonRepository repository;
 
-    public PersonService(PersonRepository repository) {
+    private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES = EnumSet.of(Role.RoleName.SALES);
+
+    private final PersonRepository repository;
+    private final OrganizationRepository organizationRepository;
+    private final UserRepository userRepository;
+
+    public PersonService(PersonRepository repository,
+                         OrganizationRepository organizationRepository,
+                         UserRepository userRepository) {
         this.repository = repository;
+        this.organizationRepository = organizationRepository;
+        this.userRepository = userRepository;
     }
 
-    public Page<PersonDTO> list(String q, String category, String organization, String manager, String dateFrom, String dateTo, String weddingVenue, String weddingDate, Pageable pageable) {
-        Specification<Person> spec = Specification.where(null);
+    public Page<PersonDTO> list(String q,
+                                Person.PersonLabel label,
+                                Long organizationId,
+                                Long ownerId,
+                                Person.PersonSource source,
+                                LocalDate leadDateFrom,
+                                LocalDate leadDateTo,
+                                Pageable pageable) {
 
-        Specification<Person> searchSpec = search(q);
-        if (searchSpec != null) spec = spec.and(searchSpec);
-
-        Specification<Person> categorySpec = equalsField("category", category);
-        if (categorySpec != null) spec = spec.and(categorySpec);
-
-        Specification<Person> orgSpec = equalsField("organization", organization);
-        if (orgSpec != null) spec = spec.and(orgSpec);
-
-        Specification<Person> managerSpec = equalsField("manager", manager);
-        if (managerSpec != null) spec = spec.and(managerSpec);
-
-        java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        java.time.Instant fromInstant = null;
-        java.time.Instant toInstantExclusive = null;
-        if (dateFrom != null && !dateFrom.isBlank()) {
-            java.time.LocalDate d = java.time.LocalDate.parse(dateFrom, fmt);
-            fromInstant = d.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant();
-        }
-        if (dateTo != null && !dateTo.isBlank()) {
-            java.time.LocalDate d = java.time.LocalDate.parse(dateTo, fmt).plusDays(1);
-            toInstantExclusive = d.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant();
-        }
-
-        Specification<Person> dateSpec = createdAtBetween(fromInstant, toInstantExclusive);
-        if (dateSpec != null) spec = spec.and(dateSpec);
-
-        Specification<Person> venueSpec = equalsField("venue", weddingVenue);
-        if (venueSpec != null) spec = spec.and(venueSpec);
-
-        Specification<Person> wedDateEq = equalsField("weddingDate", weddingDate);
-        if (wedDateEq != null) spec = spec.and(wedDateEq);
+        Specification<Person> spec = Specification.where(PersonSpecifications.search(q))
+                .and(PersonSpecifications.hasLabel(label))
+                .and(PersonSpecifications.hasOrganization(organizationId))
+                .and(PersonSpecifications.hasOwner(ownerId))
+                .and(PersonSpecifications.hasSource(source))
+                .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo));
 
         return repository.findAll(spec, pageable).map(PersonMapper::toDto);
     }
 
-    public Map<String, List<String>> getFilterMeta() {
-        Map<String, List<String>> meta = new HashMap<>();
-        meta.put("categories", repository.findDistinctCategories());
-        meta.put("organizations", repository.findDistinctOrganizations());
-        meta.put("managers", repository.findDistinctManagers());
-        meta.put("venues", repository.findDistinctVenues());
-        return meta;
-    }
-
-    public List<String> getManagersByCategory(String category) {
-        if (category == null || category.isBlank()) return repository.findDistinctManagers();
-        return repository.findManagersByCategory(category);
-    }
-
-    public List<String> getManagersByOrganization(String organization) {
-        if (organization == null || organization.isBlank()) return repository.findDistinctManagers();
-        return repository.findManagersByOrganization(organization);
-    }
-
     public PersonDTO get(Long id) {
-        return repository.findById(id).map(PersonMapper::toDto).orElseThrow(() -> new NoSuchElementException("Person not found"));
+        return repository.findById(id)
+                .map(PersonMapper::toDto)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
     }
 
     public PersonSummaryDTO getSummary(Long id) {
-        Person person = repository.findById(id).orElseThrow(() -> new NoSuchElementException("Person not found"));
+        Person person = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
         PersonSummaryDTO summary = new PersonSummaryDTO();
         summary.setPerson(PersonMapper.toDto(person));
         summary.setDealsCount(0L);
@@ -95,16 +79,18 @@ public class PersonService {
     }
 
     public PersonDTO create(PersonDTO dto) {
-        Person e = new Person();
-        if (dto.getCreatedDate() == null) dto.setCreatedDate(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-        PersonMapper.updateEntity(dto, e);
-        return PersonMapper.toDto(repository.save(e));
+        Person entity = new Person();
+        apply(dto, entity);
+        Person saved = repository.save(entity);
+        return PersonMapper.toDto(saved);
     }
 
     public PersonDTO update(Long id, PersonDTO dto) {
-        Person e = repository.findById(id).orElseThrow(() -> new NoSuchElementException("Person not found"));
-        PersonMapper.updateEntity(dto, e);
-        return PersonMapper.toDto(repository.save(e));
+        Person entity = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        apply(dto, entity);
+        Person saved = repository.save(entity);
+        return PersonMapper.toDto(saved);
     }
 
     public void delete(Long id) {
@@ -118,34 +104,118 @@ public class PersonService {
     }
 
     public PersonDTO merge(Long targetId, List<Long> duplicateIds) {
-        if (duplicateIds == null || duplicateIds.isEmpty()) return get(targetId);
-        Person target = repository.findById(targetId).orElseThrow(() -> new NoSuchElementException("Person not found"));
+        if (duplicateIds == null || duplicateIds.isEmpty()) {
+            return get(targetId);
+        }
+
+        Person target = repository.findById(targetId)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
         List<Person> sources = repository.findAllById(duplicateIds);
 
-        for (Person s : sources) {
-            if (isBlank(target.getName()) && !isBlank(s.getName())) target.setName(s.getName());
-            if (isBlank(target.getInstagramId()) && !isBlank(s.getInstagramId())) target.setInstagramId(s.getInstagramId());
-            if (isBlank(target.getPhone()) && !isBlank(s.getPhone())) target.setPhone(s.getPhone());
-            if (isBlank(target.getWeddingDate()) && !isBlank(s.getWeddingDate())) target.setWeddingDate(s.getWeddingDate());
-            if (isBlank(target.getVenue()) && !isBlank(s.getVenue())) target.setVenue(s.getVenue());
-            if (isBlank(target.getOrganization()) && !isBlank(s.getOrganization())) target.setOrganization(s.getOrganization());
-            if (isBlank(target.getManager()) && !isBlank(s.getManager())) target.setManager(s.getManager());
-            if (isBlank(target.getCategory()) && !isBlank(s.getCategory())) target.setCategory(s.getCategory());
-            if (isBlank(target.getSource()) && !isBlank(s.getSource())) target.setSource(s.getSource());
-            if (isBlank(target.getCreatedDate()) && !isBlank(s.getCreatedDate())) target.setCreatedDate(s.getCreatedDate());
-            if (isBlank(target.getEventType()) && !isBlank(s.getEventType())) target.setEventType(s.getEventType());
+        for (Person source : sources) {
+            if (isBlank(target.getName()) && StringUtils.hasText(source.getName())) {
+                target.setName(source.getName());
+            }
+            if (!StringUtils.hasText(target.getInstagramId()) && StringUtils.hasText(source.getInstagramId())) {
+                target.setInstagramId(source.getInstagramId());
+            }
+            if (!StringUtils.hasText(target.getPhone()) && StringUtils.hasText(source.getPhone())) {
+                target.setPhone(source.getPhone());
+            }
+            if (!StringUtils.hasText(target.getEmail()) && StringUtils.hasText(source.getEmail())) {
+                target.setEmail(source.getEmail());
+            }
+            if (target.getLeadDate() == null && source.getLeadDate() != null) {
+                target.setLeadDate(source.getLeadDate());
+            }
+            if (target.getOrganization() == null && source.getOrganization() != null) {
+                target.setOrganization(source.getOrganization());
+            }
+            if (target.getOwner() == null && source.getOwner() != null) {
+                target.setOwner(source.getOwner());
+            }
+            if (target.getLabel() == null && source.getLabel() != null) {
+                target.setLabel(source.getLabel());
+            }
+            if (target.getSource() == null && source.getSource() != null) {
+                target.setSource(source.getSource());
+            }
         }
 
         Person saved = repository.save(target);
-        List<Long> toDelete = new java.util.ArrayList<>();
-        for (Long id : duplicateIds) {
-            if (!id.equals(targetId)) toDelete.add(id);
+        List<Long> toDelete = duplicateIds.stream()
+                .filter(id -> !id.equals(targetId))
+                .collect(Collectors.toList());
+        if (!toDelete.isEmpty()) {
+            repository.deleteAllByIdInBatch(toDelete);
         }
-        if (!toDelete.isEmpty()) repository.deleteAllByIdInBatch(toDelete);
         return PersonMapper.toDto(saved);
     }
 
-    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
-}
+    public List<PersonDTO.OwnerOption> listOwnerOptions() {
+        return userRepository.findByRole_NameInAndActiveTrue(ALLOWED_OWNER_ROLES).stream()
+                .map(this::toOwnerOption)
+                .collect(Collectors.toList());
+    }
 
+    public List<PersonDTO.EnumOption> listLabelOptions() {
+        return PersonDTO.labelOptions();
+    }
+
+    public List<PersonDTO.EnumOption> listSourceOptions() {
+        return PersonDTO.sourceOptions();
+    }
+
+    private void apply(PersonDTO dto, Person entity) {
+        if (!StringUtils.hasText(dto.getName())) {
+            throw new BadRequestException("Person name is required");
+        }
+        PersonMapper.updateEntity(dto, entity);
+        entity.setName(dto.getName().trim());
+
+        if (dto.getOrganizationId() != null) {
+            entity.setOrganization(resolveOrganization(dto.getOrganizationId()));
+        }
+
+        if (dto.getOwnerId() != null) {
+            entity.setOwner(resolveOwner(dto.getOwnerId()));
+        }
+
+        if (dto.getLeadDate() == null) {
+            if (entity.getLeadDate() == null) {
+                entity.setLeadDate(LocalDate.now());
+            }
+        }
+    }
+
+    private Organization resolveOrganization(Long organizationId) {
+        return organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new BadRequestException("Organization not found with id " + organizationId));
+    }
+
+    private User resolveOwner(Long ownerId) {
+        User user = userRepository.findById(ownerId)
+                .orElseThrow(() -> new BadRequestException("Owner not found with id " + ownerId));
+        if (user.getRole() == null || !ALLOWED_OWNER_ROLES.contains(user.getRole().getName())) {
+            throw new BadRequestException("Owner must have SALES role");
+        }
+        if (Boolean.FALSE.equals(user.getActive())) {
+            throw new BadRequestException("Owner must be active");
+        }
+        return user;
+    }
+
+    private PersonDTO.OwnerOption toOwnerOption(User user) {
+        PersonDTO.OwnerOption option = new PersonDTO.OwnerOption();
+        option.setId(user.getId());
+        option.setFirstName(user.getFirstName());
+        option.setLastName(user.getLastName());
+        option.setEmail(user.getEmail());
+        return option;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+}
 
