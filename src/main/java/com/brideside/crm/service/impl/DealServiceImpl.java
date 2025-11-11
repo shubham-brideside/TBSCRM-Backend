@@ -32,8 +32,9 @@ public class DealServiceImpl implements DealService {
             Person person = personRepository.findById(request.personId)
                 .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
             deal.setPerson(person);
-            if (person.getPhoneNum() != null) {
-                deal.setContactNumber(person.getPhoneNum());
+            String phone = person.getPhone();
+            if (phone != null) {
+                deal.setContactNumber(phone);
             }
         }
         if (request.pipelineId != null) {
