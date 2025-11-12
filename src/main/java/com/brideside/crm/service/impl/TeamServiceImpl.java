@@ -112,6 +112,7 @@ public class TeamServiceImpl implements TeamService {
     public List<TeamDtos.UserSummary> listMembers() {
         return userRepository.findByRole_NameAndActiveTrue(Role.RoleName.PRESALES)
                 .stream()
+                .filter(user -> user.getId() != null && !teamRepository.existsByMembers_Id(user.getId()))
                 .map(TeamDtos::toSummary)
                 .collect(Collectors.toList());
     }

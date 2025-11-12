@@ -17,6 +17,7 @@ public interface DealService {
     List<Deal> listByCategory(Long categoryId);
     Deal updateStage(Long id, DealDtos.UpdateStageRequest request);
     Deal markStatus(Long id, DealStatus status);
+    void delete(Long id);
 }
 
 
