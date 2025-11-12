@@ -6,12 +6,18 @@ import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.dto.UpdateUserRequest;
 import com.brideside.crm.dto.UserResponse;
 import com.brideside.crm.entity.InvitationToken;
+import com.brideside.crm.entity.Organization;
+import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
+import com.brideside.crm.entity.Team;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.InvitationTokenRepository;
+import com.brideside.crm.repository.OrganizationRepository;
+import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.RoleRepository;
+import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.EmailService;
 import com.brideside.crm.service.UserService;
@@ -34,6 +40,15 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private RoleRepository roleRepository;
+
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private PersonRepository personRepository;
+
+    @Autowired
+    private TeamRepository teamRepository;
 
     @Autowired
     private InvitationTokenRepository invitationTokenRepository;
@@ -245,27 +260,74 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
 
         // Check if user has any subordinates (users with this user as manager)
+        User newManager = null;
+
+        if (reassignManagerId != null) {
+            if (reassignManagerId.equals(id)) {
+                throw new BadRequestException("Cannot reassign subordinates to the user being deleted");
+            }
+            newManager = userRepository.findById(reassignManagerId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Manager not found with id: " + reassignManagerId));
+        }
+
         List<User> subordinates = userRepository.findByManagerId(id);
         if (!subordinates.isEmpty()) {
-            // If reassignManagerId is provided, reassign subordinates to new manager
-            if (reassignManagerId != null) {
-                User newManager = userRepository.findById(reassignManagerId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Manager not found with id: " + reassignManagerId));
-                
-                // Validate that new manager is not the user being deleted
-                if (reassignManagerId.equals(id)) {
-                    throw new BadRequestException("Cannot reassign subordinates to the user being deleted");
-                }
-                
-                // Reassign all subordinates to the new manager
-                for (User subordinate : subordinates) {
-                    subordinate.setManager(newManager);
-                    userRepository.save(subordinate);
-                }
+            if (newManager == null) {
+                throw new BadRequestException("Cannot delete user. This user has " + subordinates.size()
+                        + " subordinate(s). Please provide a manager ID to reassign them to, or delete the subordinates first.");
+            }
+
+            for (User subordinate : subordinates) {
+                subordinate.setManager(newManager);
+                userRepository.save(subordinate);
+            }
+        }
+
+        // Reassign or clear organization ownerships
+        List<Organization> ownedOrganizations = organizationRepository.findByOwner_Id(id);
+        for (Organization organization : ownedOrganizations) {
+            if (newManager != null && newManager.getRole() != null &&
+                    (newManager.getRole().getName() == Role.RoleName.SALES
+                            || newManager.getRole().getName() == Role.RoleName.CATEGORY_MANAGER)) {
+                organization.setOwner(newManager);
             } else {
-                // No reassignment provided, throw error
-                throw new BadRequestException("Cannot delete user. This user has " + subordinates.size() + 
-                        " subordinate(s). Please provide a manager ID to reassign them to, or delete the subordinates first.");
+                organization.setOwner(null);
+            }
+            organizationRepository.save(organization);
+        }
+
+        // Reassign or clear person ownerships
+        List<Person> ownedPersons = personRepository.findByOwner_Id(id);
+        for (Person person : ownedPersons) {
+            if (newManager != null && newManager.getRole() != null &&
+                    newManager.getRole().getName() == Role.RoleName.SALES) {
+                person.setOwner(newManager);
+            } else {
+                person.setOwner(null);
+            }
+            personRepository.save(person);
+        }
+
+        // Reassign team management
+        List<Team> managedTeams = teamRepository.findByManager_Id(id);
+        for (Team team : managedTeams) {
+            if (newManager != null && newManager.getRole() != null &&
+                    newManager.getRole().getName() == Role.RoleName.SALES) {
+                team.setManager(newManager);
+                team.getMembers().remove(user);
+                team.getMembers().add(newManager);
+            } else {
+                team.setManager(null);
+                team.getMembers().remove(user);
+            }
+            teamRepository.save(team);
+        }
+
+        // Remove from team memberships
+        List<Team> memberTeams = teamRepository.findByMembers_Id(id);
+        for (Team team : memberTeams) {
+            if (team.getMembers().remove(user)) {
+                teamRepository.save(team);
             }
         }
 

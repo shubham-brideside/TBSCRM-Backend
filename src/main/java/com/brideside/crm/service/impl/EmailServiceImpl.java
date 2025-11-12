@@ -26,8 +26,17 @@ public class EmailServiceImpl implements EmailService {
     @Value("${app.email.from-name:Brideside CRM}")
     private String fromName;
 
-    @Value("${app.frontend-url:http://localhost:3000}")
-    private String frontendUrl;
+    @Value("${app.frontend.base-url:http://localhost:3000}")
+    private String frontendBaseUrl;
+
+    @Value("${app.frontend.invitation-path:/accept-invitation}")
+    private String invitationPath;
+
+    @Value("${app.frontend.reset-path:/reset-password}")
+    private String resetPath;
+
+    @Value("${app.frontend.login-path:/login}")
+    private String loginPath;
 
     @Override
     public void sendInvitationEmail(User user, String token) {
@@ -91,12 +100,15 @@ public class EmailServiceImpl implements EmailService {
     }
 
     private String buildInvitationEmailBody(User user, String token) {
-        String invitationLink = frontendUrl + "/accept-invitation.html?token=" + token;
+        String invitationLink = buildFrontendLink(invitationPath, token);
+        String loginLink = buildFrontendLink(loginPath, null);
         
         return "Dear " + user.getFirstName() + " " + user.getLastName() + ",\n\n" +
                 "You have been invited to join Brideside CRM.\n\n" +
                 "Please click on the link below to accept the invitation and set your password:\n" +
                 invitationLink + "\n\n" +
+                "Once your password is set, you can log in here:\n" +
+                loginLink + "\n\n" +
                 "This link will expire in 7 days.\n\n" +
                 "If you did not request this invitation, please ignore this email.\n\n" +
                 "Best regards,\n" +
@@ -104,15 +116,34 @@ public class EmailServiceImpl implements EmailService {
     }
 
     private String buildPasswordResetEmailBody(User user, String token) {
-        String resetLink = frontendUrl + "/reset-password.html?token=" + token;
+        String resetLink = buildFrontendLink(resetPath, token);
+        String loginLink = buildFrontendLink(loginPath, null);
         
         return "Dear " + user.getFirstName() + " " + user.getLastName() + ",\n\n" +
                 "We received a request to reset your password for your Brideside CRM account.\n\n" +
                 "Please click on the link below to reset your password:\n" +
                 resetLink + "\n\n" +
+                "After resetting, you can log in here:\n" +
+                loginLink + "\n\n" +
                 "This link will expire in 24 hours.\n\n" +
                 "If you did not request a password reset, please ignore this email. Your password will remain unchanged.\n\n" +
                 "Best regards,\n" +
                 "Brideside CRM Team";
+    }
+
+    private String buildFrontendLink(String path, String token) {
+        String base = frontendBaseUrl != null ? frontendBaseUrl.trim() : "";
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String normalizedPath = path != null ? path.trim() : "";
+        if (!normalizedPath.startsWith("/")) {
+            normalizedPath = "/" + normalizedPath;
+        }
+        String url = base + normalizedPath;
+        if (token != null && !token.isBlank()) {
+            url += (url.contains("?") ? "&" : "?") + "token=" + token;
+        }
+        return url;
     }
 }
