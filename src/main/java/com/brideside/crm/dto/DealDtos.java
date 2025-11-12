@@ -12,7 +12,11 @@ public class DealDtos {
         public Long stageId;
         public Long sourceId;
         public Long organizationId;
-        public Long categoryId;
+        /**
+         * Optional category identifier. Accepts either a numeric category id or a string code such as "PHOTOGRAPHY".
+         */
+        public String categoryId;
+        public String category;
         public String eventType;
         public DealStatus status; // optional
         public BigDecimal commissionAmount; // optional

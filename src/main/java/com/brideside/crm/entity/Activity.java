@@ -12,9 +12,14 @@ public class Activity {
      * Represents the type/category of activity
      */
     public enum ActivityCategory {
-        ACTIVITY,           // General activity
+        FOLLOW_UP,          // Follow up with lead/customer
+        SEND_QUOTES,        // Share proposal/quote
+        MEETING,            // Scheduled meeting
         CALL,               // Phone call
-        MEETING_SCHEDULER   // Scheduled meeting
+        TASK,               // General to-do / activity
+        OTHER,              // Fallback/uncategorised
+        ACTIVITY,           // Legacy/general activity
+        MEETING_SCHEDULER   // Legacy scheduled meeting
     }
     
     /**

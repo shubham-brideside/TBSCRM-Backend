@@ -1,6 +1,8 @@
 package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ActivityDTO;
+import com.brideside.crm.dto.ActivityDtos;
+import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.service.ActivityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -11,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/activities")
@@ -40,6 +44,12 @@ public class ActivityController {
     @PostMapping
     public ResponseEntity<ActivityDTO> create(@Valid @RequestBody ActivityDTO dto) {
         return ResponseEntity.status(201).body(service.create(dto));
+    }
+
+    @Operation(summary = "List activity categories", description = "Returns dropdown options for activity categories")
+    @GetMapping("/categories")
+    public ResponseEntity<ApiResponse<List<ActivityDtos.CategoryOption>>> categories() {
+        return ResponseEntity.ok(ApiResponse.success("Activity categories fetched", ActivityDtos.allCategoryOptions()));
     }
 
     @Operation(summary = "Update activity", description = "Update an existing activity")

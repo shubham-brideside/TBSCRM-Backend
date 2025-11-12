@@ -1,9 +1,23 @@
 package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.DealDtos;
-import com.brideside.crm.entity.*;
+import com.brideside.crm.entity.Category;
+import com.brideside.crm.entity.Deal;
+import com.brideside.crm.entity.DealStatus;
+import com.brideside.crm.entity.Organization;
+import com.brideside.crm.entity.Person;
+import com.brideside.crm.entity.Pipeline;
+import com.brideside.crm.entity.Source;
+import com.brideside.crm.entity.Stage;
+import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
-import com.brideside.crm.repository.*;
+import com.brideside.crm.repository.CategoryRepository;
+import com.brideside.crm.repository.DealRepository;
+import com.brideside.crm.repository.OrganizationRepository;
+import com.brideside.crm.repository.PersonRepository;
+import com.brideside.crm.repository.PipelineRepository;
+import com.brideside.crm.repository.SourceRepository;
+import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.service.DealService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -58,10 +72,9 @@ public class DealServiceImpl implements DealService {
                 .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
             deal.setOrganization(organization);
         }
-        if (request.categoryId != null) {
-            Category category = categoryRepository.findById(request.categoryId)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-            deal.setDealCategory(category);
+        Category selectedCategory = resolveSelectedCategory(request);
+        if (selectedCategory != null) {
+            deal.setDealCategory(selectedCategory);
         }
         deal.setEventType(request.eventType);
         if (request.status != null) {
@@ -154,6 +167,49 @@ public class DealServiceImpl implements DealService {
             deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
         }
         return dealRepository.save(deal);
+    }
+
+    @Override
+    public void delete(Long id) {
+        Deal deal = get(id);
+        dealRepository.delete(deal);
+    }
+
+    private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {
+        return categoryRepository.findByNameIgnoreCase(orgCategory.getDbValue())
+                .orElseGet(() -> {
+                    Category category = new Category();
+                    category.setName(orgCategory.getDbValue());
+                    return categoryRepository.save(category);
+                });
+    }
+
+    private Category resolveSelectedCategory(DealDtos.CreateRequest request) {
+        // Try to interpret categoryId first (may be numeric id or string code)
+        if (request.categoryId != null && !request.categoryId.isBlank()) {
+            String trimmed = request.categoryId.trim();
+            try {
+                Long id = Long.valueOf(trimmed);
+                return categoryRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Category not found with id " + id));
+            } catch (NumberFormatException ex) {
+                Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(trimmed);
+                if (orgCategory == null) {
+                    throw new BadRequestException("Unknown category value: " + trimmed);
+                }
+                return resolveOrCreateCategory(orgCategory);
+            }
+        }
+
+        if (request.category != null && !request.category.isBlank()) {
+            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(request.category);
+            if (orgCategory == null) {
+                throw new BadRequestException("Unknown category value: " + request.category);
+            }
+            return resolveOrCreateCategory(orgCategory);
+        }
+
+        return null;
     }
 
     private BigDecimal calculateCommission(BigDecimal value, Source source) {

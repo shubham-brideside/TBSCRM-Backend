@@ -1,6 +1,7 @@
 package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.PipelineDtos;
+import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Stage;
@@ -8,6 +9,7 @@ import com.brideside.crm.entity.Team;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.mapper.PipelineMapper;
+import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.StageRepository;
@@ -35,15 +37,18 @@ public class PipelineServiceImpl implements PipelineService {
     private final StageRepository stageRepository;
     private final OrganizationRepository organizationRepository;
     private final TeamRepository teamRepository;
+    private final DealRepository dealRepository;
 
     public PipelineServiceImpl(PipelineRepository pipelineRepository,
                                StageRepository stageRepository,
                                OrganizationRepository organizationRepository,
-                               TeamRepository teamRepository) {
+                               TeamRepository teamRepository,
+                               DealRepository dealRepository) {
         this.pipelineRepository = pipelineRepository;
         this.stageRepository = stageRepository;
         this.organizationRepository = organizationRepository;
         this.teamRepository = teamRepository;
+        this.dealRepository = dealRepository;
     }
 
     @Override
@@ -114,6 +119,11 @@ public class PipelineServiceImpl implements PipelineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found"));
 
         if (hardDelete) {
+            List<Deal> linkedDeals = dealRepository.findByPipeline(pipeline);
+            if (!linkedDeals.isEmpty()) {
+                throw new BadRequestException("Cannot delete pipeline while " + linkedDeals.size()
+                        + " deal(s) reference it. Reassign or delete those deals first.");
+            }
             List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(pipeline);
             if (!stages.isEmpty()) {
                 stageRepository.deleteAll(stages);

@@ -97,6 +97,13 @@ public class DealController {
         return ResponseEntity.ok(toResponse(dealService.markStatus(id, req.status)));
     }
 
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete deal")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        dealService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
     private DealResponse toResponse(Deal d) {
         DealResponse r = new DealResponse();
         r.id = d.getId();

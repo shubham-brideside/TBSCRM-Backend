@@ -45,8 +45,8 @@ public class ActivityDTO {
     private Boolean done = false;
 
     // Category-specific columns
-    @Schema(description = "Category of the activity", allowableValues = {"ACTIVITY", "CALL", "MEETING_SCHEDULER"})
-    private Activity.ActivityCategory category; // ACTIVITY, CALL, MEETING_SCHEDULER
+    @Schema(description = "Category of the activity", allowableValues = {"FOLLOW_UP", "SEND_QUOTES", "MEETING", "CALL", "TASK", "OTHER", "ACTIVITY", "MEETING_SCHEDULER"})
+    private Activity.ActivityCategory category;
     
     @Schema(description = "Deal name")
     private String dealName;
