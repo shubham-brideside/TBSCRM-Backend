@@ -64,6 +64,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll() // Allow health check endpoints for Azure
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/set-password").permitAll() // Allow password setting via invitation token
+                        .requestMatchers("/api/users/accept-invitation").permitAll() // Allow invitation verification
                         .requestMatchers("/api/admin/create-admin").permitAll()
                         .requestMatchers("/api/admin/activate-admin").permitAll()
                         .requestMatchers("/api/admin/test-email").permitAll() // Added for email testing

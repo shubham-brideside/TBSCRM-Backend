@@ -54,7 +54,11 @@ jwt:
   expiration: 86400000 # 24 hours in milliseconds
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:8080/frontend}
+  frontend:
+    base-url: ${FRONTEND_URL:https://tbscrm-frontend-cjcyene4bvc3d2gs.canadacentral-01.azurewebsites.net}
+    invitation-path: ${FRONTEND_INVITATION_PATH:/accept-invitation}
+    reset-path: ${FRONTEND_RESET_PATH:/reset-password}
+    login-path: ${FRONTEND_LOGIN_PATH:/login}
   invitation-token-validity: 604800000 # 7 days in milliseconds
   password-reset-token-validity: 24 # 24 hours
   email:
