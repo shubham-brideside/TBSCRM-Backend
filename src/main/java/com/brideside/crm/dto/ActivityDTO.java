@@ -1,6 +1,7 @@
 package com.brideside.crm.dto;
 
 import com.brideside.crm.entity.Activity;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
@@ -90,6 +91,10 @@ public class ActivityDTO {
     public void setEndTime(String endTime) { this.endTime = endTime; }
     public Activity.PriorityLevel getPriority() { return priority; }
     public void setPriority(Activity.PriorityLevel priority) { this.priority = priority; }
+    @JsonSetter("priority")
+    public void setPriority(String priority) {
+        this.priority = parseEnum(priority, Activity.PriorityLevel.class);
+    }
     public String getAssignedUser() { return assignedUser; }
     public void setAssignedUser(String assignedUser) { this.assignedUser = assignedUser; }
     public String getNotes() { return notes; }
@@ -102,6 +107,10 @@ public class ActivityDTO {
     public void setDone(Boolean done) { this.done = done; }
     public Activity.ActivityCategory getCategory() { return category; }
     public void setCategory(Activity.ActivityCategory category) { this.category = category; }
+    @JsonSetter("category")
+    public void setCategory(String category) {
+        this.category = parseEnum(category, Activity.ActivityCategory.class);
+    }
     public String getDealName() { return dealName; }
     public void setDealName(String dealName) { this.dealName = dealName; }
     public String getInstagramId() { return instagramId; }
@@ -114,12 +123,32 @@ public class ActivityDTO {
     public void setScheduleBy(String scheduleBy) { this.scheduleBy = scheduleBy; }
     public Activity.ActivityStatus getStatus() { return status; }
     public void setStatus(Activity.ActivityStatus status) { this.status = status; }
+    @JsonSetter("status")
+    public void setStatus(String status) {
+        this.status = parseEnum(status, Activity.ActivityStatus.class);
+    }
     public Activity.CallType getCallType() { return callType; }
     public void setCallType(Activity.CallType callType) { this.callType = callType; }
+    @JsonSetter("callType")
+    public void setCallType(String callType) {
+        this.callType = parseEnum(callType, Activity.CallType.class);
+    }
     public Long getDealId() { return dealId; }
     public void setDealId(Long dealId) { this.dealId = dealId; }
     public String getDateTime() { return dateTime; }
     public void setDateTime(String dateTime) { this.dateTime = dateTime; }
+
+    private <E extends Enum<E>> E parseEnum(String value, Class<E> enumClass) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase().replace(' ', '_');
+        try {
+            return Enum.valueOf(enumClass, normalized);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Invalid " + enumClass.getSimpleName() + " value: " + value);
+        }
+    }
 }
 
 
