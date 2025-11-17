@@ -1,6 +1,7 @@
 package com.brideside.crm.security;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -19,6 +20,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -59,6 +61,7 @@ public class SecurityConfig {
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .maxAgeInSeconds(31536000)))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll() // Allow all OPTIONS requests for CORS preflight
                         .requestMatchers("/").permitAll() // Allow root path
                         .requestMatchers("/index.html").permitAll() // Allow index page
                         .requestMatchers("/actuator/**").permitAll() // Allow health check endpoints for Azure
@@ -81,13 +84,37 @@ public class SecurityConfig {
         return http.build();
     }
 
+    @Value("${app.frontend.base-url:https://tbscrm-frontend-cjcyene4bvc3d2gs.canadacentral-01.azurewebsites.net}")
+    private String frontendBaseUrl;
+    
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("*"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        
+        // Allow specific frontend origin (can use allowCredentials with specific origins)
+        List<String> allowedOrigins = Arrays.asList(
+            frontendBaseUrl,
+            "http://localhost:3000",  // For local development
+            "http://localhost:5173",  // For Vite dev server
+            "http://localhost:8080"   // For local backend testing
+        );
+        configuration.setAllowedOrigins(allowedOrigins);
+        
+        // Allow credentials when using specific origins
+        configuration.setAllowCredentials(true);
+        
+        // Allow all methods
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        
+        // Allow all headers
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
+        
+        // Expose headers that frontend needs
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        
+        // Cache preflight response for 1 hour
+        configuration.setMaxAge(3600L);
+        
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
