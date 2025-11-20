@@ -23,14 +23,48 @@ public class ActivityMapper {
         d.setInstagramId(e.getInstagramId());
         d.setPhone(e.getPhone());
         d.setDueDate(e.getDueDate());
-        d.setScheduleBy(e.getScheduleBy());
         d.setStatus(e.getStatus());
-        d.setCallType(e.getCallType());
         d.setDealId(e.getDealId());
         d.setDateTime(e.getDateTime());
+        d.setServiceCategory(e.getServiceCategory());
+        d.setDurationMinutes(e.getDurationMinutes());
+        d.setAttachmentUrl(e.getAttachmentUrl());
         return d;
     }
 
+    /**
+     * Update entity from DTO for create operations.
+     * Excludes: done (managed via toggle endpoint). Legacy scheduleBy/callType fields are no longer exposed.
+     */
+    public static void updateEntityForCreate(ActivityDTO d, Activity e) {
+        if (d.getSubject() != null) e.setSubject(d.getSubject());
+        if (d.getType() != null) e.setType(d.getType());
+        if (d.getDate() != null) e.setDate(d.getDate());
+        if (d.getStartTime() != null) e.setStartTime(d.getStartTime());
+        if (d.getEndTime() != null) e.setEndTime(d.getEndTime());
+        if (d.getPriority() != null) e.setPriority(d.getPriority());
+        if (d.getAssignedUser() != null) e.setAssignedUser(d.getAssignedUser());
+        if (d.getNotes() != null) e.setNotes(d.getNotes());
+        if (d.getPersonId() != null) e.setPersonId(d.getPersonId());
+        if (d.getOrganization() != null) e.setOrganization(d.getOrganization());
+        // done is excluded - managed via POST /api/activities/{id}/done
+        if (d.getCategory() != null) e.setCategory(d.getCategory());
+        if (d.getDealName() != null) e.setDealName(d.getDealName());
+        if (d.getInstagramId() != null) e.setInstagramId(d.getInstagramId());
+        if (d.getPhone() != null) e.setPhone(d.getPhone());
+        if (d.getDueDate() != null) e.setDueDate(d.getDueDate());
+        if (d.getStatus() != null) e.setStatus(d.getStatus());
+        if (d.getDealId() != null) e.setDealId(d.getDealId());
+        if (d.getDateTime() != null) e.setDateTime(d.getDateTime());
+        if (d.getServiceCategory() != null) e.setServiceCategory(d.getServiceCategory());
+        if (d.getDurationMinutes() != null) e.setDurationMinutes(d.getDurationMinutes());
+        if (d.getAttachmentUrl() != null) e.setAttachmentUrl(d.getAttachmentUrl());
+    }
+
+    /**
+     * Update entity from DTO for update operations.
+     * Includes all fields (for partial updates).
+     */
     public static void updateEntity(ActivityDTO d, Activity e) {
         if (d.getSubject() != null) e.setSubject(d.getSubject());
         if (d.getType() != null) e.setType(d.getType());
@@ -48,11 +82,12 @@ public class ActivityMapper {
         if (d.getInstagramId() != null) e.setInstagramId(d.getInstagramId());
         if (d.getPhone() != null) e.setPhone(d.getPhone());
         if (d.getDueDate() != null) e.setDueDate(d.getDueDate());
-        if (d.getScheduleBy() != null) e.setScheduleBy(d.getScheduleBy());
         if (d.getStatus() != null) e.setStatus(d.getStatus());
-        if (d.getCallType() != null) e.setCallType(d.getCallType());
         if (d.getDealId() != null) e.setDealId(d.getDealId());
         if (d.getDateTime() != null) e.setDateTime(d.getDateTime());
+        if (d.getServiceCategory() != null) e.setServiceCategory(d.getServiceCategory());
+        if (d.getDurationMinutes() != null) e.setDurationMinutes(d.getDurationMinutes());
+        if (d.getAttachmentUrl() != null) e.setAttachmentUrl(d.getAttachmentUrl());
     }
 }
 

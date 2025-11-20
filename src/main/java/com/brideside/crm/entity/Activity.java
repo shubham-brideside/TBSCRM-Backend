@@ -106,6 +106,15 @@ public class Activity {
     // Canonical timestamp (optional for testing; can be null)
     private String dateTime; // ISO string (yyyy-MM-dd'T'HH:mm:ss) or agreed format
 
+    // Service category (business service type: Photography, Makeup, Planning & Decor)
+    private String serviceCategory; // PHOTOGRAPHY, MAKEUP, PLANNING_DECOR
+
+    // Duration in minutes (for Call tab)
+    private Integer durationMinutes;
+
+    // Attachment URL (for Call tab - future file upload support)
+    private String attachmentUrl;
+
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
@@ -156,6 +165,12 @@ public class Activity {
     public void setDealId(Long dealId) { this.dealId = dealId; }
     public String getDateTime() { return dateTime; }
     public void setDateTime(String dateTime) { this.dateTime = dateTime; }
+    public String getServiceCategory() { return serviceCategory; }
+    public void setServiceCategory(String serviceCategory) { this.serviceCategory = serviceCategory; }
+    public Integer getDurationMinutes() { return durationMinutes; }
+    public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
+    public String getAttachmentUrl() { return attachmentUrl; }
+    public void setAttachmentUrl(String attachmentUrl) { this.attachmentUrl = attachmentUrl; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
