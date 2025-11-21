@@ -51,7 +51,3 @@ application-local.yml
 logs/
 *.log
 
-# Secrets / credentials
-carbide-parser-*.json
-*.service-account.json
-
