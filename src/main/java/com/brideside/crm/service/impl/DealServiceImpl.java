@@ -11,6 +11,7 @@ import com.brideside.crm.entity.Source;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
+import com.brideside.crm.integration.calendar.GoogleCalendarService;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
@@ -19,8 +20,11 @@ import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.service.DealService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -29,6 +33,8 @@ import java.util.List;
 @Service
 public class DealServiceImpl implements DealService {
 
+    private static final Logger log = LoggerFactory.getLogger(DealServiceImpl.class);
+
     @Autowired private DealRepository dealRepository;
     @Autowired private PersonRepository personRepository;
     @Autowired private PipelineRepository pipelineRepository;
@@ -36,6 +42,8 @@ public class DealServiceImpl implements DealService {
     @Autowired private SourceRepository sourceRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
+    @Autowired(required = false)
+    private GoogleCalendarService googleCalendarService;
 
     @Override
     public Deal create(DealDtos.CreateRequest request) {
@@ -109,7 +117,9 @@ public class DealServiceImpl implements DealService {
         if (request.eventDate != null && !request.eventDate.isEmpty()) {
             deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
         }
-        return dealRepository.save(deal);
+        Deal savedDeal = dealRepository.save(deal);
+        syncGoogleCalendarEvent(savedDeal);
+        return savedDeal;
     }
 
     @Override
@@ -154,7 +164,8 @@ public class DealServiceImpl implements DealService {
         Stage stage = stageRepository.findById(request.stageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
         deal.setStage(stage);
-        return dealRepository.save(deal);
+        Deal saved = dealRepository.save(deal);
+        return saved;
     }
 
     @Override
@@ -166,12 +177,15 @@ public class DealServiceImpl implements DealService {
         if (status == DealStatus.WON && deal.getSource() != null && deal.getCommissionAmount() == null) {
             deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
         }
-        return dealRepository.save(deal);
+        Deal saved = dealRepository.save(deal);
+        syncGoogleCalendarEvent(saved);
+        return saved;
     }
 
     @Override
     public void delete(Long id) {
         Deal deal = get(id);
+        removeGoogleCalendarEvent(deal);
         dealRepository.delete(deal);
     }
 
@@ -217,6 +231,49 @@ public class DealServiceImpl implements DealService {
         if (source.getFixedCommissionAmount() != null) return source.getFixedCommissionAmount();
         Integer pct = source.getCommissionPercentage() == null ? 0 : source.getCommissionPercentage();
         return value.multiply(BigDecimal.valueOf(pct)).divide(BigDecimal.valueOf(100));
+    }
+
+    private void syncGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        try {
+            boolean hasCalendar = deal.getOrganization() != null
+                    && StringUtils.hasText(deal.getOrganization().getGoogleCalendarId());
+            if (!hasCalendar || deal.getEventDate() == null) {
+                if (StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+                    removeGoogleCalendarEvent(deal);
+                }
+                return;
+            }
+            googleCalendarService.upsertDealEvent(deal)
+                    .ifPresent(eventId -> {
+                        if (!eventId.equals(deal.getGoogleCalendarEventId())) {
+                            deal.setGoogleCalendarEventId(eventId);
+                            dealRepository.save(deal);
+                        }
+                    });
+        } catch (Exception ex) {
+            log.warn("Google Calendar sync skipped for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        }
+    }
+
+    private void removeGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        String existingEventId = deal.getGoogleCalendarEventId();
+        if (!StringUtils.hasText(existingEventId)) {
+            return;
+        }
+        try {
+            googleCalendarService.deleteDealEvent(deal);
+        } catch (Exception ex) {
+            log.warn("Failed to remove Google Calendar event for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        } finally {
+            deal.setGoogleCalendarEventId(null);
+            dealRepository.save(deal);
+        }
     }
 }
 

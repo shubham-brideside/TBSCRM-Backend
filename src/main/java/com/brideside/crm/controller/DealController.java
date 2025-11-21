@@ -126,6 +126,7 @@ public class DealController {
         r.contactNumberAsked = d.getContactNumberAsked();
         r.venueAsked = d.getVenueAsked();
         r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null;
+        r.googleCalendarEventId = d.getGoogleCalendarEventId();
         return r;
     }
 }

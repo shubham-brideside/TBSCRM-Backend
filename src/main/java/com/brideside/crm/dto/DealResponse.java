@@ -25,6 +25,7 @@ public class DealResponse {
     public Boolean contactNumberAsked;
     public Boolean venueAsked;
     public String eventDate; // ISO-8601 date
+    public String googleCalendarEventId;
 }
 
 
