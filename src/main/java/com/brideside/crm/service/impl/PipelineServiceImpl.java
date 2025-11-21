@@ -366,13 +366,12 @@ public class PipelineServiceImpl implements PipelineService {
     private List<Stage> createDefaultStages(Pipeline pipeline) {
         String[] defaultNames = {
                 "Lead In",
-                "Number Received",
-                "Call Done",
+                "Qualified",
+                "Contact Made",
                 "Follow Up",
-                "Meeting Schedule",
+                "Meeting Scheduled",
                 "Meeting Done",
-                "Negotiation started",
-                "Contract Shared"
+                "Diversion"
         };
         List<Stage> stages = new ArrayList<>();
         for (int i = 0; i < defaultNames.length; i++) {

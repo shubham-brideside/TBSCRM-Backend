@@ -1,6 +1,7 @@
 package com.brideside.crm.service;
 
 import com.brideside.crm.dto.DealDtos;
+import com.brideside.crm.dto.PipelineDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStatus;
 
@@ -18,6 +19,7 @@ public interface DealService {
     Deal updateStage(Long id, DealDtos.UpdateStageRequest request);
     Deal markStatus(Long id, DealStatus status);
     void delete(Long id);
+    List<PipelineDtos.PipelineResponse> getAvailablePipelinesForDiversion(Long dealId);
 }
 
 

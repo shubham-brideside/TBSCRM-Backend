@@ -49,13 +49,12 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
       "isDeleted": false,
       "stages": [
         { "id": 201, "name": "Lead In", "order": 0, "...": "..." },
-        { "id": 202, "name": "Number Received", "order": 1, "...": "..." },
-        { "id": 203, "name": "Call Done", "order": 2, "...": "..." },
+        { "id": 202, "name": "Qualified", "order": 1, "...": "..." },
+        { "id": 203, "name": "Contact Made", "order": 2, "...": "..." },
         { "id": 204, "name": "Follow Up", "order": 3, "...": "..." },
-        { "id": 205, "name": "Meeting Schedule", "order": 4, "...": "..." },
+        { "id": 205, "name": "Meeting Scheduled", "order": 4, "...": "..." },
         { "id": 206, "name": "Meeting Done", "order": 5, "...": "..." },
-        { "id": 207, "name": "Negotiation started", "order": 6, "...": "..." },
-        { "id": 208, "name": "Contract Shared", "order": 7, "...": "..." }
+        { "id": 207, "name": "Diversion", "order": 6, "...": "..." }
       ]
     }
   }
@@ -219,7 +218,7 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
 
 ### Integration Tips
 1. **Authentication:** Include whatever auth headers your app already uses for other API calls.
-2. **Default stages:** New pipelines ship with the default sequence (Lead In → Number Received → Call Done → Follow Up → Meeting Schedule → Meeting Done → Negotiation started → Contract Shared). Update or reorder as needed via the stages endpoints.
+2. **Default stages:** New pipelines ship with the default sequence (Lead In → Qualified → Contact Made → Follow Up → Meeting Scheduled → Meeting Done → Diversion). Update or reorder as needed via the stages endpoints.
 3. **Soft delete:** Pipelines set `isDeleted=true` when deleted without `hard=true`; listings automatically exclude them.
 4. **Error handling:** read `success` flag and message. For validation errors the message includes the field issue.
 5. **Reordering:** after drag-and-drop, post the list of stage IDs in the new order; the backend persists the new `stage_order`.
