@@ -87,6 +87,25 @@ app:
   frontend-url: ${FRONTEND_URL:http://localhost:3000}
 ```
 
+### Google Calendar Sync
+
+Deals can automatically create/update all-day events on a vendor's Google Calendar (one calendar per organization). To enable the integration, provide a service account credential and turn on the feature flags:
+
+```yaml
+google:
+  calendar:
+    enabled: ${GOOGLE_CALENDAR_ENABLED:false}          # set to true to activate sync
+    application-name: ${GOOGLE_CALENDAR_APP_NAME:Brideside CRM}
+    credentials-file: ${GOOGLE_CALENDAR_CREDENTIALS_FILE:}   # absolute path to service account JSON
+    credentials-json: ${GOOGLE_CALENDAR_CREDENTIALS_JSON:}   # alternative: raw JSON string (if not using file)
+    impersonated-user: ${GOOGLE_CALENDAR_IMPERSONATED_USER:} # optional, only for domain-wide delegation
+    poll-interval-minutes: ${GOOGLE_CALENDAR_POLL_MINUTES:10}        # how often we poll Google
+    sync-window-past-days: ${GOOGLE_CALENDAR_SYNC_PAST_DAYS:30}      # look-back window for polling
+    sync-window-future-days: ${GOOGLE_CALENDAR_SYNC_FUTURE_DAYS:120} # look-ahead window for polling
+```
+
+Only one of `credentials-file` or `credentials-json` is required. When the feature is enabled, any deal with an `eventDate` that belongs to an organization with a `googleCalendarId` (email of the vendor's calendar) will be synced automatically. Deleting a deal removes the corresponding event. In addition, the backend polls each vendor calendar every `poll-interval-minutes` to mirror external changes into the CRM database (exposed via `GET /api/calendar/vendor-events`), so vendor-side edits show up on the CRM calendar view without manual intervention.
+
 ## Getting Started
 
 ### 1. Clone the Repository

@@ -23,6 +23,8 @@ import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.service.DealService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class DealServiceImpl implements DealService {
+
+    private static final Logger log = LoggerFactory.getLogger(DealServiceImpl.class);
 
     @Autowired private DealRepository dealRepository;
     @Autowired private PersonRepository personRepository;
@@ -258,7 +262,8 @@ public class DealServiceImpl implements DealService {
         Stage stage = stageRepository.findById(request.stageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
         deal.setStage(stage);
-        return dealRepository.save(deal);
+        Deal saved = dealRepository.save(deal);
+        return saved;
     }
 
     @Override
@@ -270,7 +275,53 @@ public class DealServiceImpl implements DealService {
         if (status == DealStatus.WON && deal.getSource() != null && deal.getCommissionAmount() == null) {
             deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
         }
-        return dealRepository.save(deal);
+        Deal saved = dealRepository.save(deal);
+        syncGoogleCalendarEvent(saved);
+        return saved;
+    }
+
+    @Override
+    public void delete(Long id) {
+        Deal deal = get(id);
+        removeGoogleCalendarEvent(deal);
+        dealRepository.delete(deal);
+    }
+
+    private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {
+        return categoryRepository.findByNameIgnoreCase(orgCategory.getDbValue())
+                .orElseGet(() -> {
+                    Category category = new Category();
+                    category.setName(orgCategory.getDbValue());
+                    return categoryRepository.save(category);
+                });
+    }
+
+    private Category resolveSelectedCategory(DealDtos.CreateRequest request) {
+        // Try to interpret categoryId first (may be numeric id or string code)
+        if (request.categoryId != null && !request.categoryId.isBlank()) {
+            String trimmed = request.categoryId.trim();
+            try {
+                Long id = Long.valueOf(trimmed);
+                return categoryRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Category not found with id " + id));
+            } catch (NumberFormatException ex) {
+                Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(trimmed);
+                if (orgCategory == null) {
+                    throw new BadRequestException("Unknown category value: " + trimmed);
+                }
+                return resolveOrCreateCategory(orgCategory);
+            }
+        }
+
+        if (request.category != null && !request.category.isBlank()) {
+            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(request.category);
+            if (orgCategory == null) {
+                throw new BadRequestException("Unknown category value: " + request.category);
+            }
+            return resolveOrCreateCategory(orgCategory);
+        }
+
+        return null;
     }
 
     @Override
