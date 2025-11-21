@@ -15,6 +15,7 @@ import com.brideside.crm.entity.Stage;
 import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
+import com.brideside.crm.integration.calendar.GoogleCalendarService;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
@@ -28,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -50,6 +52,8 @@ public class DealServiceImpl implements DealService {
     @Autowired private SourceRepository sourceRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
+    @Autowired(required = false)
+    private GoogleCalendarService googleCalendarService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -206,7 +210,9 @@ public class DealServiceImpl implements DealService {
             }
             deal.setDealSource(dealSource);
         }
-        return dealRepository.save(deal);
+        Deal savedDeal = dealRepository.save(deal);
+        syncGoogleCalendarEvent(savedDeal);
+        return savedDeal;
     }
 
     @Override
@@ -280,13 +286,6 @@ public class DealServiceImpl implements DealService {
         return saved;
     }
 
-    @Override
-    public void delete(Long id) {
-        Deal deal = get(id);
-        removeGoogleCalendarEvent(deal);
-        dealRepository.delete(deal);
-    }
-
     private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {
         return categoryRepository.findByNameIgnoreCase(orgCategory.getDbValue())
                 .orElseGet(() -> {
@@ -348,45 +347,9 @@ public class DealServiceImpl implements DealService {
         }
         
         // Soft delete: set is_deleted to true instead of hard delete
+        removeGoogleCalendarEvent(deal);
         deal.setIsDeleted(Boolean.TRUE);
         dealRepository.save(deal);
-    }
-
-    private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {
-        return categoryRepository.findByNameIgnoreCase(orgCategory.getDbValue())
-                .orElseGet(() -> {
-                    Category category = new Category();
-                    category.setName(orgCategory.getDbValue());
-                    return categoryRepository.save(category);
-                });
-    }
-
-    private Category resolveSelectedCategory(DealDtos.CreateRequest request) {
-        // Try to interpret categoryId first (may be numeric id or string code)
-        if (request.categoryId != null && !request.categoryId.isBlank()) {
-            String trimmed = request.categoryId.trim();
-            try {
-                Long id = Long.valueOf(trimmed);
-                return categoryRepository.findById(id)
-                        .orElseThrow(() -> new ResourceNotFoundException("Category not found with id " + id));
-            } catch (NumberFormatException ex) {
-                Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(trimmed);
-                if (orgCategory == null) {
-                    throw new BadRequestException("Unknown category value: " + trimmed);
-                }
-                return resolveOrCreateCategory(orgCategory);
-            }
-        }
-
-        if (request.category != null && !request.category.isBlank()) {
-            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(request.category);
-            if (orgCategory == null) {
-                throw new BadRequestException("Unknown category value: " + request.category);
-            }
-            return resolveOrCreateCategory(orgCategory);
-        }
-
-        return null;
     }
 
     private BigDecimal calculateCommission(BigDecimal value, Source source) {
@@ -573,6 +536,49 @@ public class DealServiceImpl implements DealService {
         }
         
         return chain;
+    }
+
+    private void syncGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        try {
+            boolean hasCalendar = deal.getOrganization() != null
+                    && StringUtils.hasText(deal.getOrganization().getGoogleCalendarId());
+            if (!hasCalendar || deal.getEventDate() == null) {
+                if (StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+                    removeGoogleCalendarEvent(deal);
+                }
+                return;
+            }
+            googleCalendarService.upsertDealEvent(deal)
+                    .ifPresent(eventId -> {
+                        if (!eventId.equals(deal.getGoogleCalendarEventId())) {
+                            deal.setGoogleCalendarEventId(eventId);
+                            dealRepository.save(deal);
+                        }
+                    });
+        } catch (Exception ex) {
+            log.warn("Google Calendar sync skipped for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        }
+    }
+
+    private void removeGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        String existingEventId = deal.getGoogleCalendarEventId();
+        if (!StringUtils.hasText(existingEventId)) {
+            return;
+        }
+        try {
+            googleCalendarService.deleteDealEvent(deal);
+        } catch (Exception ex) {
+            log.warn("Failed to remove Google Calendar event for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        } finally {
+            deal.setGoogleCalendarEventId(null);
+            dealRepository.save(deal);
+        }
     }
 }
 

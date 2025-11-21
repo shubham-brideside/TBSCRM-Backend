@@ -97,6 +97,9 @@ public class Deal {
     @Column(name = "event_date", nullable = true)
     private LocalDate eventDate;
 
+    @Column(name = "google_calendar_event_id", length = 255)
+    private String googleCalendarEventId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "label", length = 50, nullable = true)
     private DealLabel label;
