@@ -64,6 +64,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setOwner(resolveOwner(request.getOwnerId()));
         organization.setCategory(resolveCategory(request.getCategory()));
         organization.setAddress(trimmed(request.getAddress()));
+        organization.setGoogleCalendarId(trimmed(request.getGoogleCalendarId()));
         return toResponse(organizationRepository.save(organization));
     }
 
@@ -100,6 +101,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         response.setOwner(toOwnerSummary(organization.getOwner()));
         response.setCategory(organization.getCategory());
         response.setAddress(organization.getAddress());
+        response.setGoogleCalendarId(organization.getGoogleCalendarId());
         response.setCreatedAt(organization.getCreatedAt());
         response.setUpdatedAt(organization.getUpdatedAt());
         return response;
