@@ -214,7 +214,11 @@ public class GoogleCalendarService {
             return new ByteArrayInputStream(properties.getCredentialsJson().getBytes(StandardCharsets.UTF_8));
         }
         if (StringUtils.hasText(properties.getCredentialsFile())) {
-            return Files.newInputStream(Path.of(properties.getCredentialsFile()));
+            Path credentialsPath = Path.of(properties.getCredentialsFile());
+            if (!Files.exists(credentialsPath)) {
+                throw new IllegalStateException("Google Calendar credentials file not found: " + properties.getCredentialsFile());
+            }
+            return Files.newInputStream(credentialsPath);
         }
         throw new IllegalStateException("No Google Calendar credentials configured");
     }
