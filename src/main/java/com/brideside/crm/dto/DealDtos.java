@@ -27,6 +27,9 @@ public class DealDtos {
         public Boolean contactNumberAsked; // optional
         public Boolean venueAsked; // optional
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd)
+        public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
+        public String source; // optional: Instagram, Whatsapp, Email, Reference, Call, Website
+        public Long referencedDealId; // optional: ID of the original deal when diverting (required when label is DIVERT)
     }
 
     public static class UpdateStageRequest {

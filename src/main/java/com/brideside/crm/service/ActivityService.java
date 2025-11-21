@@ -21,15 +21,28 @@ public class ActivityService {
     }
 
     public ActivityDTO create(ActivityDTO dto) {
-        // Validate required fields
+        // Validate and trim required fields
         if (dto.getSubject() == null || dto.getSubject().trim().isEmpty()) {
             throw new BadRequestException("Subject is required");
         }
-        // personId and dealId are optional for now to allow testing without related records
+        // Trim subject before saving
+        dto.setSubject(dto.getSubject().trim());
+        
+        // Set default category to ACTIVITY if not provided
+        if (dto.getCategory() == null) {
+            dto.setCategory(Activity.ActivityCategory.ACTIVITY);
+        }
+        
+        // personId and dealId are optional; included only when > 0 (handled by frontend)
         // dateTime optional for now
         
+        // Exclude done from create - managed via POST /api/activities/{id}/done
+        // Legacy scheduleBy/callType fields are intentionally not exposed in the DTO anymore
+        
         Activity e = new Activity();
-        ActivityMapper.updateEntity(dto, e);
+        ActivityMapper.updateEntityForCreate(dto, e);
+        // Ensure done defaults to false (entity default, but explicit for clarity)
+        e.setDone(false);
         try {
             return ActivityMapper.toDto(repository.save(e));
         } catch (Exception ex) {
@@ -48,6 +61,13 @@ public class ActivityService {
 
     public ActivityDTO update(Long id, ActivityDTO dto) {
         Activity e = repository.findById(id).orElseThrow(() -> new IllegalArgumentException("Activity not found: " + id));
+        // Trim subject if provided
+        if (dto.getSubject() != null) {
+            dto.setSubject(dto.getSubject().trim());
+            if (dto.getSubject().isEmpty()) {
+                throw new BadRequestException("Subject cannot be empty");
+            }
+        }
         ActivityMapper.updateEntity(dto, e);
         return ActivityMapper.toDto(repository.save(e));
     }
@@ -66,7 +86,6 @@ public class ActivityService {
                                   String assignedUser,
                                   String category,
                                   String status,
-                                  String callType,
                                   Boolean done,
                                   Pageable pageable) {
         Specification<Activity> spec = Specification.where(null);
@@ -93,15 +112,6 @@ public class ActivityService {
                 spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), statusEnum));
             } catch (IllegalArgumentException e) {
                 // Invalid status value, skip filter
-            }
-        }
-        if (callType != null && !callType.isBlank()) {
-            // Convert string to enum (case-insensitive)
-            try {
-                Activity.CallType callTypeEnum = Activity.CallType.valueOf(callType.toUpperCase().replace(" ", "_"));
-                spec = spec.and((root, q, cb) -> cb.equal(root.get("callType"), callTypeEnum));
-            } catch (IllegalArgumentException e) {
-                // Invalid callType value, skip filter
             }
         }
         if (done != null) {

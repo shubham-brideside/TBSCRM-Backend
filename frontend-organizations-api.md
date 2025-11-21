@@ -29,8 +29,7 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
     "name": "Brideside Chicago",        // required, trimmed, max 255 chars
     "category": "PHOTOGRAPHY",          // required enum (PHOTOGRAPHY | MAKEUP | PLANNING_AND_DECOR)
     "ownerId": 5,                       // optional -> must be SALES or CATEGORY_MANAGER
-    "address": "123 Lake Shore Dr ...", // optional, max 500 chars
-    "googleCalendarId": "vendor@example.com" // optional, email of the vendor's calendar
+    "address": "123 Lake Shore Dr ..."  // optional, max 500 chars
   }
   ```
 - **Response (201 Created):**
@@ -51,7 +50,6 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
         "displayName": "Jane Doe"
       },
       "address": "123 Lake Shore Dr, Chicago, IL",
-      "googleCalendarId": "vendor@example.com",
       "createdAt": "2025-11-08T06:30:00Z",
       "updatedAt": "2025-11-08T06:30:00Z"
     }
@@ -86,7 +84,6 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
           "displayName": "Jane Doe"
         },
         "address": "123 Lake Shore Dr, Chicago, IL",
-        "googleCalendarId": "vendor@example.com",
         "createdAt": "2025-11-08T06:30:00Z",
         "updatedAt": "2025-11-08T06:35:00Z"
       },
@@ -103,7 +100,6 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
           "displayName": "John Smith"
         },
         "address": "456 Sunset Blvd, Los Angeles, CA",
-        "googleCalendarId": null,
         "createdAt": "2025-11-08T06:40:00Z",
         "updatedAt": "2025-11-08T06:40:00Z"
       }
@@ -157,8 +153,7 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
     "name": "Brideside Downtown",
     "category": "PLANNING_AND_DECOR",
     "ownerId": 5,
-    "address": "789 Michigan Ave, Chicago, IL",
-    "googleCalendarId": "makeup-vendor@example.com"
+    "address": "789 Michigan Ave, Chicago, IL"
   }
   ```
 - **Response (200 OK):**
@@ -179,7 +174,6 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
         "displayName": "Jane Doe"
       },
       "address": "789 Michigan Ave, Chicago, IL",
-      "googleCalendarId": "makeup-vendor@example.com",
       "createdAt": "2025-11-08T06:30:00Z",
       "updatedAt": "2025-11-08T07:00:00Z"
     }
@@ -272,6 +266,5 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
 4. **Owner validation:** disable selection for inactive users; backend rejects inactive/invalid roles.
 5. **Empty states:** show friendly message when `data` array is empty.
 6. **Toasts/snacks:** surface the backend `message` to users; 404/400 payloads are human-readable.
-7. **Calendar sync:** `googleCalendarId` is optional; when filled it must be a valid email belonging to the vendor’s Google Calendar. Deals created under that organization will sync their `eventDate` into the vendor’s calendar automatically (service account credentials required).
 
 

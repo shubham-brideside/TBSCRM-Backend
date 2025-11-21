@@ -126,8 +126,22 @@ public class DealController {
         r.contactNumberAsked = d.getContactNumberAsked();
         r.venueAsked = d.getVenueAsked();
         r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null;
-        r.googleCalendarEventId = d.getGoogleCalendarEventId();
+        r.label = d.getLabel() != null ? d.getLabel().toDisplayString() : null;
+        r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
+        r.isDiverted = d.getIsDiverted();
+        r.referencedDealId = d.getReferencedDeal() != null ? d.getReferencedDeal().getId() : null;
+        r.referencedPipelineId = d.getReferencedPipeline() != null ? d.getReferencedPipeline().getId() : null;
+        r.sourcePipelineId = d.getSourcePipeline() != null ? d.getSourcePipeline().getId() : null;
+        r.pipelineHistory = d.getPipelineHistory();
+        r.isDeleted = d.getIsDeleted();
         return r;
+    }
+
+    @GetMapping("/{dealId}/available-pipelines")
+    @Operation(summary = "Get available pipelines for diversion", description = "Returns pipelines where the deal has not been diverted yet")
+    public ResponseEntity<List<com.brideside.crm.dto.PipelineDtos.PipelineResponse>> getAvailablePipelinesForDiversion(@PathVariable Long dealId) {
+        List<com.brideside.crm.dto.PipelineDtos.PipelineResponse> pipelines = dealService.getAvailablePipelinesForDiversion(dealId);
+        return ResponseEntity.ok(pipelines);
     }
 }
 

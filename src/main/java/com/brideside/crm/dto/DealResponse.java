@@ -25,7 +25,14 @@ public class DealResponse {
     public Boolean contactNumberAsked;
     public Boolean venueAsked;
     public String eventDate; // ISO-8601 date
-    public String googleCalendarEventId;
+    public String label; // DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
+    public String source; // Instagram, Whatsapp, Email, Reference, Call, Website
+    public Boolean isDiverted; // true if this deal was diverted from another deal
+    public Long referencedDealId; // ID of the original deal if this is a diverted deal
+    public Long referencedPipelineId; // ID of the pipeline from which the deal was diverted
+    public Long sourcePipelineId; // ID of the initial/source pipeline where the deal was first created
+    public String pipelineHistory; // JSON array of pipeline IDs the deal has been in: [1, 2, 3]
+    public Boolean isDeleted; // true if this deal has been soft deleted
 }
 
 

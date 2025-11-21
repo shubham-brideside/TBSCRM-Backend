@@ -84,15 +84,34 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolationException(DataIntegrityViolationException ex) {
         String message = ex.getMessage();
         if (message != null) {
-            if (message.contains("foreign key constraint") && message.contains("deal_id")) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(ApiResponse.error("Deal ID does not exist. Please provide a valid deal ID that exists in the deals table."));
-            } else if (message.contains("foreign key constraint") && message.contains("person_id")) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(ApiResponse.error("Person ID does not exist. Please provide a valid person ID that exists in the persons table."));
-            } else if (message.contains("foreign key constraint")) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(ApiResponse.error("Referenced record does not exist. Please check that all foreign key references are valid."));
+            // Check for foreign key constraint violations
+            if (message.contains("foreign key constraint")) {
+                // Check if it's a deletion constraint (cannot delete because of references)
+                if (message.contains("Cannot delete") || message.contains("cannot delete") || 
+                    message.contains("DELETE") || message.contains("delete")) {
+                    // Try to extract the constraint name or table name for better error message
+                    if (message.contains("deal_id") || message.contains("deals")) {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(ApiResponse.error("Cannot delete deal. This deal is referenced by other records. Please remove all references before deleting."));
+                    } else if (message.contains("person_id") || message.contains("persons")) {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(ApiResponse.error("Cannot delete person. This person is referenced by other records. Please remove all references before deleting."));
+                    } else {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(ApiResponse.error("Cannot delete record. It is referenced by other records. Please remove all references before deleting."));
+                    }
+                }
+                // Check if it's an insertion/update constraint (referenced ID doesn't exist)
+                else if (message.contains("deal_id")) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(ApiResponse.error("Deal ID does not exist. Please provide a valid deal ID that exists in the deals table."));
+                } else if (message.contains("person_id")) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(ApiResponse.error("Person ID does not exist. Please provide a valid person ID that exists in the persons table."));
+                } else {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(ApiResponse.error("Referenced record does not exist. Please check that all foreign key references are valid."));
+                }
             }
         }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

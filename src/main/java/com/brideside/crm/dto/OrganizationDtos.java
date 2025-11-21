@@ -1,7 +1,6 @@
 package com.brideside.crm.dto;
 
 import com.brideside.crm.entity.Organization.OrganizationCategory;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -30,10 +29,6 @@ public final class OrganizationDtos {
 
         @Size(max = 500, message = "Address cannot exceed 500 characters")
         private String address;
-
-        @Email(message = "Google Calendar id must be a valid email")
-        @Size(max = 255, message = "Google Calendar id cannot exceed 255 characters")
-        private String googleCalendarId;
 
         public String getName() {
             return name;
@@ -66,14 +61,6 @@ public final class OrganizationDtos {
         public void setAddress(String address) {
             this.address = address;
         }
-
-        public String getGoogleCalendarId() {
-            return googleCalendarId;
-        }
-
-        public void setGoogleCalendarId(String googleCalendarId) {
-            this.googleCalendarId = googleCalendarId;
-        }
     }
 
     public static class OrganizationResponse {
@@ -82,7 +69,6 @@ public final class OrganizationDtos {
         private OwnerSummary owner;
         private OrganizationCategory category;
         private String address;
-        private String googleCalendarId;
         private Instant createdAt;
         private Instant updatedAt;
 
@@ -124,14 +110,6 @@ public final class OrganizationDtos {
 
         public void setAddress(String address) {
             this.address = address;
-        }
-
-        public String getGoogleCalendarId() {
-            return googleCalendarId;
-        }
-
-        public void setGoogleCalendarId(String googleCalendarId) {
-            this.googleCalendarId = googleCalendarId;
         }
 
         public Instant getCreatedAt() {

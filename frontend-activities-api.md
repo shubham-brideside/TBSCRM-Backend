@@ -29,7 +29,6 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
   - `assignedUser` — case-insensitive contains match on the assigned user email/name.
   - `category` — one of `ACTIVITY`, `CALL`, `MEETING_SCHEDULER`.
   - `status` — one of `OPEN`, `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`.
-  - `callType` — one of `INBOUND`, `OUTBOUND`, `MISSED`.
   - `done` — `true`/`false` to show completed or open items.
   - Standard Spring pagination params (`page`, `size`, `sort`). Default: `size=25`, sort by `date`.
 - **Response (200 OK):**
@@ -40,18 +39,22 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
         "id": 101,
         "subject": "Call bride for venue preferences",
         "category": "CALL",
+        "type": "FOLLOW_UP",
         "status": "IN_PROGRESS",
         "priority": "HIGH",
         "assignedUser": "sales.rep@brideside.com",
         "date": "08/11/2025",
+        "dueDate": "08/11/2025",
         "startTime": "11:00",
         "endTime": "11:30",
+        "dateTime": "2025-11-08T11:00:00-05:00",
+        "notes": "Confirm preferred venue list before call",
         "personId": 55,
         "dealId": 21,
         "organization": "Brideside Chicago",
         "dealName": "Jackson Wedding",
+        "instagramId": "@jacksonweds",
         "phone": "+1-555-0100",
-        "callType": "OUTBOUND",
         "done": false,
         "createdAt": "2025-11-08T08:00:42Z",
         "updatedAt": "2025-11-08T08:05:13Z"
@@ -92,10 +95,8 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
     "dealId": 21,                                 // optional for now
     "dealName": "Jackson Wedding",                // optional
     "organization": "Brideside Chicago",
-    "scheduleBy": "manager@brideside.com",
     "instagramId": "@jacksonweds",
     "phone": "+1-555-0100",
-    "callType": "OUTBOUND",                       // only when category=CALL
     "dateTime": "2025-11-10T15:30:00+05:30"       // optional canonical timestamp
   }
   ```
@@ -117,10 +118,8 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
     "dealId": 21,
     "dealName": "Jackson Wedding",
     "organization": "Brideside Chicago",
-    "scheduleBy": "manager@brideside.com",
     "instagramId": "@jacksonweds",
     "phone": "+1-555-0100",
-    "callType": "OUTBOUND",
     "done": false,
     "dateTime": "2025-11-10T15:30:00+05:30",
     "createdAt": "2025-11-08T09:00:00Z",
@@ -158,12 +157,37 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
 
 ---
 
+### Activity categories
+
+- **Method / URL:** `GET /api/activities/categories`
+- **Response (200 OK):** A simple array of options. Each item includes:
+  ```json
+  [
+    { "code": "ACTIVITY", "label": "Activity" },
+    { "code": "CALL", "label": "Call" },
+    { "code": "MEETING_SCHEDULER", "label": "Meeting Scheduler" }
+  ]
+  ```
+
+---
+
+### Supporting dropdown APIs
+
+| Endpoint | Used for | Required fields | Nice-to-have |
+| --- | --- | --- | --- |
+| `GET /api/organizations` | Org filter + auto-fill | `id`, `name` | `category`, `owner { id, firstName, lastName, email, displayName }`, `address`, `createdAt`, `updatedAt` |
+| `GET /api/users` | Assigned user / manager dropdowns | `id`, `email`, `firstName`, `lastName`, `role` | `managerId`, `managerName`, `active`, `lastLoginAt`, `passwordSet`, `createdAt` |
+| `GET /api/deals` | Deal picker on activity create/edit | `id`, `name`, `personId`, `organizationId` | `status`, `stageId`, `value`, `eventDate`, `pipelineId`, `sourceId`, `eventType` |
+| `GET /api/persons` | Person picker + saved filters | `id`, `name`, `organizationId`, `organizationName`, `instagramId`, `phone`, `ownerId`, `ownerDisplayName` | `email`, `label`, `source`, `createdAt`, `updatedAt`, `ownerEmail` |
+
+- Persons endpoint supports `page`, `size` (use `size=500` for dropdowns) plus `q`, `label`, `source`, `organizationId`, `ownerId`, `leadFrom`, `leadTo`.
+- All four endpoints already exist; Activities just reads the fields listed above.
+
 ### Field reference
 
 - **category:** `ACTIVITY`, `CALL`, `MEETING_SCHEDULER`
 - **status:** `OPEN`, `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`
 - **priority:** `HIGH`, `MEDIUM`, `LOW`
-- **callType:** `INBOUND`, `OUTBOUND`, `MISSED` (only relevant when `category=CALL`)
 - **date / dueDate:** `dd/MM/yyyy`
 - **startTime / endTime:** `HH:mm`
 - **dateTime:** ISO timestamp (`yyyy-MM-dd'T'HH:mm[:ss][XXX]`)
@@ -175,6 +199,6 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
 1. **Authentication:** Reuse the same JWT bearer token workflow as other APIs.
 2. **Filtering:** Source filters from the front-end search UI; blank strings are ignored server-side.
 3. **Pagination:** Use `page` (0-based) and `size` to drive infinite scroll or table pagination.
-4. **Call-specific fields:** Set `category=CALL` when you want to store `callType`, `phone`, and `scheduleBy`.
+4. **Call-specific fields:** Set `category=CALL` when you want to store `phone` and optionally `durationMinutes`/`attachmentUrl`.
 5. **Optimistic UI:** After POST/PUT/mark-done, the API returns the latest DTO—merge it back into your client store to avoid refetching immediately.
 

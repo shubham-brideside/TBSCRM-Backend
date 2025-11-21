@@ -86,9 +86,6 @@ public class Organization {
     @Column(length = 500)
     private String address;
 
-    @Column(name = "google_calendar_id", length = 255)
-    private String googleCalendarId;
-
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -117,8 +114,6 @@ public class Organization {
     public void setCategory(OrganizationCategory category) { this.category = category; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
-    public String getGoogleCalendarId() { return googleCalendarId; }
-    public void setGoogleCalendarId(String googleCalendarId) { this.googleCalendarId = googleCalendarId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
