@@ -5,6 +5,7 @@ import com.brideside.crm.dto.PipelineDtos;
 import com.brideside.crm.entity.Category;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealLabel;
+import com.brideside.crm.entity.DealLostReason;
 import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
@@ -16,6 +17,7 @@ import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.integration.calendar.GoogleCalendarService;
+import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
@@ -32,10 +34,15 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +59,7 @@ public class DealServiceImpl implements DealService {
     @Autowired private SourceRepository sourceRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
+    @Autowired private ActivityRepository activityRepository;
     @Autowired(required = false)
     private GoogleCalendarService googleCalendarService;
     
@@ -216,6 +224,125 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional
+    public Deal update(Long id, DealDtos.UpdateRequest request) {
+        Deal deal = get(id); // This will check if deal is deleted
+        
+        // Update fields only if provided (partial update)
+        if (request.name != null) {
+            deal.setName(request.name);
+        }
+        if (request.value != null) {
+            deal.setValue(request.value);
+        }
+        if (request.personId != null) {
+            Person person = personRepository.findById(request.personId)
+                .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
+            deal.setPerson(person);
+            String phone = person.getPhone();
+            if (phone != null) {
+                deal.setContactNumber(phone);
+            }
+        }
+        if (request.pipelineId != null) {
+            Pipeline pipeline = pipelineRepository.findById(request.pipelineId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found"));
+            deal.setPipeline(pipeline);
+        }
+        if (request.stageId != null) {
+            Stage stage = stageRepository.findById(request.stageId)
+                .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
+            deal.setStage(stage);
+        }
+        if (request.sourceId != null) {
+            Source source = sourceRepository.findById(request.sourceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Source not found"));
+            deal.setSource(source);
+            if (deal.getValue() != null) {
+                deal.setCommissionAmount(calculateCommission(deal.getValue(), source));
+            }
+        }
+        if (request.organizationId != null) {
+            Organization organization = organizationRepository.findById(request.organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
+            deal.setOrganization(organization);
+        }
+        
+        // Handle category
+        if (request.categoryId != null || request.category != null) {
+            Category category = resolveCategoryFromStrings(request.categoryId, request.category);
+            if (category != null) {
+                deal.setDealCategory(category);
+            }
+        }
+        
+        if (request.eventType != null) {
+            deal.setEventType(request.eventType);
+        }
+        if (request.status != null) {
+            deal.setStatus(request.status);
+            // Sync legacy 'won' column
+            deal.setLegacyWon(request.status == DealStatus.WON);
+        }
+        if (request.commissionAmount != null) {
+            deal.setCommissionAmount(request.commissionAmount);
+        }
+        if (request.venue != null) {
+            deal.setVenue(request.venue);
+        }
+        if (request.phoneNumber != null) {
+            deal.setPhoneNumber(request.phoneNumber);
+        }
+        if (request.finalThankYouSent != null) {
+            deal.setFinalThankYouSent(request.finalThankYouSent);
+        }
+        if (request.eventDateAsked != null) {
+            deal.setEventDateAsked(request.eventDateAsked);
+        }
+        if (request.contactNumberAsked != null) {
+            deal.setContactNumberAsked(request.contactNumberAsked);
+        }
+        if (request.venueAsked != null) {
+            deal.setVenueAsked(request.venueAsked);
+        }
+        if (request.eventDate != null && !request.eventDate.isEmpty()) {
+            deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
+        }
+        
+        // Handle label field with validation
+        if (request.label != null && !request.label.trim().isEmpty()) {
+            DealLabel label = DealLabel.fromString(request.label);
+            if (label == null) {
+                throw new BadRequestException("Invalid label value: " + request.label + 
+                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
+            }
+            deal.setLabel(label);
+            
+            // If label is DIVERT, set is_diverted to true
+            if (label == DealLabel.DIVERT) {
+                deal.setIsDiverted(Boolean.TRUE);
+            } else {
+                deal.setIsDiverted(Boolean.FALSE);
+            }
+        }
+        
+        // Handle source field with validation
+        if (request.source != null && !request.source.trim().isEmpty()) {
+            DealSource dealSource = DealSource.fromString(request.source);
+            if (dealSource == null) {
+                throw new BadRequestException("Invalid source value: " + request.source + 
+                    ". Allowed values: Instagram, Whatsapp, Email, Reference, Call, Website");
+            }
+            deal.setDealSource(dealSource);
+        }
+        
+        deal.setUpdatedAt(LocalDateTime.now());
+        Deal savedDeal = dealRepository.save(deal);
+        syncGoogleCalendarEvent(savedDeal);
+        return savedDeal;
+    }
+
+    @Override
     public Deal get(Long id) {
         Deal deal = dealRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Deal not found"));
@@ -228,7 +355,259 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public List<Deal> list() { 
-        return dealRepository.findByIsDeletedFalse(); 
+        return list("nextActivity", "asc");
+    }
+
+    @Override
+    public List<Deal> list(String sortField, String sortDirection) {
+        List<Deal> deals = dealRepository.findByIsDeletedFalse();
+        
+        // Normalize sort field and direction
+        String normalizedField = normalizeSortField(sortField);
+        boolean ascending = "asc".equalsIgnoreCase(sortDirection != null ? sortDirection : "asc");
+        
+        // Validate sort field
+        if (!isValidSortField(normalizedField)) {
+            throw new BadRequestException("Invalid sort field: " + sortField + 
+                ". Supported fields: nextActivity, name, value, personName, organizationName, eventDate, createdAt, updatedAt, completedActivitiesCount, pendingActivitiesCount, productsCount, ownerName");
+        }
+        
+        // Pre-load activities only if needed for sorting (performance optimization)
+        Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId = null;
+        if (normalizedField.equals("nextActivity") || 
+            normalizedField.equals("completedActivitiesCount") || 
+            normalizedField.equals("pendingActivitiesCount")) {
+            activitiesByDealId = loadActivitiesByDealId();
+        }
+        
+        // Sort deals based on the field
+        Comparator<Deal> comparator = getComparator(normalizedField, ascending, activitiesByDealId);
+        deals.sort(comparator);
+        
+        return deals;
+    }
+    
+    private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId() {
+        // Load all activities once and group by dealId
+        List<com.brideside.crm.entity.Activity> allActivities = activityRepository.findAll();
+        return allActivities.stream()
+            .filter(a -> a.getDealId() != null)
+            .collect(Collectors.groupingBy(com.brideside.crm.entity.Activity::getDealId));
+    }
+    
+    private String normalizeSortField(String sortField) {
+        if (sortField == null || sortField.trim().isEmpty()) {
+            return "nextActivity";
+        }
+        String field = sortField.trim();
+        String fieldLower = field.toLowerCase();
+        
+        // Map aliases to canonical field names (case-insensitive)
+        Map<String, String> fieldMap = new HashMap<>();
+        // Canonical field names (map to themselves)
+        fieldMap.put("nextactivity", "nextActivity");
+        fieldMap.put("name", "name");
+        fieldMap.put("value", "value");
+        fieldMap.put("personname", "personName");
+        fieldMap.put("organizationname", "organizationName");
+        fieldMap.put("eventdate", "eventDate");
+        fieldMap.put("createdat", "createdAt");
+        fieldMap.put("updatedat", "updatedAt");
+        fieldMap.put("completedactivitiescount", "completedActivitiesCount");
+        fieldMap.put("pendingactivitiescount", "pendingActivitiesCount");
+        fieldMap.put("productscount", "productsCount");
+        fieldMap.put("ownername", "ownerName");
+        // Aliases
+        fieldMap.put("dealtitle", "name");
+        fieldMap.put("dealvalue", "value");
+        fieldMap.put("linkedperson", "personName");
+        fieldMap.put("linkedorganization", "organizationName");
+        fieldMap.put("expectedclosedate", "eventDate");
+        fieldMap.put("dealcreated", "createdAt");
+        fieldMap.put("dealupdatetime", "updatedAt");
+        fieldMap.put("doneactivities", "completedActivitiesCount");
+        fieldMap.put("activitiestodo", "pendingActivitiesCount");
+        fieldMap.put("numberofproducts", "productsCount");
+        fieldMap.put("personownername", "ownerName");
+        
+        return fieldMap.getOrDefault(fieldLower, field);
+    }
+    
+    private boolean isValidSortField(String field) {
+        List<String> validFields = List.of(
+            "nextActivity", "name", "value", "personName", "organizationName",
+            "eventDate", "createdAt", "updatedAt", "completedActivitiesCount",
+            "pendingActivitiesCount", "productsCount", "ownerName"
+        );
+        return validFields.contains(field);
+    }
+    
+    private Comparator<Deal> getComparator(String field, boolean ascending, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        Comparator<Deal> comparator = null;
+        
+        switch (field) {
+            case "nextActivity":
+                comparator = Comparator.comparing(d -> getNextActivityDate(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "name":
+                comparator = Comparator.comparing(Deal::getName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "value":
+                comparator = Comparator.comparing(Deal::getValue, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "personName":
+                comparator = Comparator.comparing(this::getPersonName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "organizationName":
+                comparator = Comparator.comparing(this::getOrganizationName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "eventDate":
+                comparator = Comparator.comparing(Deal::getEventDate, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "createdAt":
+                comparator = Comparator.comparing(Deal::getCreatedAt, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "updatedAt":
+                comparator = Comparator.comparing(Deal::getUpdatedAt, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "completedActivitiesCount":
+                comparator = Comparator.comparing(d -> getCompletedActivitiesCount(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "pendingActivitiesCount":
+                comparator = Comparator.comparing(d -> getPendingActivitiesCount(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "productsCount":
+                comparator = Comparator.comparing(d -> 0, 
+                    Comparator.nullsLast(Comparator.naturalOrder())); // Always 0 for now
+                break;
+            case "ownerName":
+                comparator = Comparator.comparing(this::getOwnerName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            default:
+                throw new BadRequestException("Unsupported sort field: " + field);
+        }
+        
+        return ascending ? comparator : comparator.reversed();
+    }
+    
+    private LocalDateTime getNextActivityDate(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return null;
+        }
+        // Get the earliest pending activity date for this deal
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return null;
+        }
+        return dealActivities.stream()
+            .filter(a -> !a.isDone() && a.getStatus() != com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .map(a -> parseActivityDate(a))
+            .filter(d -> d != null)
+            .min(Comparator.naturalOrder())
+            .orElse(null);
+    }
+    
+    private LocalDateTime parseActivityDate(com.brideside.crm.entity.Activity activity) {
+        // Try dateTime first (ISO format)
+        if (activity.getDateTime() != null && !activity.getDateTime().isEmpty()) {
+            try {
+                return LocalDateTime.parse(activity.getDateTime().replace(" ", "T"));
+            } catch (Exception e) {
+                // Try other formats
+            }
+        }
+        
+        // Try date + startTime
+        if (activity.getDate() != null && !activity.getDate().isEmpty() && 
+            activity.getStartTime() != null && !activity.getStartTime().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+                LocalDate date = LocalDate.parse(activity.getDate(), dateFormatter);
+                java.time.LocalTime time = java.time.LocalTime.parse(activity.getStartTime(), timeFormatter);
+                return LocalDateTime.of(date, time);
+            } catch (Exception e) {
+                // Try date only
+            }
+        }
+        
+        // Try date only
+        if (activity.getDate() != null && !activity.getDate().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                LocalDate date = LocalDate.parse(activity.getDate(), dateFormatter);
+                return date.atStartOfDay();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        // Try dueDate
+        if (activity.getDueDate() != null && !activity.getDueDate().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                LocalDate date = LocalDate.parse(activity.getDueDate(), dateFormatter);
+                return date.atStartOfDay();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        return null;
+    }
+    
+    private String getPersonName(Deal deal) {
+        return deal.getPerson() != null ? deal.getPerson().getName() : null;
+    }
+    
+    private String getOrganizationName(Deal deal) {
+        return deal.getOrganization() != null ? deal.getOrganization().getName() : null;
+    }
+    
+    private Integer getCompletedActivitiesCount(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return 0;
+        }
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return 0;
+        }
+        return (int) dealActivities.stream()
+            .filter(a -> a.isDone() || a.getStatus() == com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .count();
+    }
+    
+    private Integer getPendingActivitiesCount(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return 0;
+        }
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return 0;
+        }
+        return (int) dealActivities.stream()
+            .filter(a -> !a.isDone() && a.getStatus() != com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .count();
+    }
+    
+    private String getOwnerName(Deal deal) {
+        // Get owner from person if person has owner
+        if (deal.getPerson() != null && deal.getPerson().getOwner() != null) {
+            com.brideside.crm.entity.User owner = deal.getPerson().getOwner();
+            return owner.getFirstName() + " " + owner.getLastName();
+        }
+        return null;
     }
 
     @Override
@@ -273,14 +652,34 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
-    public Deal markStatus(Long id, DealStatus status) {
+    @Transactional
+    public Deal markStatus(Long id, DealDtos.MarkStatusRequest request) {
         Deal deal = get(id);
+        DealStatus status = request.status;
+        
+        // If marking as LOST, require lostReason
+        if (status == DealStatus.LOST) {
+            if (request.lostReason == null || request.lostReason.trim().isEmpty()) {
+                throw new BadRequestException("lostReason is required when marking deal as LOST. Please select a reason from the list.");
+            }
+            DealLostReason lostReason = DealLostReason.fromString(request.lostReason);
+            if (lostReason == null) {
+                throw new BadRequestException("Invalid lostReason value: " + request.lostReason + 
+                    ". Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else");
+            }
+            deal.setLostReason(lostReason);
+        } else {
+            // Clear lost reason when status is not LOST
+            deal.setLostReason(null);
+        }
+        
         deal.setStatus(status);
         // Sync legacy 'won' column
         deal.setLegacyWon(status == DealStatus.WON);
         if (status == DealStatus.WON && deal.getSource() != null && deal.getCommissionAmount() == null) {
             deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
         }
+        deal.setUpdatedAt(LocalDateTime.now());
         Deal saved = dealRepository.save(deal);
         syncGoogleCalendarEvent(saved);
         return saved;
@@ -296,9 +695,13 @@ public class DealServiceImpl implements DealService {
     }
 
     private Category resolveSelectedCategory(DealDtos.CreateRequest request) {
+        return resolveCategoryFromStrings(request.categoryId, request.category);
+    }
+
+    private Category resolveCategoryFromStrings(String categoryId, String category) {
         // Try to interpret categoryId first (may be numeric id or string code)
-        if (request.categoryId != null && !request.categoryId.isBlank()) {
-            String trimmed = request.categoryId.trim();
+        if (categoryId != null && !categoryId.isBlank()) {
+            String trimmed = categoryId.trim();
             try {
                 Long id = Long.valueOf(trimmed);
                 return categoryRepository.findById(id)
@@ -312,10 +715,10 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        if (request.category != null && !request.category.isBlank()) {
-            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(request.category);
+        if (category != null && !category.isBlank()) {
+            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(category);
             if (orgCategory == null) {
-                throw new BadRequestException("Unknown category value: " + request.category);
+                throw new BadRequestException("Unknown category value: " + category);
             }
             return resolveOrCreateCategory(orgCategory);
         }

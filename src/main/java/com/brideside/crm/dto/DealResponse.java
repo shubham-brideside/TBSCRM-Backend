@@ -33,6 +33,7 @@ public class DealResponse {
     public Long sourcePipelineId; // ID of the initial/source pipeline where the deal was first created
     public String pipelineHistory; // JSON array of pipeline IDs the deal has been in: [1, 2, 3]
     public Boolean isDeleted; // true if this deal has been soft deleted
+    public String lostReason; // Reason why deal was marked as LOST: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
 }
 
 

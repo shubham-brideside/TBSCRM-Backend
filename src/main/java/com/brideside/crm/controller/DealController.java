@@ -31,9 +31,16 @@ public class DealController {
     }
 
     @GetMapping
-    @Operation(summary = "List deals")
-    public ResponseEntity<List<DealResponse>> list() {
-        List<DealResponse> res = dealService.list().stream().map(this::toResponse).collect(Collectors.toList());
+    @Operation(summary = "List deals", description = "List all deals with optional sorting. Use 'sort' query parameter in format 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'")
+    public ResponseEntity<List<DealResponse>> list(
+            @RequestParam(required = false, defaultValue = "nextActivity,asc") String sort) {
+        String[] sortParts = sort.split(",");
+        String sortField = sortParts.length > 0 ? sortParts[0].trim() : "nextActivity";
+        String sortDirection = sortParts.length > 1 ? sortParts[1].trim() : "asc";
+        
+        List<DealResponse> res = dealService.list(sortField, sortDirection).stream()
+            .map(this::toResponse)
+            .collect(Collectors.toList());
         return ResponseEntity.ok(res);
     }
 
@@ -85,6 +92,13 @@ public class DealController {
         return ResponseEntity.ok(toResponse(dealService.get(id)));
     }
 
+    @PatchMapping("/{id}")
+    @Operation(summary = "Update deal details", description = "Partially update deal fields. Only provided fields will be updated.")
+    public ResponseEntity<DealResponse> update(@PathVariable Long id, @Valid @RequestBody DealDtos.UpdateRequest req) {
+        Deal d = dealService.update(id, req);
+        return ResponseEntity.ok(toResponse(d));
+    }
+
     @PutMapping("/{id}/stage")
     @Operation(summary = "Move deal to another stage")
     public ResponseEntity<DealResponse> updateStage(@PathVariable Long id, @RequestBody DealDtos.UpdateStageRequest req) {
@@ -92,9 +106,9 @@ public class DealController {
     }
 
     @PatchMapping("/{id}/status")
-    @Operation(summary = "Update deal status")
-    public ResponseEntity<DealResponse> markStatus(@PathVariable Long id, @RequestBody DealDtos.MarkStatusRequest req) {
-        return ResponseEntity.ok(toResponse(dealService.markStatus(id, req.status)));
+    @Operation(summary = "Update deal status", description = "Update deal status. When marking as LOST, lostReason is required.")
+    public ResponseEntity<DealResponse> markStatus(@PathVariable Long id, @Valid @RequestBody DealDtos.MarkStatusRequest req) {
+        return ResponseEntity.ok(toResponse(dealService.markStatus(id, req)));
     }
 
     @DeleteMapping("/{id}")
@@ -134,6 +148,7 @@ public class DealController {
         r.sourcePipelineId = d.getSourcePipeline() != null ? d.getSourcePipeline().getId() : null;
         r.pipelineHistory = d.getPipelineHistory();
         r.isDeleted = d.getIsDeleted();
+        r.lostReason = d.getLostReason() != null ? d.getLostReason().toDisplayString() : null;
         return r;
     }
 

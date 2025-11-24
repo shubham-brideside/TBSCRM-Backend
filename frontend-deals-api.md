@@ -80,7 +80,7 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
 
 | Endpoint | Description | Notes |
 | --- | --- | --- |
-| `GET /api/deals` | List all deals | Returns array of `DealResponse`; no pagination currently. |
+| `GET /api/deals` | List all deals | Returns array of `DealResponse` with optional sorting. Supports `sort` query parameter. Default: `nextActivity,asc`. |
 | `GET /api/deals/{id}` | Fetch single deal | 404 if missing. |
 | `GET /api/deals/won` | Deals with status `WON` | |
 | `GET /api/deals/lost` | Deals with status `LOST` | |
@@ -89,7 +89,204 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
 | `GET /api/deals/organization/{organizationId}` | Deals for an organization | Organization must exist. |
 | `GET /api/deals/category/{categoryId}` | Deals for a category | Category must exist. |
 
-All listings return plain JSON arrays—order is whatever the repository returns (currently natural order). Apply client-side sorting as needed.
+### Sorting Deals
+
+The `GET /api/deals` endpoint supports sorting via the `sort` query parameter.
+
+**Query Parameter:**
+- `sort` (string, optional): Sort field and direction in the format `field,direction`
+  - Format: `{field},{direction}`
+  - Direction: `asc` (ascending) or `desc` (descending)
+  - Default: `nextActivity,asc` (if not specified)
+
+**Supported Sort Fields:**
+
+1. **`nextActivity`** (default)
+   - Sort by the date/time of the next upcoming activity (activities that are not done)
+   - If no next activity exists, deals appear at the end (or beginning, depending on direction)
+   - Field type: DateTime
+
+2. **`name`** (aliases: `dealTitle`)
+   - Sort by deal name/title alphabetically
+   - Field type: String
+
+3. **`value`** (aliases: `dealValue`)
+   - Sort by deal value (monetary amount)
+   - Field type: Number
+
+4. **`personName`** (aliases: `linkedPerson`)
+   - Sort by the name of the linked person
+   - Field type: String (person's name)
+
+5. **`organizationName`** (aliases: `linkedOrganization`)
+   - Sort by the name of the linked organization
+   - Field type: String (organization's name)
+
+6. **`eventDate`** (aliases: `expectedCloseDate`)
+   - Sort by expected close date / event date
+   - Field type: Date
+
+7. **`createdAt`** (aliases: `dealCreated`)
+   - Sort by deal creation date/time
+   - Field type: DateTime
+
+8. **`updatedAt`** (aliases: `dealUpdateTime`)
+   - Sort by deal last update date/time
+   - Field type: DateTime
+
+9. **`completedActivitiesCount`** (aliases: `doneActivities`)
+   - Sort by count of completed/done activities
+   - Field type: Number
+
+10. **`pendingActivitiesCount`** (aliases: `activitiesToDo`)
+    - Sort by count of pending/not done activities
+    - Field type: Number
+
+11. **`productsCount`** (aliases: `numberOfProducts`)
+    - Sort by number of products (currently always returns 0, reserved for future use)
+    - Field type: Number
+
+12. **`ownerName`** (aliases: `personOwnerName`)
+    - Sort by the owner/manager name (person's owner)
+    - Field type: String (owner's name)
+
+**Example Requests:**
+
+```javascript
+// Sort by deal update time (descending)
+GET /api/deals?sort=updatedAt,desc
+
+// Sort by deal value (ascending)
+GET /api/deals?sort=value,asc
+
+// Sort by next activity (ascending - default)
+GET /api/deals?sort=nextActivity,asc
+
+// Sort by linked person name (ascending)
+GET /api/deals?sort=personName,asc
+
+// Sort by done activities count (descending)
+GET /api/deals?sort=completedActivitiesCount,desc
+
+// Using aliases
+GET /api/deals?sort=dealTitle,asc
+GET /api/deals?sort=dealValue,desc
+GET /api/deals?sort=linkedPerson,asc
+```
+
+**Error Handling:**
+
+- Invalid sort field → `400 Bad Request` with message: "Invalid sort field: {field}. Supported fields: ..."
+- Invalid sort direction → Defaults to `asc` if not `asc` or `desc`
+- Missing sort parameter → Defaults to `nextActivity,asc`
+
+**Implementation Notes:**
+
+- **Next Activity Sorting**: Finds the earliest pending activity (not done and not COMPLETED) for each deal and sorts by that date. Deals with no pending activities are sorted to the end (or beginning for descending).
+
+- **Activity Counts**: Counts activities where `done = true` or `status = COMPLETED` for completed activities, and activities where `done = false` and `status != COMPLETED` for pending activities.
+
+- **Related Entity Sorting**: Joins with persons/organizations/users tables and sorts by the name field from the joined table.
+
+- **Null Handling**: Null values are sorted to the end (or beginning for descending) using `nullsLast` comparator.
+
+---
+
+## Update Deal
+
+- **Method / URL:** `PATCH /api/deals/{id}`
+- **Description:** Partially update deal details. Only provided fields will be updated. All other fields remain unchanged.
+- **Body (`DealDtos.UpdateRequest`):**
+  ```json
+  {
+    "name": "Updated Wedding Package - Sharma",
+    "value": 150000,
+    "personId": 102,
+    "pipelineId": 9,
+    "stageId": 38,
+    "sourceId": 5,
+    "organizationId": 13,
+    "categoryId": "PHOTOGRAPHY",
+    "eventType": "Wedding",
+    "status": "IN_PROGRESS",
+    "commissionAmount": 9000,
+    "venue": "The Grand Hotel",
+    "phoneNumber": "+91 98765 43211",
+    "finalThankYouSent": true,
+    "eventDateAsked": false,
+    "contactNumberAsked": false,
+    "venueAsked": true,
+    "eventDate": "2025-12-20",
+    "label": "DIRECT",
+    "source": "Whatsapp"
+  }
+  ```
+  - All fields are **optional** - only include the fields you want to update
+  - `name` (optional, text)
+  - `value` (optional, decimal)
+  - `personId`, `pipelineId`, `stageId`, `sourceId`, `organizationId`, `categoryId` are optional but IDs must exist when provided
+  - `categoryId` can be a numeric ID or a string code like "PHOTOGRAPHY", "MAKEUP", "PLANNING_AND_DECOR"
+  - `status` (optional) — enum `IN_PROGRESS | WON | LOST`
+  - `commissionAmount` (optional) — overrides auto commission calculation
+  - `eventDate` expects ISO `yyyy-MM-dd` format
+  - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP")
+  - `source` (optional) — enum: `Instagram`, `Whatsapp`, `Email`, `Reference`, `Call`, `Website`. Case-insensitive
+  - **Note:** When updating `label` to `DIVERT`, you cannot set it via the update endpoint. Diverted deals should be created using the create endpoint with `label: "DIVERT"` and `referencedDealId`
+
+- **Response (200 OK):** `DealResponse` (same structure as Create Deal response)
+  ```json
+  {
+    "id": 215,
+    "name": "Updated Wedding Package - Sharma",
+    "value": 150000,
+    "personId": 102,
+    "pipelineId": 9,
+    "stageId": 38,
+    "sourceId": 5,
+    "organizationId": 13,
+    "categoryId": 3,
+    "eventType": "Wedding",
+    "status": "IN_PROGRESS",
+    "commissionAmount": 9000,
+    "createdAt": "2025-11-12T07:05:41.114Z",
+    "venue": "The Grand Hotel",
+    "phoneNumber": "+91 98765 43211",
+    "finalThankYouSent": true,
+    "eventDateAsked": false,
+    "contactNumberAsked": false,
+    "venueAsked": true,
+    "eventDate": "2025-12-20",
+    "label": "DIRECT",
+    "source": "Whatsapp",
+    "isDiverted": false,
+    "referencedDealId": null,
+    "referencedPipelineId": null,
+    "sourcePipelineId": null,
+    "pipelineHistory": null,
+    "isDeleted": false
+  }
+  ```
+
+- **Example Usage:**
+  ```javascript
+  // Update only the deal name and value
+  const response = await fetch('/api/deals/215', {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      name: 'Updated Deal Name',
+      value: 200000
+    })
+  });
+  ```
+
+- **Error Responses:**
+  - `404 Not Found`: Deal with the given ID does not exist or has been deleted
+  - `400 Bad Request`: Invalid field values (e.g., invalid enum values for `label` or `source`)
+  - `404 Not Found`: Referenced entity (person, pipeline, stage, etc.) not found
 
 ---
 
@@ -109,13 +306,50 @@ All listings return plain JSON arrays—order is whatever the repository returns
 ## Update Deal Status
 
 - **Method / URL:** `PATCH /api/deals/{dealId}/status`
+- **Description:** Update deal status. **When marking a deal as LOST, `lostReason` is required.**
 - **Body:**
   ```json
-  { "status": "WON" }
+  {
+    "status": "LOST",
+    "lostReason": "Not Interested"
+  }
   ```
-  Allowed values: `IN_PROGRESS`, `WON`, `LOST`.
+  - `status` (required) — Allowed values: `IN_PROGRESS`, `WON`, `LOST`
+  - `lostReason` (required when `status` is `LOST`, optional otherwise) — Allowed values:
+    - `"Slot not opened"`
+    - `"Not Interested"`
+    - `"Date postponed"`
+    - `"Not Available"`
+    - `"Ghosted"`
+    - `"Budget"`
+    - `"Booked Someone else"`
+  
+  **Important:** When `status` is `LOST`, the `lostReason` field is **mandatory**. The backend will return a `400 Bad Request` error if `lostReason` is missing or invalid.
 
-- **Response:** Updated `DealResponse`. Backend syncs the legacy `won` column and recalculates commission if moving to `WON` and no manual commission provided.
+- **Response:** Updated `DealResponse` including the `lostReason` field (if set). Backend syncs the legacy `won` column and recalculates commission if moving to `WON` and no manual commission provided.
+
+- **Example Requests:**
+  ```json
+  // Mark as WON
+  {
+    "status": "WON"
+  }
+  
+  // Mark as LOST (lostReason is required)
+  {
+    "status": "LOST",
+    "lostReason": "Budget"
+  }
+  
+  // Mark as IN_PROGRESS (lostReason is cleared automatically)
+  {
+    "status": "IN_PROGRESS"
+  }
+  ```
+
+- **Error Responses:**
+  - `400 Bad Request`: `"lostReason is required when marking deal as LOST. Please select a reason from the list."`
+  - `400 Bad Request`: `"Invalid lostReason value: ... Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else"`
 
 ---
 
@@ -217,6 +451,7 @@ To create a diverted deal:
 - `finalThankYouSent`, `eventDateAsked`, `contactNumberAsked`, `venueAsked` are booleans; `null` means "not captured yet".
 - `label`: enum with values `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both space-separated and underscore formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP"). Returns display format with spaces.
 - `source`: enum with values `Instagram`, `Whatsapp`, `Email`, `Reference`, `Call`, `Website`. Case-insensitive input (e.g., "instagram", "Instagram", "INSTAGRAM" all accepted). Returns properly capitalized display format.
+- `lostReason`: string indicating why a deal was marked as LOST. Only present when `status` is `LOST`. Values: `"Slot not opened"`, `"Not Interested"`, `"Date postponed"`, `"Not Available"`, `"Ghosted"`, `"Budget"`, `"Booked Someone else"`. Automatically cleared when status changes to `IN_PROGRESS` or `WON`.
 - `isDiverted`: boolean indicating if this deal was diverted from another deal. Automatically set to `true` when `label` is `DIVERT`.
 - `referencedDealId`: ID of the original deal if this is a diverted deal. `null` for non-diverted deals. Required when creating a diverted deal.
 - `referencedPipelineId`: ID of the **initial/original pipeline** from which the deal was first diverted. Automatically set when creating a diverted deal. Always points to the original pipeline, even when diverting a diverted deal. Used to prevent diverting back to the original pipeline.
@@ -242,7 +477,17 @@ The following source values are available for the deal source dropdown:
 - `Call`
 - `Website`
 
-**Note:** Both `label` and `source` are optional fields. If not provided, they will be `null` in the response.
+### Lost Reason Options
+The following lost reason values are available when marking a deal as LOST:
+- `"Slot not opened"`
+- `"Not Interested"`
+- `"Date postponed"`
+- `"Not Available"`
+- `"Ghosted"`
+- `"Budget"`
+- `"Booked Someone else"`
+
+**Note:** `lostReason` is **required** when `status` is `LOST`. It is automatically cleared when the status is changed to `IN_PROGRESS` or `WON`.
 
 ---
 
@@ -253,6 +498,8 @@ The following source values are available for the deal source dropdown:
 - Invalid `status` or malformed date strings → `400 Bad Request`.
 - Invalid `label` value → `400 Bad Request` with message: "Invalid label value: {value}. Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING".
 - Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Instagram, Whatsapp, Email, Reference, Call, Website".
+- Marking deal as LOST without `lostReason` → `400 Bad Request` with message: "lostReason is required when marking deal as LOST. Please select a reason from the list."
+- Invalid `lostReason` value → `400 Bad Request` with message: "Invalid lostReason value: {value}. Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else".
 - Creating a diverted deal without `referencedDealId` → `400 Bad Request` with message: "referencedDealId is required when label is DIVERT".
 - Referenced deal not found → `404 Not Found` with message: "Referenced deal not found with id {id}".
 - Getting available pipelines for non-existent deal → `404 Not Found` with message: "Referenced deal not found with id {id}".
@@ -260,6 +507,123 @@ The following source values are available for the deal source dropdown:
 ---
 
 ## UI Implementation Guide
+
+### Marking Deal as LOST (Lost Reason Popup)
+
+When a user attempts to mark a deal as LOST, you must show a popup/modal with the lost reason options:
+
+1. **User clicks "Mark as Lost" button**
+   - Show a modal/popup with the following options:
+     - "Slot not opened"
+     - "Not Interested"
+     - "Date postponed"
+     - "Not Available"
+     - "Ghosted"
+     - "Budget"
+     - "Booked Someone else"
+
+2. **User must select a reason**
+   - The "Mark as Lost" button in the popup should be **disabled** until a reason is selected
+   - Display the list as radio buttons, dropdown, or clickable list items
+
+3. **Submit the status update**
+   ```javascript
+   const response = await fetch(`/api/deals/${dealId}/status`, {
+     method: 'PATCH',
+     headers: {
+       'Content-Type': 'application/json',
+       'Authorization': `Bearer ${token}`
+     },
+     body: JSON.stringify({
+       status: 'LOST',
+       lostReason: selectedReason // e.g., "Not Interested"
+     })
+   });
+   ```
+
+4. **Handle errors**
+   - If `lostReason` is missing, the backend returns `400 Bad Request`
+   - Display error message to user: "Please select a reason for marking this deal as lost"
+
+**Example React Component:**
+```jsx
+function MarkAsLostModal({ dealId, isOpen, onClose, onSuccess }) {
+  const [selectedReason, setSelectedReason] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  const lostReasons = [
+    "Slot not opened",
+    "Not Interested",
+    "Date postponed",
+    "Not Available",
+    "Ghosted",
+    "Budget",
+    "Booked Someone else"
+  ];
+  
+  const handleSubmit = async () => {
+    if (!selectedReason) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/deals/${dealId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: 'LOST',
+          lostReason: selectedReason
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.message || 'Failed to mark deal as lost');
+        return;
+      }
+      
+      onSuccess();
+      onClose();
+    } catch (error) {
+      alert('An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div className="modal">
+      <h2>Mark Deal as Lost</h2>
+      <p>Please select a reason:</p>
+      <div>
+        {lostReasons.map(reason => (
+          <label key={reason}>
+            <input
+              type="radio"
+              name="lostReason"
+              value={reason}
+              checked={selectedReason === reason}
+              onChange={(e) => setSelectedReason(e.target.value)}
+            />
+            {reason}
+          </label>
+        ))}
+      </div>
+      <button
+        onClick={handleSubmit}
+        disabled={!selectedReason || loading}
+      >
+        {loading ? 'Marking...' : 'Mark as Lost'}
+      </button>
+      <button onClick={onClose}>Cancel</button>
+    </div>
+  );
+}
+```
 
 ### Deal Diversion Flow
 

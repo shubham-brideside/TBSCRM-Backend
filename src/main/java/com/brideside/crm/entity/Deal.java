@@ -114,6 +114,10 @@ public class Deal {
     @Column(name = "is_deleted", nullable = false)
     private Boolean isDeleted = Boolean.FALSE;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lost_reason", length = 50, nullable = true)
+    private DealLostReason lostReason;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "referenced_deal_id", nullable = true)
     private Deal referencedDeal;
@@ -191,6 +195,8 @@ public class Deal {
     public void setIsDiverted(Boolean isDiverted) { this.isDiverted = isDiverted; }
     public Boolean getIsDeleted() { return isDeleted; }
     public void setIsDeleted(Boolean isDeleted) { this.isDeleted = isDeleted; }
+    public DealLostReason getLostReason() { return lostReason; }
+    public void setLostReason(DealLostReason lostReason) { this.lostReason = lostReason; }
     public Deal getReferencedDeal() { return referencedDeal; }
     public void setReferencedDeal(Deal referencedDeal) { this.referencedDeal = referencedDeal; }
     public Pipeline getReferencedPipeline() { return referencedPipeline; }

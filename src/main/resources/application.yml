@@ -3,17 +3,21 @@ spring:
     name: brideside-crm-backend
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:thebrideside.mysql.database.azure.com:3306}/${DB_DATABASE:thebrideside}?useSSL=${DB_SSL:true}&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata&characterEncoding=UTF-8&useUnicode=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&createDatabaseIfNotExist=true
+    url: jdbc:mysql://${DB_HOST:thebrideside.mysql.database.azure.com:3306}/${DB_DATABASE:thebrideside}?useSSL=${DB_SSL:true}&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata&characterEncoding=UTF-8&useUnicode=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&createDatabaseIfNotExist=true&tcpKeepAlive=true&tcpNoDelay=true&connectTimeout=30000&socketTimeout=60000
     username: ${DB_USER:thebrideside}
     password: ${DB_PASSWORD:TheBride@260799}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:20}
       minimum-idle: ${DB_MIN_IDLE:5}
-      idle-timeout: 300000
-      max-lifetime: 1200000
-      connection-timeout: 20000
+      idle-timeout: 240000  # 4 minutes - connections idle longer than this will be removed
+      max-lifetime: 300000  # 5 minutes (must be less than MySQL wait_timeout, Azure typically closes at 7-8 minutes)
+      connection-timeout: 30000  # 30 seconds
+      validation-timeout: 3000  # 3 seconds
       leak-detection-threshold: 60000
+      connection-test-query: SELECT 1  # Test query to validate connections before use
+      keepalive-time: 120000  # 2 minutes - send keepalive packets to prevent server from closing connections
+      register-mbeans: true
 
   jpa:
     hibernate:
