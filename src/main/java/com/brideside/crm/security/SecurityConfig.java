@@ -53,8 +53,9 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
@@ -104,6 +105,11 @@ public class SecurityConfig {
             "http://localhost:5173",  // For Vite dev server
             "http://localhost:8080"   // For local backend testing
         );
+        
+        // Log the configured origins for debugging
+        System.out.println("CORS Configuration - Frontend URL: " + frontendUrl);
+        System.out.println("CORS Configuration - Allowed Origins: " + allowedOrigins);
+        
         configuration.setAllowedOrigins(allowedOrigins);
         
         // Allow credentials when using specific origins
