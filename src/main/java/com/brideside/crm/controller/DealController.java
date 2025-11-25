@@ -142,6 +142,7 @@ public class DealController {
         r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null;
         r.label = d.getLabel() != null ? d.getLabel().toDisplayString() : null;
         r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
+        r.subSource = d.getDealSubSource() != null ? d.getDealSubSource().toDisplayString() : null;
         r.isDiverted = d.getIsDiverted();
         r.referencedDealId = d.getReferencedDeal() != null ? d.getReferencedDeal().getId() : null;
         r.referencedPipelineId = d.getReferencedPipeline() != null ? d.getReferencedPipeline().getId() : null;

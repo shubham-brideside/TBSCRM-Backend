@@ -26,7 +26,8 @@ public class DealResponse {
     public Boolean venueAsked;
     public String eventDate; // ISO-8601 date
     public String label; // DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
-    public String source; // Instagram, Whatsapp, Email, Reference, Call, Website
+    public String source; // Direct, Divert, Reference, Planner
+    public String subSource; // Instagram, Whatsapp, Landing Page, Email (only present when source is "Direct")
     public Boolean isDiverted; // true if this deal was diverted from another deal
     public Long referencedDealId; // ID of the original deal if this is a diverted deal
     public Long referencedPipelineId; // ID of the pipeline from which the deal was diverted

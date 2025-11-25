@@ -29,7 +29,8 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
     "venueAsked": false,
     "eventDate": "2025-12-19",
     "label": "DIRECT",
-    "source": "Instagram",
+    "source": "Direct",
+    "subSource": "Instagram",
     "referencedDealId": null
   }
   ```
@@ -40,7 +41,8 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
   - `commissionAmount` (optional) — overrides auto commission calculation (otherwise derived from selected source).  
   - `eventDate` expects ISO `yyyy-MM-dd`. Boolean flags default to null when omitted.
   - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP").
-  - `source` (optional) — enum: `Instagram`, `Whatsapp`, `Email`, `Reference`, `Call`, `Website`. Case-insensitive (e.g., "instagram", "Instagram", "INSTAGRAM" all work).
+  - `source` (optional) — enum: `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive (e.g., "direct", "Direct", "DIRECT" all work).
+  - `subSource` (optional) — enum: `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive. If `source` is not `"Direct"`, `subSource` will be ignored or cleared.
   - `referencedDealId` (optional) — ID of the original deal when creating a diverted deal. **Required when `label` is `DIVERT`**.
 
 - **Response (200 OK):** `DealResponse`
@@ -67,7 +69,8 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
     "venueAsked": false,
     "eventDate": "2025-12-19",
     "label": "DIRECT",
-    "source": "Instagram",
+    "source": "Direct",
+    "subSource": "Instagram",
     "isDiverted": false,
     "referencedDealId": null,
     "referencedPipelineId": null
@@ -218,7 +221,8 @@ GET /api/deals?sort=linkedPerson,asc
     "venueAsked": true,
     "eventDate": "2025-12-20",
     "label": "DIRECT",
-    "source": "Whatsapp"
+    "source": "Direct",
+    "subSource": "Whatsapp"
   }
   ```
   - All fields are **optional** - only include the fields you want to update
@@ -230,7 +234,8 @@ GET /api/deals?sort=linkedPerson,asc
   - `commissionAmount` (optional) — overrides auto commission calculation
   - `eventDate` expects ISO `yyyy-MM-dd` format
   - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP")
-  - `source` (optional) — enum: `Instagram`, `Whatsapp`, `Email`, `Reference`, `Call`, `Website`. Case-insensitive
+  - `source` (optional) — enum: `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive
+  - `subSource` (optional) — enum: `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive. If `source` is not `"Direct"`, `subSource` will be ignored or cleared.
   - **Note:** When updating `label` to `DIVERT`, you cannot set it via the update endpoint. Diverted deals should be created using the create endpoint with `label: "DIVERT"` and `referencedDealId`
 
 - **Response (200 OK):** `DealResponse` (same structure as Create Deal response)
@@ -257,7 +262,8 @@ GET /api/deals?sort=linkedPerson,asc
     "venueAsked": true,
     "eventDate": "2025-12-20",
     "label": "DIRECT",
-    "source": "Whatsapp",
+    "source": "Direct",
+    "subSource": "Whatsapp",
     "isDiverted": false,
     "referencedDealId": null,
     "referencedPipelineId": null,
@@ -306,15 +312,22 @@ GET /api/deals?sort=linkedPerson,asc
 ## Update Deal Status
 
 - **Method / URL:** `PATCH /api/deals/{dealId}/status`
-- **Description:** Update deal status. **When marking a deal as LOST, `lostReason` is required.**
+- **Description:** Update deal status. 
+  - **When marking as LOST:** `lostReason` is required.
+  - **When marking as WON:** `value` is required if deal doesn't have a value. Commission is automatically calculated but can be edited.
 - **Body:**
   ```json
   {
-    "status": "LOST",
-    "lostReason": "Not Interested"
+    "status": "WON",
+    "value": 125000,
+    "commissionAmount": 12500
   }
   ```
   - `status` (required) — Allowed values: `IN_PROGRESS`, `WON`, `LOST`
+  - `value` (optional, but required when `status` is `WON` and deal doesn't have a value) — Deal value (decimal). If deal already has a value, this can be used to update it.
+  - `commissionAmount` (optional) — Commission amount (decimal). If not provided, will be calculated automatically based on deal source:
+    - **10%** of deal value for `Direct`, `Reference`, or `Planner` sources
+    - **15%** of deal value for `Divert` source
   - `lostReason` (required when `status` is `LOST`, optional otherwise) — Allowed values:
     - `"Slot not opened"`
     - `"Not Interested"`
@@ -324,15 +337,33 @@ GET /api/deals?sort=linkedPerson,asc
     - `"Budget"`
     - `"Booked Someone else"`
   
-  **Important:** When `status` is `LOST`, the `lostReason` field is **mandatory**. The backend will return a `400 Bad Request` error if `lostReason` is missing or invalid.
+  **Important:** 
+  - When `status` is `LOST`, the `lostReason` field is **mandatory**.
+  - When `status` is `WON`, the `value` field is **required** if the deal doesn't already have a value. If the deal already has a value, you can optionally update it.
+  - Commission is automatically calculated but can be overridden by providing `commissionAmount`.
 
-- **Response:** Updated `DealResponse` including the `lostReason` field (if set). Backend syncs the legacy `won` column and recalculates commission if moving to `WON` and no manual commission provided.
+- **Response:** Updated `DealResponse` including the `lostReason` field (if set) and updated `value` and `commissionAmount` (if provided).
 
 - **Example Requests:**
   ```json
-  // Mark as WON
+  // Mark as WON with new value (deal doesn't have value)
   {
-    "status": "WON"
+    "status": "WON",
+    "value": 125000
+    // commissionAmount will be calculated automatically (10% or 15% based on source)
+  }
+  
+  // Mark as WON with value and custom commission
+  {
+    "status": "WON",
+    "value": 125000,
+    "commissionAmount": 15000  // Override default calculation
+  }
+  
+  // Mark as WON updating existing value
+  {
+    "status": "WON",
+    "value": 150000  // Update existing value, commission recalculated
   }
   
   // Mark as LOST (lostReason is required)
@@ -347,7 +378,13 @@ GET /api/deals?sort=linkedPerson,asc
   }
   ```
 
+- **Commission Calculation:**
+  - **Direct, Reference, or Planner:** 10% of deal value
+  - **Divert:** 15% of deal value
+  - If `commissionAmount` is provided, it overrides the calculated value
+
 - **Error Responses:**
+  - `400 Bad Request`: `"Deal value is required when marking deal as WON. Please provide a value greater than 0."`
   - `400 Bad Request`: `"lostReason is required when marking deal as LOST. Please select a reason from the list."`
   - `400 Bad Request`: `"Invalid lostReason value: ... Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else"`
 
@@ -450,7 +487,8 @@ To create a diverted deal:
 - `phoneNumber` is separate from the linked person's phone—when a person is attached, the backend copies their current phone into `contactNumber`.  
 - `finalThankYouSent`, `eventDateAsked`, `contactNumberAsked`, `venueAsked` are booleans; `null` means "not captured yet".
 - `label`: enum with values `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both space-separated and underscore formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP"). Returns display format with spaces.
-- `source`: enum with values `Instagram`, `Whatsapp`, `Email`, `Reference`, `Call`, `Website`. Case-insensitive input (e.g., "instagram", "Instagram", "INSTAGRAM" all accepted). Returns properly capitalized display format.
+- `source`: enum with values `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive input (e.g., "direct", "Direct", "DIRECT" all accepted). Returns properly capitalized display format.
+- `subSource`: enum with values `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive input. Returns properly capitalized display format. Automatically cleared when `source` is not `"Direct"`.
 - `lostReason`: string indicating why a deal was marked as LOST. Only present when `status` is `LOST`. Values: `"Slot not opened"`, `"Not Interested"`, `"Date postponed"`, `"Not Available"`, `"Ghosted"`, `"Budget"`, `"Booked Someone else"`. Automatically cleared when status changes to `IN_PROGRESS` or `WON`.
 - `isDiverted`: boolean indicating if this deal was diverted from another deal. Automatically set to `true` when `label` is `DIVERT`.
 - `referencedDealId`: ID of the original deal if this is a diverted deal. `null` for non-diverted deals. Required when creating a diverted deal.
@@ -470,12 +508,22 @@ The following label values are available for the deal label dropdown:
 
 ### Source Options
 The following source values are available for the deal source dropdown:
-- `Instagram`
-- `Whatsapp`
-- `Email`
-- `Reference`
-- `Call`
-- `Website`
+- `Direct` - Direct leads/customers
+- `Divert` - Diverted deals
+- `Reference` - Referred by someone
+- `Planner` - From event planners
+
+### Sub-Source Options (Only for Direct)
+When `source` is set to `"Direct"`, you can optionally specify a sub-source:
+- `Instagram` - Lead came from Instagram
+- `Whatsapp` - Lead came from WhatsApp
+- `Landing Page` - Lead came from landing page
+- `Email` - Lead came from email
+
+**Important:** 
+- `subSource` is **only valid** when `source` is `"Direct"`
+- If `source` is `"Divert"`, `"Reference"`, or `"Planner"`, the `subSource` field will be ignored or cleared
+- If you set `source` to `"Direct"` without providing `subSource`, the `subSource` will be `null`
 
 ### Lost Reason Options
 The following lost reason values are available when marking a deal as LOST:
@@ -497,7 +545,9 @@ The following lost reason values are available when marking a deal as LOST:
 - Referencing non-existent related IDs → `404 Not Found`.  
 - Invalid `status` or malformed date strings → `400 Bad Request`.
 - Invalid `label` value → `400 Bad Request` with message: "Invalid label value: {value}. Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING".
-- Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Instagram, Whatsapp, Email, Reference, Call, Website".
+- Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Direct, Divert, Reference, Planner".
+- Invalid `subSource` value → `400 Bad Request` with message: "Invalid subSource value: {value}. Allowed values: Instagram, Whatsapp, Landing Page, Email".
+- `subSource` provided when `source` is not `"Direct"` → `400 Bad Request` with message: "subSource can only be provided when source is 'Direct'".
 - Marking deal as LOST without `lostReason` → `400 Bad Request` with message: "lostReason is required when marking deal as LOST. Please select a reason from the list."
 - Invalid `lostReason` value → `400 Bad Request` with message: "Invalid lostReason value: {value}. Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else".
 - Creating a diverted deal without `referencedDealId` → `400 Bad Request` with message: "referencedDealId is required when label is DIVERT".
@@ -507,6 +557,153 @@ The following lost reason values are available when marking a deal as LOST:
 ---
 
 ## UI Implementation Guide
+
+### Marking Deal as WON (Deal Value & Commission Popup)
+
+When a user attempts to mark a deal as WON, you must show a popup/modal to capture or edit the deal value and commission:
+
+1. **User clicks "Mark as Won" button**
+   - Check if the deal already has a value:
+     - **If deal has no value:** Show popup with empty value field (required)
+     - **If deal has value:** Show popup with existing value pre-filled (editable)
+
+2. **Popup should display:**
+   - **Deal Value** field (required, numeric)
+     - Pre-fill with existing value if deal already has one
+     - Show as empty if deal doesn't have a value
+   - **Commission Amount** field (editable, numeric)
+     - Calculate default commission based on deal source:
+       - **10%** of deal value if source is `Direct`, `Reference`, or `Planner`
+       - **15%** of deal value if source is `Divert`
+     - Allow user to edit the commission amount
+     - Update commission automatically when deal value changes
+
+3. **Submit the status update**
+   ```javascript
+   const response = await fetch(`/api/deals/${dealId}/status`, {
+     method: 'PATCH',
+     headers: {
+       'Content-Type': 'application/json',
+       'Authorization': `Bearer ${token}`
+     },
+     body: JSON.stringify({
+       status: 'WON',
+       value: dealValue,  // Required if deal doesn't have value
+       commissionAmount: commissionAmount  // Optional, will be calculated if not provided
+     })
+   });
+   ```
+
+4. **Handle errors**
+   - If `value` is missing or 0, the backend returns `400 Bad Request`
+   - Display error message: "Deal value is required when marking this deal as won"
+
+**Example React Component:**
+```jsx
+function MarkAsWonModal({ deal, isOpen, onClose, onSuccess }) {
+  const [dealValue, setDealValue] = useState(deal?.value?.toString() || '');
+  const [commissionAmount, setCommissionAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  
+  // Calculate default commission when value changes
+  useEffect(() => {
+    if (dealValue && !isNaN(parseFloat(dealValue))) {
+      const value = parseFloat(dealValue);
+      const dealSource = deal?.source; // "Direct", "Divert", "Reference", "Planner"
+      
+      let commissionRate = 0.10; // Default 10%
+      if (dealSource === 'Divert') {
+        commissionRate = 0.15; // 15% for Divert
+      }
+      
+      const calculatedCommission = value * commissionRate;
+      setCommissionAmount(calculatedCommission.toFixed(2));
+    } else {
+      setCommissionAmount('');
+    }
+  }, [dealValue, deal?.source]);
+  
+  const handleSubmit = async () => {
+    if (!dealValue || parseFloat(dealValue) <= 0) {
+      alert('Please enter a valid deal value');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/deals/${deal.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: 'WON',
+          value: parseFloat(dealValue),
+          commissionAmount: commissionAmount ? parseFloat(commissionAmount) : undefined
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.message || 'Failed to mark deal as won');
+        return;
+      }
+      
+      onSuccess();
+      onClose();
+    } catch (error) {
+      alert('An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div className="modal">
+      <h2>Mark Deal as Won</h2>
+      
+      <div>
+        <label htmlFor="dealValue">Deal Value: *</label>
+        <input
+          id="dealValue"
+          type="number"
+          value={dealValue}
+          onChange={(e) => setDealValue(e.target.value)}
+          min="0"
+          step="0.01"
+          required
+        />
+      </div>
+      
+      <div>
+        <label htmlFor="commission">Commission Amount:</label>
+        <input
+          id="commission"
+          type="number"
+          value={commissionAmount}
+          onChange={(e) => setCommissionAmount(e.target.value)}
+          min="0"
+          step="0.01"
+        />
+        <small>
+          Default: {deal?.source === 'Divert' ? '15%' : '10%'} of deal value
+        </small>
+      </div>
+      
+      <button
+        onClick={handleSubmit}
+        disabled={!dealValue || parseFloat(dealValue) <= 0 || loading}
+      >
+        {loading ? 'Marking...' : 'Mark as Won'}
+      </button>
+      <button onClick={onClose}>Cancel</button>
+    </div>
+  );
+}
+```
 
 ### Marking Deal as LOST (Lost Reason Popup)
 

@@ -28,7 +28,8 @@ public class DealDtos {
         public Boolean venueAsked; // optional
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
-        public String source; // optional: Instagram, Whatsapp, Email, Reference, Call, Website
+        public String source; // optional: Direct, Divert, Reference, Planner
+        public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
         public Long referencedDealId; // optional: ID of the original deal when diverting (required when label is DIVERT)
     }
 
@@ -39,6 +40,8 @@ public class DealDtos {
     public static class MarkStatusRequest {
         public DealStatus status;
         public String lostReason; // optional: Required when status is LOST. Values: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
+        public BigDecimal value; // optional: Required when status is WON and deal doesn't have a value. Can be edited if deal already has a value.
+        public BigDecimal commissionAmount; // optional: Commission amount. Default: 10% of value for Direct/Reference/Planner, 15% for Divert. Can be edited.
     }
 
     public static class UpdateRequest {
@@ -65,7 +68,8 @@ public class DealDtos {
         public Boolean venueAsked;
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
-        public String source; // optional: Instagram, Whatsapp, Email, Reference, Call, Website
+        public String source; // optional: Direct, Divert, Reference, Planner
+        public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
     }
 }
 

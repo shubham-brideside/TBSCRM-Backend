@@ -7,6 +7,7 @@ import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealLabel;
 import com.brideside.crm.entity.DealLostReason;
 import com.brideside.crm.entity.DealSource;
+import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
@@ -214,9 +215,28 @@ public class DealServiceImpl implements DealService {
             DealSource dealSource = DealSource.fromString(request.source);
             if (dealSource == null) {
                 throw new BadRequestException("Invalid source value: " + request.source + 
-                    ". Allowed values: Instagram, Whatsapp, Email, Reference, Call, Website");
+                    ". Allowed values: Direct, Divert, Reference, Planner");
             }
             deal.setDealSource(dealSource);
+            
+            // Handle subSource - only valid when source is "Direct"
+            if (request.subSource != null && !request.subSource.trim().isEmpty()) {
+                if (dealSource != DealSource.DIRECT) {
+                    throw new BadRequestException("subSource can only be provided when source is 'Direct'");
+                }
+                DealSubSource dealSubSource = DealSubSource.fromString(request.subSource);
+                if (dealSubSource == null) {
+                    throw new BadRequestException("Invalid subSource value: " + request.subSource + 
+                        ". Allowed values: Instagram, Whatsapp, Landing Page, Email");
+                }
+                deal.setDealSubSource(dealSubSource);
+            } else if (dealSource == DealSource.DIRECT) {
+                // Clear subSource if source is Direct but no subSource provided
+                deal.setDealSubSource(null);
+            }
+        } else {
+            // If source is cleared, also clear subSource
+            deal.setDealSubSource(null);
         }
         Deal savedDeal = dealRepository.save(deal);
         syncGoogleCalendarEvent(savedDeal);
@@ -331,9 +351,28 @@ public class DealServiceImpl implements DealService {
             DealSource dealSource = DealSource.fromString(request.source);
             if (dealSource == null) {
                 throw new BadRequestException("Invalid source value: " + request.source + 
-                    ". Allowed values: Instagram, Whatsapp, Email, Reference, Call, Website");
+                    ". Allowed values: Direct, Divert, Reference, Planner");
             }
             deal.setDealSource(dealSource);
+            
+            // Handle subSource - only valid when source is "Direct"
+            if (request.subSource != null && !request.subSource.trim().isEmpty()) {
+                if (dealSource != DealSource.DIRECT) {
+                    throw new BadRequestException("subSource can only be provided when source is 'Direct'");
+                }
+                DealSubSource dealSubSource = DealSubSource.fromString(request.subSource);
+                if (dealSubSource == null) {
+                    throw new BadRequestException("Invalid subSource value: " + request.subSource + 
+                        ". Allowed values: Instagram, Whatsapp, Landing Page, Email");
+                }
+                deal.setDealSubSource(dealSubSource);
+            } else if (dealSource == DealSource.DIRECT) {
+                // Clear subSource if source is Direct but no subSource provided
+                deal.setDealSubSource(null);
+            }
+        } else if (request.source != null) {
+            // If source is explicitly set to null/empty, clear subSource
+            deal.setDealSubSource(null);
         }
         
         deal.setUpdatedAt(LocalDateTime.now());
@@ -673,16 +712,65 @@ public class DealServiceImpl implements DealService {
             deal.setLostReason(null);
         }
         
+        // Handle WON status - require value and calculate commission
+        if (status == DealStatus.WON) {
+            // Get the deal value (from request or existing deal)
+            BigDecimal dealValue = request.value != null ? request.value : deal.getValue();
+            
+            // Validate that value is provided
+            if (dealValue == null || dealValue.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BadRequestException("Deal value is required when marking deal as WON. Please provide a value greater than 0.");
+            }
+            
+            // Update deal value if provided in request
+            if (request.value != null) {
+                deal.setValue(request.value);
+            }
+            
+            // Calculate commission based on deal source
+            BigDecimal calculatedCommission = calculateCommissionFromDealSource(dealValue, deal.getDealSource());
+            
+            // Use provided commissionAmount if given, otherwise use calculated commission
+            if (request.commissionAmount != null) {
+                deal.setCommissionAmount(request.commissionAmount);
+            } else {
+                deal.setCommissionAmount(calculatedCommission);
+            }
+        }
+        
         deal.setStatus(status);
         // Sync legacy 'won' column
         deal.setLegacyWon(status == DealStatus.WON);
-        if (status == DealStatus.WON && deal.getSource() != null && deal.getCommissionAmount() == null) {
-            deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
-        }
         deal.setUpdatedAt(LocalDateTime.now());
         Deal saved = dealRepository.save(deal);
         syncGoogleCalendarEvent(saved);
         return saved;
+    }
+    
+    /**
+     * Calculates commission based on deal value and deal source.
+     * - 10% for Direct, Reference, or Planner
+     * - 15% for Divert
+     */
+    private BigDecimal calculateCommissionFromDealSource(BigDecimal dealValue, DealSource dealSource) {
+        if (dealValue == null || dealValue.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        
+        if (dealSource == null) {
+            // Default to 10% if no source specified
+            return dealValue.multiply(new BigDecimal("0.10"));
+        }
+        
+        BigDecimal commissionRate;
+        if (dealSource == DealSource.DIVERT) {
+            commissionRate = new BigDecimal("0.15"); // 15% for Divert
+        } else {
+            // 10% for Direct, Reference, or Planner
+            commissionRate = new BigDecimal("0.10");
+        }
+        
+        return dealValue.multiply(commissionRate);
     }
 
     private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {

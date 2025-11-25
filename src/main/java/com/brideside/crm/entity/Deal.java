@@ -104,9 +104,13 @@ public class Deal {
     @Column(name = "label", length = 50, nullable = true)
     private DealLabel label;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
     @Column(name = "deal_source", length = 50, nullable = true)
     private DealSource dealSource;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "deal_sub_source", length = 50, nullable = true)
+    private DealSubSource dealSubSource;
 
     @Column(name = "is_diverted", nullable = false)
     private Boolean isDiverted = Boolean.FALSE;
@@ -191,6 +195,8 @@ public class Deal {
     public void setLabel(DealLabel label) { this.label = label; }
     public DealSource getDealSource() { return dealSource; }
     public void setDealSource(DealSource dealSource) { this.dealSource = dealSource; }
+    public DealSubSource getDealSubSource() { return dealSubSource; }
+    public void setDealSubSource(DealSubSource dealSubSource) { this.dealSubSource = dealSubSource; }
     public Boolean getIsDiverted() { return isDiverted; }
     public void setIsDiverted(Boolean isDiverted) { this.isDiverted = isDiverted; }
     public Boolean getIsDeleted() { return isDeleted; }

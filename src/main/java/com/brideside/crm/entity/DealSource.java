@@ -1,12 +1,10 @@
 package com.brideside.crm.entity;
 
 public enum DealSource {
-    INSTAGRAM,
-    WHATSAPP,
-    EMAIL,
+    DIRECT,
+    DIVERT,
     REFERENCE,
-    CALL,
-    WEBSITE;
+    PLANNER;
 
     /**
      * Converts a string value to DealSource enum, handling case variations.
@@ -28,18 +26,14 @@ public enum DealSource {
      */
     public String toDisplayString() {
         switch (this) {
-            case INSTAGRAM:
-                return "Instagram";
-            case WHATSAPP:
-                return "Whatsapp";
-            case EMAIL:
-                return "Email";
+            case DIRECT:
+                return "Direct";
+            case DIVERT:
+                return "Divert";
             case REFERENCE:
                 return "Reference";
-            case CALL:
-                return "Call";
-            case WEBSITE:
-                return "Website";
+            case PLANNER:
+                return "Planner";
             default:
                 return this.name();
         }
