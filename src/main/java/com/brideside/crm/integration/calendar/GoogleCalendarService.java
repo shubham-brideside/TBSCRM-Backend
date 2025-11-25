@@ -49,10 +49,30 @@ public class GoogleCalendarService {
     public GoogleCalendarService(GoogleCalendarProperties properties, ObjectMapper objectMapper) throws IOException {
         this.properties = properties;
         this.objectMapper = objectMapper;
-        if (!properties.hasCredentialSource()) {
-            throw new IllegalStateException("Google Calendar credentials are not configured");
+        
+        // Debug logging to help troubleshoot credential loading
+        log.info("Google Calendar Service initializing...");
+        log.debug("Credentials file configured: {}", StringUtils.hasText(properties.getCredentialsFile()));
+        log.debug("Credentials JSON configured: {}", StringUtils.hasText(properties.getCredentialsJson()));
+        if (StringUtils.hasText(properties.getCredentialsJson())) {
+            log.debug("Credentials JSON length: {} characters", properties.getCredentialsJson().length());
+            log.debug("Credentials JSON starts with: {}", 
+                properties.getCredentialsJson().substring(0, Math.min(50, properties.getCredentialsJson().length())));
         }
-        this.credentials = buildGoogleCredentials();
+        
+        if (!properties.hasCredentialSource()) {
+            log.error("Google Calendar credentials are not configured. Set GOOGLE_CALENDAR_CREDENTIALS_JSON or GOOGLE_CALENDAR_CREDENTIALS_FILE.");
+            throw new IllegalStateException("Google Calendar credentials are not configured. Please set GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable or GOOGLE_CALENDAR_CREDENTIALS_FILE property.");
+        }
+        
+        try {
+            this.credentials = buildGoogleCredentials();
+            log.info("Google Calendar credentials loaded successfully");
+        } catch (Exception e) {
+            log.error("Failed to load Google Calendar credentials: {}", e.getMessage(), e);
+            throw new IOException("Failed to load Google Calendar credentials: " + e.getMessage(), e);
+        }
+        
         this.httpClient = HttpClient.newHttpClient();
     }
 
@@ -210,17 +230,44 @@ public class GoogleCalendarService {
     }
 
     private InputStream resolveCredentialStream() throws IOException {
+        // Priority 1: Use credentialsJson from environment variable
         if (StringUtils.hasText(properties.getCredentialsJson())) {
-            return new ByteArrayInputStream(properties.getCredentialsJson().getBytes(StandardCharsets.UTF_8));
+            String jsonContent = properties.getCredentialsJson().trim();
+            
+            // Try to decode if it looks like base64 (optional - handles both raw JSON and base64)
+            try {
+                // Check if it's valid JSON by trying to parse it
+                if (jsonContent.startsWith("{") && jsonContent.endsWith("}")) {
+                    // It's already raw JSON
+                    log.debug("Using raw JSON credentials from environment variable");
+                    return new ByteArrayInputStream(jsonContent.getBytes(StandardCharsets.UTF_8));
+                } else {
+                    // Might be base64 encoded, try to decode
+                    byte[] decoded = java.util.Base64.getDecoder().decode(jsonContent);
+                    String decodedJson = new String(decoded, StandardCharsets.UTF_8);
+                    log.debug("Decoded base64 credentials from environment variable");
+                    return new ByteArrayInputStream(decodedJson.getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (Exception e) {
+                // If base64 decode fails, try using it as raw JSON anyway
+                log.warn("Failed to decode credentials as base64, using as raw JSON: {}", e.getMessage());
+                return new ByteArrayInputStream(jsonContent.getBytes(StandardCharsets.UTF_8));
+            }
         }
+        
+        // Priority 2: Use credentialsFile (for local development)
         if (StringUtils.hasText(properties.getCredentialsFile())) {
             Path credentialsPath = Path.of(properties.getCredentialsFile());
             if (!Files.exists(credentialsPath)) {
+                log.error("Google Calendar credentials file not found: {}", properties.getCredentialsFile());
                 throw new IllegalStateException("Google Calendar credentials file not found: " + properties.getCredentialsFile());
             }
+            log.debug("Using credentials file: {}", properties.getCredentialsFile());
             return Files.newInputStream(credentialsPath);
         }
-        throw new IllegalStateException("No Google Calendar credentials configured");
+        
+        log.error("No Google Calendar credentials configured. Set GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable or GOOGLE_CALENDAR_CREDENTIALS_FILE property.");
+        throw new IllegalStateException("No Google Calendar credentials configured. Please set GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable or GOOGLE_CALENDAR_CREDENTIALS_FILE property.");
     }
 
     private ObjectNode buildEventPayload(Deal deal) {
