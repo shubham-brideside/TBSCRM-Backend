@@ -124,10 +124,12 @@ public class DealController {
         r.name = d.getName();
         r.value = d.getValue();
         r.personId = d.getPerson() != null ? d.getPerson().getId() : null;
+        r.personName = d.getPerson() != null ? d.getPerson().getName() : null;
         r.pipelineId = d.getPipeline() != null ? d.getPipeline().getId() : null;
         r.stageId = d.getStage() != null ? d.getStage().getId() : null;
         r.sourceId = d.getSource() != null ? d.getSource().getId() : null;
         r.organizationId = d.getOrganization() != null ? d.getOrganization().getId() : null;
+        r.organizationName = d.getOrganization() != null ? d.getOrganization().getName() : null;
         r.categoryId = d.getDealCategory() != null ? d.getDealCategory().getId() : null;
         r.eventType = d.getEventType();
         r.status = d.getStatus();

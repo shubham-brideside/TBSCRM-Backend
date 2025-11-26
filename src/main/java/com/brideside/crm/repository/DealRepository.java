@@ -8,6 +8,7 @@ import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 
@@ -23,6 +24,10 @@ public interface DealRepository extends JpaRepository<Deal, Long> {
     
     // Methods that exclude deleted deals
     List<Deal> findByIsDeletedFalse();
+    
+    @Query("SELECT d FROM Deal d LEFT JOIN FETCH d.person LEFT JOIN FETCH d.organization WHERE d.isDeleted = false OR d.isDeleted IS NULL")
+    List<Deal> findByIsDeletedFalseWithPersonAndOrganization();
+    
     List<Deal> findByPipelineAndIsDeletedFalse(Pipeline pipeline);
     List<Deal> findByStageAndIsDeletedFalse(Stage stage);
     List<Deal> findByStatusAndIsDeletedFalse(DealStatus status);

@@ -399,7 +399,8 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public List<Deal> list(String sortField, String sortDirection) {
-        List<Deal> deals = dealRepository.findByIsDeletedFalse();
+        // Use JOIN FETCH to eagerly load Person and Organization for tooltip display
+        List<Deal> deals = dealRepository.findByIsDeletedFalseWithPersonAndOrganization();
         
         // Normalize sort field and direction
         String normalizedField = normalizeSortField(sortField);
@@ -825,10 +826,11 @@ public class DealServiceImpl implements DealService {
             throw new ResourceNotFoundException("Deal not found with id " + id);
         }
         
-        // Find all deals that reference this deal (diverted deals) - only non-deleted ones
-        List<Deal> referencingDeals = dealRepository.findByReferencedDealAndIsDeletedFalse(deal);
+        // Find all deals that reference this deal (diverted deals) - including soft-deleted ones
+        // We need to clear references from both deleted and non-deleted deals to prevent foreign key constraint violations
+        List<Deal> referencingDeals = dealRepository.findByReferencedDeal(deal);
         
-        // Clear the reference for all deals that reference this one
+        // Clear the reference for all deals that reference this one (both deleted and non-deleted)
         // This prevents foreign key constraint violations
         for (Deal referencingDeal : referencingDeals) {
             referencingDeal.setReferencedDeal(null);

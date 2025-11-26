@@ -52,12 +52,13 @@ public class GoogleCalendarService {
         
         // Debug logging to help troubleshoot credential loading
         log.info("Google Calendar Service initializing...");
-        log.debug("Credentials file configured: {}", StringUtils.hasText(properties.getCredentialsFile()));
-        log.debug("Credentials JSON configured: {}", StringUtils.hasText(properties.getCredentialsJson()));
+        log.info("Google Calendar enabled: {}", properties.isEnabled());
+        log.info("Credentials file configured: {}", StringUtils.hasText(properties.getCredentialsFile()));
+        log.info("Credentials JSON configured: {}", StringUtils.hasText(properties.getCredentialsJson()));
         if (StringUtils.hasText(properties.getCredentialsJson())) {
-            log.debug("Credentials JSON length: {} characters", properties.getCredentialsJson().length());
-            log.debug("Credentials JSON starts with: {}", 
-                properties.getCredentialsJson().substring(0, Math.min(50, properties.getCredentialsJson().length())));
+            log.info("Credentials JSON length: {} characters", properties.getCredentialsJson().length());
+            String jsonPreview = properties.getCredentialsJson().substring(0, Math.min(100, properties.getCredentialsJson().length()));
+            log.info("Credentials JSON preview: {}...", jsonPreview);
         }
         
         if (!properties.hasCredentialSource()) {
@@ -233,36 +234,62 @@ public class GoogleCalendarService {
         // Priority 1: Use credentialsJson from environment variable
         if (StringUtils.hasText(properties.getCredentialsJson())) {
             String jsonContent = properties.getCredentialsJson().trim();
+            log.info("Attempting to load credentials from GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable");
             
             // Try to decode if it looks like base64 (optional - handles both raw JSON and base64)
             try {
                 // Check if it's valid JSON by trying to parse it
                 if (jsonContent.startsWith("{") && jsonContent.endsWith("}")) {
                     // It's already raw JSON
-                    log.debug("Using raw JSON credentials from environment variable");
+                    log.info("Using raw JSON credentials from environment variable");
+                    // Validate it's valid JSON by trying to parse it
+                    try {
+                        objectMapper.readTree(jsonContent);
+                        log.info("Credentials JSON is valid");
+                    } catch (Exception e) {
+                        log.error("Credentials JSON is not valid JSON: {}", e.getMessage());
+                        throw new IOException("Invalid JSON in GOOGLE_CALENDAR_CREDENTIALS_JSON: " + e.getMessage(), e);
+                    }
                     return new ByteArrayInputStream(jsonContent.getBytes(StandardCharsets.UTF_8));
                 } else {
                     // Might be base64 encoded, try to decode
+                    log.info("Attempting to decode base64 credentials");
                     byte[] decoded = java.util.Base64.getDecoder().decode(jsonContent);
                     String decodedJson = new String(decoded, StandardCharsets.UTF_8);
-                    log.debug("Decoded base64 credentials from environment variable");
+                    log.info("Successfully decoded base64 credentials from environment variable");
+                    // Validate decoded JSON
+                    try {
+                        objectMapper.readTree(decodedJson);
+                        log.info("Decoded credentials JSON is valid");
+                    } catch (Exception e) {
+                        log.error("Decoded credentials JSON is not valid: {}", e.getMessage());
+                        throw new IOException("Invalid JSON after base64 decode: " + e.getMessage(), e);
+                    }
                     return new ByteArrayInputStream(decodedJson.getBytes(StandardCharsets.UTF_8));
                 }
-            } catch (Exception e) {
-                // If base64 decode fails, try using it as raw JSON anyway
-                log.warn("Failed to decode credentials as base64, using as raw JSON: {}", e.getMessage());
+            } catch (IllegalArgumentException e) {
+                // Base64 decode failed, try using as raw JSON
+                log.warn("Failed to decode as base64 (not base64), trying as raw JSON: {}", e.getMessage());
+                if (!jsonContent.startsWith("{")) {
+                    log.error("Credentials JSON doesn't start with '{' and is not valid base64. Please check your GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable.");
+                    throw new IOException("Invalid credentials format. Expected JSON starting with '{' or valid base64 encoded JSON.", e);
+                }
                 return new ByteArrayInputStream(jsonContent.getBytes(StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                log.error("Unexpected error processing credentials JSON: {}", e.getMessage(), e);
+                throw new IOException("Failed to process credentials JSON: " + e.getMessage(), e);
             }
         }
         
         // Priority 2: Use credentialsFile (for local development)
         if (StringUtils.hasText(properties.getCredentialsFile())) {
+            log.info("Attempting to load credentials from file: {}", properties.getCredentialsFile());
             Path credentialsPath = Path.of(properties.getCredentialsFile());
             if (!Files.exists(credentialsPath)) {
                 log.error("Google Calendar credentials file not found: {}", properties.getCredentialsFile());
                 throw new IllegalStateException("Google Calendar credentials file not found: " + properties.getCredentialsFile());
             }
-            log.debug("Using credentials file: {}", properties.getCredentialsFile());
+            log.info("Using credentials file: {}", properties.getCredentialsFile());
             return Files.newInputStream(credentialsPath);
         }
         

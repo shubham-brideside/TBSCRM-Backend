@@ -119,7 +119,8 @@ public class PipelineServiceImpl implements PipelineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found"));
 
         if (hardDelete) {
-            List<Deal> linkedDeals = dealRepository.findByPipeline(pipeline);
+            // Only check for non-deleted deals when validating pipeline deletion
+            List<Deal> linkedDeals = dealRepository.findByPipelineAndIsDeletedFalse(pipeline);
             if (!linkedDeals.isEmpty()) {
                 throw new BadRequestException("Cannot delete pipeline while " + linkedDeals.size()
                         + " deal(s) reference it. Reassign or delete those deals first.");

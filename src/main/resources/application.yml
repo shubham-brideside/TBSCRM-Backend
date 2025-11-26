@@ -104,3 +104,10 @@ google:
     sync-window-past-days: ${GOOGLE_CALENDAR_SYNC_PAST_DAYS:30}
     sync-window-future-days: ${GOOGLE_CALENDAR_SYNC_FUTURE_DAYS:120}
 
+azure:
+  storage:
+    blob:
+      connection-string: ${AZURE_STORAGE_BLOB_CONNECTION_STRING:}
+      container-name: ${AZURE_STORAGE_BLOB_CONTAINER_NAME:call-screenshots}
+      base-url: ${AZURE_STORAGE_BLOB_BASE_URL:}
+

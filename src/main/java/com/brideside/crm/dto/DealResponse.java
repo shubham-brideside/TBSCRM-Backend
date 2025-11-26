@@ -9,10 +9,12 @@ public class DealResponse {
     public String name;
     public BigDecimal value;
     public Long personId;
+    public String personName; // Person name for display/tooltip
     public Long pipelineId;
     public Long stageId;
     public Long sourceId;
     public Long organizationId;
+    public String organizationName; // Organization name for display/tooltip
     public Long categoryId;
     public String eventType;
     public DealStatus status;
