@@ -1,5 +1,6 @@
 package com.brideside.crm.controller;
 
+import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.DealDtos;
 import com.brideside.crm.dto.DealResponse;
 import com.brideside.crm.entity.Deal;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -160,6 +162,56 @@ public class DealController {
     public ResponseEntity<List<com.brideside.crm.dto.PipelineDtos.PipelineResponse>> getAvailablePipelinesForDiversion(@PathVariable Long dealId) {
         List<com.brideside.crm.dto.PipelineDtos.PipelineResponse> pipelines = dealService.getAvailablePipelinesForDiversion(dealId);
         return ResponseEntity.ok(pipelines);
+    }
+
+    @GetMapping("/sources")
+    @Operation(summary = "Get deal sources", description = "Returns list of available deal sources")
+    public ResponseEntity<ApiResponse<List<SourceOption>>> getSources() {
+        List<SourceOption> sources = Arrays.asList(
+            new SourceOption("Direct", "Direct"),
+            new SourceOption("Divert", "Divert"),
+            new SourceOption("Reference", "Reference"),
+            new SourceOption("Planner", "Planner")
+        );
+        return ResponseEntity.ok(ApiResponse.success("Sources retrieved successfully", sources));
+    }
+
+    @GetMapping("/sub-sources")
+    @Operation(summary = "Get deal sub sources", description = "Returns list of available deal sub sources (for Direct source)")
+    public ResponseEntity<ApiResponse<List<SourceOption>>> getSubSources() {
+        List<SourceOption> subSources = Arrays.asList(
+            new SourceOption("Instagram", "Instagram"),
+            new SourceOption("Whatsapp", "Whatsapp"),
+            new SourceOption("Landing Page", "Landing Page"),
+            new SourceOption("Email", "Email")
+        );
+        return ResponseEntity.ok(ApiResponse.success("Sub sources retrieved successfully", subSources));
+    }
+
+    public static class SourceOption {
+        private String code;
+        private String label;
+
+        public SourceOption(String code, String label) {
+            this.code = code;
+            this.label = label;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String code) {
+            this.code = code;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
     }
 }
 

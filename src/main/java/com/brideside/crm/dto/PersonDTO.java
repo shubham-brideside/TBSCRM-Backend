@@ -55,7 +55,10 @@ public class PersonDTO {
     private Person.PersonLabel label;
 
     @Schema(description = "Lead source")
-    private Person.PersonSource source;
+    private com.brideside.crm.entity.DealSource source;
+
+    @Schema(description = "Lead sub source (only when source is Direct)")
+    private com.brideside.crm.entity.DealSubSource subSource;
 
     @Schema(description = "Record created timestamp", accessMode = Schema.AccessMode.READ_ONLY)
     private Instant createdAt;
@@ -159,12 +162,20 @@ public class PersonDTO {
         this.label = label;
     }
 
-    public Person.PersonSource getSource() {
+    public com.brideside.crm.entity.DealSource getSource() {
         return source;
     }
 
-    public void setSource(Person.PersonSource source) {
+    public void setSource(com.brideside.crm.entity.DealSource source) {
         this.source = source;
+    }
+
+    public com.brideside.crm.entity.DealSubSource getSubSource() {
+        return subSource;
+    }
+
+    public void setSubSource(com.brideside.crm.entity.DealSubSource subSource) {
+        this.subSource = subSource;
     }
 
     public Instant getCreatedAt() {
@@ -267,10 +278,5 @@ public class PersonDTO {
                 .collect(Collectors.toList());
     }
 
-    public static List<EnumOption> sourceOptions() {
-        return Arrays.stream(Person.PersonSource.values())
-                .map(v -> new EnumOption(v.name(), v.getDisplayName()))
-                .collect(Collectors.toList());
-    }
 }
 

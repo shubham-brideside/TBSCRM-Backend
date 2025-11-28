@@ -20,6 +20,7 @@ public final class PersonMapper {
         dto.setLeadDate(person.getLeadDate());
         dto.setLabel(person.getLabel());
         dto.setSource(person.getSource());
+        dto.setSubSource(person.getSubSource());
         dto.setCreatedAt(person.getCreatedAt());
         dto.setUpdatedAt(person.getUpdatedAt());
 
@@ -70,6 +71,9 @@ public final class PersonMapper {
         }
         if (dto.getSource() != null) {
             entity.setSource(dto.getSource());
+        }
+        if (dto.getSubSource() != null) {
+            entity.setSubSource(dto.getSubSource());
         }
     }
 }

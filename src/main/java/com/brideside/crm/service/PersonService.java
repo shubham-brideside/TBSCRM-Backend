@@ -48,7 +48,7 @@ public class PersonService {
                                 Person.PersonLabel label,
                                 Long organizationId,
                                 Long ownerId,
-                                Person.PersonSource source,
+                                com.brideside.crm.entity.DealSource source,
                                 LocalDate leadDateFrom,
                                 LocalDate leadDateTo,
                                 Pageable pageable) {
@@ -162,14 +162,20 @@ public class PersonService {
         return PersonDTO.labelOptions();
     }
 
-    public List<PersonDTO.EnumOption> listSourceOptions() {
-        return PersonDTO.sourceOptions();
-    }
 
     private void apply(PersonDTO dto, Person entity) {
         if (!StringUtils.hasText(dto.getName())) {
             throw new BadRequestException("Person name is required");
         }
+        
+        // Validate subSource: can only be set when source is DIRECT
+        if (dto.getSubSource() != null && dto.getSource() != null && dto.getSource() != com.brideside.crm.entity.DealSource.DIRECT) {
+            throw new BadRequestException("Sub source can only be set when source is 'Direct'");
+        }
+        if (dto.getSubSource() != null && (dto.getSource() == null || dto.getSource() != com.brideside.crm.entity.DealSource.DIRECT)) {
+            throw new BadRequestException("Sub source can only be set when source is 'Direct'");
+        }
+        
         PersonMapper.updateEntity(dto, entity);
         entity.setName(dto.getName().trim());
 
@@ -185,6 +191,11 @@ public class PersonService {
             if (entity.getLeadDate() == null) {
                 entity.setLeadDate(LocalDate.now());
             }
+        }
+        
+        // Clear subSource if source is not DIRECT
+        if (dto.getSource() != null && dto.getSource() != com.brideside.crm.entity.DealSource.DIRECT) {
+            entity.setSubSource(null);
         }
     }
 

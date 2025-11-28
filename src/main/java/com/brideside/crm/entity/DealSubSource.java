@@ -1,5 +1,7 @@
 package com.brideside.crm.entity;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+
 public enum DealSubSource {
     INSTAGRAM("Instagram"),
     WHATSAPP("Whatsapp"),
@@ -19,7 +21,9 @@ public enum DealSubSource {
     /**
      * Converts a string value to DealSubSource enum, handling case variations and spaces.
      * Accepts both enum name (e.g., "LANDING_PAGE") and display name (e.g., "Landing Page").
+     * Used by Jackson for JSON deserialization.
      */
+    @JsonCreator
     public static DealSubSource fromString(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;
