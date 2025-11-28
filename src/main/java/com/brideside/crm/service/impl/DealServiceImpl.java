@@ -1,16 +1,24 @@
 package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.DealDtos;
+import com.brideside.crm.dto.PipelineDtos;
 import com.brideside.crm.entity.Category;
 import com.brideside.crm.entity.Deal;
+import com.brideside.crm.entity.DealLabel;
+import com.brideside.crm.entity.DealLostReason;
+import com.brideside.crm.entity.DealSource;
+import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Source;
 import com.brideside.crm.entity.Stage;
+import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
+import com.brideside.crm.integration.calendar.GoogleCalendarService;
+import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
@@ -19,15 +27,31 @@ import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.service.DealService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class DealServiceImpl implements DealService {
+
+    private static final Logger log = LoggerFactory.getLogger(DealServiceImpl.class);
 
     @Autowired private DealRepository dealRepository;
     @Autowired private PersonRepository personRepository;
@@ -36,12 +60,26 @@ public class DealServiceImpl implements DealService {
     @Autowired private SourceRepository sourceRepository;
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
+    @Autowired private ActivityRepository activityRepository;
+    @Autowired(required = false)
+    private GoogleCalendarService googleCalendarService;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public Deal create(DealDtos.CreateRequest request) {
         Deal deal = new Deal();
         deal.setName(request.name);
+        
+        // Don't save deal value when creating a diverted deal
+        boolean isDivertedDeal = request.label != null && 
+            DealLabel.fromString(request.label) == DealLabel.DIVERT;
+        
+        if (isDivertedDeal) {
+            deal.setValue(BigDecimal.ZERO); // Set to zero for diverted deals
+        } else {
         deal.setValue(request.value != null ? request.value : BigDecimal.ZERO);
+        }
         if (request.personId != null) {
             Person person = personRepository.findById(request.personId)
                 .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
@@ -109,43 +147,538 @@ public class DealServiceImpl implements DealService {
         if (request.eventDate != null && !request.eventDate.isEmpty()) {
             deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
         }
-        return dealRepository.save(deal);
+        // Handle label field with validation
+        if (request.label != null && !request.label.trim().isEmpty()) {
+            DealLabel label = DealLabel.fromString(request.label);
+            if (label == null) {
+                throw new BadRequestException("Invalid label value: " + request.label + 
+                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
+            }
+            deal.setLabel(label);
+            
+            // If label is DIVERT, set is_diverted to true
+            if (label == DealLabel.DIVERT) {
+                deal.setIsDiverted(Boolean.TRUE);
+                // Validate that referencedDealId is provided when diverting
+                if (request.referencedDealId == null) {
+                    throw new BadRequestException("referencedDealId is required when label is DIVERT");
+                }
+            }
+        }
+        
+        // Handle referenced deal (for diversion)
+        if (request.referencedDealId != null) {
+            Deal referencedDeal = dealRepository.findById(request.referencedDealId)
+                .orElseThrow(() -> new ResourceNotFoundException("Referenced deal not found with id " + request.referencedDealId));
+            
+            // Check if referenced deal is deleted
+            if (referencedDeal.getIsDeleted() != null && referencedDeal.getIsDeleted()) {
+                throw new ResourceNotFoundException("Referenced deal not found with id " + request.referencedDealId);
+            }
+            
+            deal.setReferencedDeal(referencedDeal);
+            
+            // Set the referenced pipeline to the original pipeline (traverse up the chain if needed)
+            Pipeline originalPipeline = getOriginalPipeline(referencedDeal);
+            if (originalPipeline != null) {
+                deal.setReferencedPipeline(originalPipeline);
+            }
+            
+            // Track pipeline history for diversion prevention
+            Pipeline sourcePipeline = getSourcePipeline(referencedDeal);
+            if (sourcePipeline != null) {
+                deal.setSourcePipeline(sourcePipeline);
+            }
+            
+            // Build pipeline history: get history from referenced deal and add its current pipeline
+            List<Long> pipelineHistory = getPipelineHistory(referencedDeal);
+            if (referencedDeal.getPipeline() != null) {
+                Long currentPipelineId = referencedDeal.getPipeline().getId();
+                if (!pipelineHistory.contains(currentPipelineId)) {
+                    pipelineHistory.add(currentPipelineId);
+                }
+            }
+            deal.setPipelineHistory(pipelineHistoryToJson(pipelineHistory));
+        }
+        
+        // For non-diverted deals, set source pipeline to current pipeline if not set
+        if (request.referencedDealId == null && deal.getPipeline() != null) {
+            deal.setSourcePipeline(deal.getPipeline());
+            // Initialize pipeline history with current pipeline
+            List<Long> initialHistory = new ArrayList<>();
+            initialHistory.add(deal.getPipeline().getId());
+            deal.setPipelineHistory(pipelineHistoryToJson(initialHistory));
+        }
+        
+        // Handle source field with validation
+        if (request.source != null && !request.source.trim().isEmpty()) {
+            DealSource dealSource = DealSource.fromString(request.source);
+            if (dealSource == null) {
+                throw new BadRequestException("Invalid source value: " + request.source + 
+                    ". Allowed values: Direct, Divert, Reference, Planner");
+            }
+            deal.setDealSource(dealSource);
+            
+            // Handle subSource - only valid when source is "Direct"
+            if (request.subSource != null && !request.subSource.trim().isEmpty()) {
+                if (dealSource != DealSource.DIRECT) {
+                    throw new BadRequestException("subSource can only be provided when source is 'Direct'");
+                }
+                DealSubSource dealSubSource = DealSubSource.fromString(request.subSource);
+                if (dealSubSource == null) {
+                    throw new BadRequestException("Invalid subSource value: " + request.subSource + 
+                        ". Allowed values: Instagram, Whatsapp, Landing Page, Email");
+                }
+                deal.setDealSubSource(dealSubSource);
+            } else if (dealSource == DealSource.DIRECT) {
+                // Clear subSource if source is Direct but no subSource provided
+                deal.setDealSubSource(null);
+            }
+        } else {
+            // If source is cleared, also clear subSource
+            deal.setDealSubSource(null);
+        }
+        Deal savedDeal = dealRepository.save(deal);
+        syncGoogleCalendarEvent(savedDeal);
+        return savedDeal;
+    }
+
+    @Override
+    @Transactional
+    public Deal update(Long id, DealDtos.UpdateRequest request) {
+        Deal deal = get(id); // This will check if deal is deleted
+        
+        // Update fields only if provided (partial update)
+        if (request.name != null) {
+            deal.setName(request.name);
+        }
+        if (request.value != null) {
+            deal.setValue(request.value);
+        }
+        if (request.personId != null) {
+            Person person = personRepository.findById(request.personId)
+                .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
+            deal.setPerson(person);
+            String phone = person.getPhone();
+            if (phone != null) {
+                deal.setContactNumber(phone);
+            }
+        }
+        if (request.pipelineId != null) {
+            Pipeline pipeline = pipelineRepository.findById(request.pipelineId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found"));
+            deal.setPipeline(pipeline);
+        }
+        if (request.stageId != null) {
+            Stage stage = stageRepository.findById(request.stageId)
+                .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
+            deal.setStage(stage);
+        }
+        if (request.sourceId != null) {
+            Source source = sourceRepository.findById(request.sourceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Source not found"));
+            deal.setSource(source);
+            if (deal.getValue() != null) {
+                deal.setCommissionAmount(calculateCommission(deal.getValue(), source));
+            }
+        }
+        if (request.organizationId != null) {
+            Organization organization = organizationRepository.findById(request.organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
+            deal.setOrganization(organization);
+        }
+        
+        // Handle category
+        if (request.categoryId != null || request.category != null) {
+            Category category = resolveCategoryFromStrings(request.categoryId, request.category);
+            if (category != null) {
+                deal.setDealCategory(category);
+            }
+        }
+        
+        if (request.eventType != null) {
+            deal.setEventType(request.eventType);
+        }
+        if (request.status != null) {
+            deal.setStatus(request.status);
+            // Sync legacy 'won' column
+            deal.setLegacyWon(request.status == DealStatus.WON);
+        }
+        if (request.commissionAmount != null) {
+            deal.setCommissionAmount(request.commissionAmount);
+        }
+        if (request.venue != null) {
+            deal.setVenue(request.venue);
+        }
+        if (request.phoneNumber != null) {
+            deal.setPhoneNumber(request.phoneNumber);
+        }
+        if (request.finalThankYouSent != null) {
+            deal.setFinalThankYouSent(request.finalThankYouSent);
+        }
+        if (request.eventDateAsked != null) {
+            deal.setEventDateAsked(request.eventDateAsked);
+        }
+        if (request.contactNumberAsked != null) {
+            deal.setContactNumberAsked(request.contactNumberAsked);
+        }
+        if (request.venueAsked != null) {
+            deal.setVenueAsked(request.venueAsked);
+        }
+        if (request.eventDate != null && !request.eventDate.isEmpty()) {
+            deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
+        }
+        
+        // Handle label field with validation
+        if (request.label != null && !request.label.trim().isEmpty()) {
+            DealLabel label = DealLabel.fromString(request.label);
+            if (label == null) {
+                throw new BadRequestException("Invalid label value: " + request.label + 
+                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
+            }
+            deal.setLabel(label);
+            
+            // If label is DIVERT, set is_diverted to true
+            if (label == DealLabel.DIVERT) {
+                deal.setIsDiverted(Boolean.TRUE);
+            } else {
+                deal.setIsDiverted(Boolean.FALSE);
+            }
+        }
+        
+        // Handle source field with validation
+        if (request.source != null && !request.source.trim().isEmpty()) {
+            DealSource dealSource = DealSource.fromString(request.source);
+            if (dealSource == null) {
+                throw new BadRequestException("Invalid source value: " + request.source + 
+                    ". Allowed values: Direct, Divert, Reference, Planner");
+            }
+            deal.setDealSource(dealSource);
+            
+            // Handle subSource - only valid when source is "Direct"
+            if (request.subSource != null && !request.subSource.trim().isEmpty()) {
+                if (dealSource != DealSource.DIRECT) {
+                    throw new BadRequestException("subSource can only be provided when source is 'Direct'");
+                }
+                DealSubSource dealSubSource = DealSubSource.fromString(request.subSource);
+                if (dealSubSource == null) {
+                    throw new BadRequestException("Invalid subSource value: " + request.subSource + 
+                        ". Allowed values: Instagram, Whatsapp, Landing Page, Email");
+                }
+                deal.setDealSubSource(dealSubSource);
+            } else if (dealSource == DealSource.DIRECT) {
+                // Clear subSource if source is Direct but no subSource provided
+                deal.setDealSubSource(null);
+            }
+        } else if (request.source != null) {
+            // If source is explicitly set to null/empty, clear subSource
+            deal.setDealSubSource(null);
+        }
+        
+        deal.setUpdatedAt(LocalDateTime.now());
+        Deal savedDeal = dealRepository.save(deal);
+        syncGoogleCalendarEvent(savedDeal);
+        return savedDeal;
     }
 
     @Override
     public Deal get(Long id) {
-        return dealRepository.findById(id)
+        Deal deal = dealRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Deal not found"));
+        // Check if deal is deleted
+        if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
+            throw new ResourceNotFoundException("Deal not found");
+        }
+        return deal;
     }
 
     @Override
-    public List<Deal> list() { return dealRepository.findAll(); }
+    public List<Deal> list() { 
+        return list("nextActivity", "asc");
+    }
 
     @Override
-    public List<Deal> listWon() { return dealRepository.findByStatus(DealStatus.WON); }
+    public List<Deal> list(String sortField, String sortDirection) {
+        // Use JOIN FETCH to eagerly load Person and Organization for tooltip display
+        List<Deal> deals = dealRepository.findByIsDeletedFalseWithPersonAndOrganization();
+        
+        // Normalize sort field and direction
+        String normalizedField = normalizeSortField(sortField);
+        boolean ascending = "asc".equalsIgnoreCase(sortDirection != null ? sortDirection : "asc");
+        
+        // Validate sort field
+        if (!isValidSortField(normalizedField)) {
+            throw new BadRequestException("Invalid sort field: " + sortField + 
+                ". Supported fields: nextActivity, name, value, personName, organizationName, eventDate, createdAt, updatedAt, completedActivitiesCount, pendingActivitiesCount, productsCount, ownerName");
+        }
+        
+        // Pre-load activities only if needed for sorting (performance optimization)
+        Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId = null;
+        if (normalizedField.equals("nextActivity") || 
+            normalizedField.equals("completedActivitiesCount") || 
+            normalizedField.equals("pendingActivitiesCount")) {
+            activitiesByDealId = loadActivitiesByDealId();
+        }
+        
+        // Sort deals based on the field
+        Comparator<Deal> comparator = getComparator(normalizedField, ascending, activitiesByDealId);
+        deals.sort(comparator);
+        
+        return deals;
+    }
+    
+    private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId() {
+        // Load all activities once and group by dealId
+        List<com.brideside.crm.entity.Activity> allActivities = activityRepository.findAll();
+        return allActivities.stream()
+            .filter(a -> a.getDealId() != null)
+            .collect(Collectors.groupingBy(com.brideside.crm.entity.Activity::getDealId));
+    }
+    
+    private String normalizeSortField(String sortField) {
+        if (sortField == null || sortField.trim().isEmpty()) {
+            return "nextActivity";
+        }
+        String field = sortField.trim();
+        String fieldLower = field.toLowerCase();
+        
+        // Map aliases to canonical field names (case-insensitive)
+        Map<String, String> fieldMap = new HashMap<>();
+        // Canonical field names (map to themselves)
+        fieldMap.put("nextactivity", "nextActivity");
+        fieldMap.put("name", "name");
+        fieldMap.put("value", "value");
+        fieldMap.put("personname", "personName");
+        fieldMap.put("organizationname", "organizationName");
+        fieldMap.put("eventdate", "eventDate");
+        fieldMap.put("createdat", "createdAt");
+        fieldMap.put("updatedat", "updatedAt");
+        fieldMap.put("completedactivitiescount", "completedActivitiesCount");
+        fieldMap.put("pendingactivitiescount", "pendingActivitiesCount");
+        fieldMap.put("productscount", "productsCount");
+        fieldMap.put("ownername", "ownerName");
+        // Aliases
+        fieldMap.put("dealtitle", "name");
+        fieldMap.put("dealvalue", "value");
+        fieldMap.put("linkedperson", "personName");
+        fieldMap.put("linkedorganization", "organizationName");
+        fieldMap.put("expectedclosedate", "eventDate");
+        fieldMap.put("dealcreated", "createdAt");
+        fieldMap.put("dealupdatetime", "updatedAt");
+        fieldMap.put("doneactivities", "completedActivitiesCount");
+        fieldMap.put("activitiestodo", "pendingActivitiesCount");
+        fieldMap.put("numberofproducts", "productsCount");
+        fieldMap.put("personownername", "ownerName");
+        
+        return fieldMap.getOrDefault(fieldLower, field);
+    }
+    
+    private boolean isValidSortField(String field) {
+        List<String> validFields = List.of(
+            "nextActivity", "name", "value", "personName", "organizationName",
+            "eventDate", "createdAt", "updatedAt", "completedActivitiesCount",
+            "pendingActivitiesCount", "productsCount", "ownerName"
+        );
+        return validFields.contains(field);
+    }
+    
+    private Comparator<Deal> getComparator(String field, boolean ascending, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        Comparator<Deal> comparator = null;
+        
+        switch (field) {
+            case "nextActivity":
+                comparator = Comparator.comparing(d -> getNextActivityDate(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "name":
+                comparator = Comparator.comparing(Deal::getName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "value":
+                comparator = Comparator.comparing(Deal::getValue, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "personName":
+                comparator = Comparator.comparing(this::getPersonName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "organizationName":
+                comparator = Comparator.comparing(this::getOrganizationName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            case "eventDate":
+                comparator = Comparator.comparing(Deal::getEventDate, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "createdAt":
+                comparator = Comparator.comparing(Deal::getCreatedAt, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "updatedAt":
+                comparator = Comparator.comparing(Deal::getUpdatedAt, 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "completedActivitiesCount":
+                comparator = Comparator.comparing(d -> getCompletedActivitiesCount(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "pendingActivitiesCount":
+                comparator = Comparator.comparing(d -> getPendingActivitiesCount(d, activitiesByDealId), 
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+                break;
+            case "productsCount":
+                comparator = Comparator.comparing(d -> 0, 
+                    Comparator.nullsLast(Comparator.naturalOrder())); // Always 0 for now
+                break;
+            case "ownerName":
+                comparator = Comparator.comparing(this::getOwnerName, 
+                    Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                break;
+            default:
+                throw new BadRequestException("Unsupported sort field: " + field);
+        }
+        
+        return ascending ? comparator : comparator.reversed();
+    }
+    
+    private LocalDateTime getNextActivityDate(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return null;
+        }
+        // Get the earliest pending activity date for this deal
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return null;
+        }
+        return dealActivities.stream()
+            .filter(a -> !a.isDone() && a.getStatus() != com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .map(a -> parseActivityDate(a))
+            .filter(d -> d != null)
+            .min(Comparator.naturalOrder())
+            .orElse(null);
+    }
+    
+    private LocalDateTime parseActivityDate(com.brideside.crm.entity.Activity activity) {
+        // Try dateTime first (ISO format)
+        if (activity.getDateTime() != null && !activity.getDateTime().isEmpty()) {
+            try {
+                return LocalDateTime.parse(activity.getDateTime().replace(" ", "T"));
+            } catch (Exception e) {
+                // Try other formats
+            }
+        }
+        
+        // Try date + startTime
+        if (activity.getDate() != null && !activity.getDate().isEmpty() && 
+            activity.getStartTime() != null && !activity.getStartTime().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+                LocalDate date = LocalDate.parse(activity.getDate(), dateFormatter);
+                java.time.LocalTime time = java.time.LocalTime.parse(activity.getStartTime(), timeFormatter);
+                return LocalDateTime.of(date, time);
+            } catch (Exception e) {
+                // Try date only
+            }
+        }
+        
+        // Try date only
+        if (activity.getDate() != null && !activity.getDate().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                LocalDate date = LocalDate.parse(activity.getDate(), dateFormatter);
+                return date.atStartOfDay();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        // Try dueDate
+        if (activity.getDueDate() != null && !activity.getDueDate().isEmpty()) {
+            try {
+                DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                LocalDate date = LocalDate.parse(activity.getDueDate(), dateFormatter);
+                return date.atStartOfDay();
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        
+        return null;
+    }
+    
+    private String getPersonName(Deal deal) {
+        return deal.getPerson() != null ? deal.getPerson().getName() : null;
+    }
+    
+    private String getOrganizationName(Deal deal) {
+        return deal.getOrganization() != null ? deal.getOrganization().getName() : null;
+    }
+    
+    private Integer getCompletedActivitiesCount(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return 0;
+        }
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return 0;
+        }
+        return (int) dealActivities.stream()
+            .filter(a -> a.isDone() || a.getStatus() == com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .count();
+    }
+    
+    private Integer getPendingActivitiesCount(Deal deal, Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId) {
+        if (activitiesByDealId == null || deal.getId() == null) {
+            return 0;
+        }
+        List<com.brideside.crm.entity.Activity> dealActivities = activitiesByDealId.get(deal.getId());
+        if (dealActivities == null || dealActivities.isEmpty()) {
+            return 0;
+        }
+        return (int) dealActivities.stream()
+            .filter(a -> !a.isDone() && a.getStatus() != com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED)
+            .count();
+    }
+    
+    private String getOwnerName(Deal deal) {
+        // Get owner from person if person has owner
+        if (deal.getPerson() != null && deal.getPerson().getOwner() != null) {
+            com.brideside.crm.entity.User owner = deal.getPerson().getOwner();
+            return owner.getFirstName() + " " + owner.getLastName();
+        }
+        return null;
+    }
 
     @Override
-    public List<Deal> listByStatus(DealStatus status) { return dealRepository.findByStatus(status); }
+    public List<Deal> listWon() { 
+        return dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON); 
+    }
+
+    @Override
+    public List<Deal> listByStatus(DealStatus status) { 
+        return dealRepository.findByStatusAndIsDeletedFalse(status); 
+    }
 
     @Override
     public List<Deal> listByPerson(Long personId) {
         Person person = personRepository.findById(personId)
             .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
-        return dealRepository.findByPerson(person);
+        return dealRepository.findByPersonAndIsDeletedFalse(person);
     }
 
     @Override
     public List<Deal> listByOrganization(Long organizationId) {
         Organization organization = organizationRepository.findById(organizationId)
             .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
-        return dealRepository.findByOrganization(organization);
+        return dealRepository.findByOrganizationAndIsDeletedFalse(organization);
     }
 
     @Override
     public List<Deal> listByCategory(Long categoryId) {
         Category category = categoryRepository.findById(categoryId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-        return dealRepository.findByDealCategory(category);
+        return dealRepository.findByDealCategoryAndIsDeletedFalse(category);
     }
 
     @Override
@@ -154,25 +687,91 @@ public class DealServiceImpl implements DealService {
         Stage stage = stageRepository.findById(request.stageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
         deal.setStage(stage);
-        return dealRepository.save(deal);
+        Deal saved = dealRepository.save(deal);
+        return saved;
     }
 
     @Override
-    public Deal markStatus(Long id, DealStatus status) {
+    @Transactional
+    public Deal markStatus(Long id, DealDtos.MarkStatusRequest request) {
         Deal deal = get(id);
+        DealStatus status = request.status;
+        
+        // If marking as LOST, require lostReason
+        if (status == DealStatus.LOST) {
+            if (request.lostReason == null || request.lostReason.trim().isEmpty()) {
+                throw new BadRequestException("lostReason is required when marking deal as LOST. Please select a reason from the list.");
+            }
+            DealLostReason lostReason = DealLostReason.fromString(request.lostReason);
+            if (lostReason == null) {
+                throw new BadRequestException("Invalid lostReason value: " + request.lostReason + 
+                    ". Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else");
+            }
+            deal.setLostReason(lostReason);
+        } else {
+            // Clear lost reason when status is not LOST
+            deal.setLostReason(null);
+        }
+        
+        // Handle WON status - require value and calculate commission
+        if (status == DealStatus.WON) {
+            // Get the deal value (from request or existing deal)
+            BigDecimal dealValue = request.value != null ? request.value : deal.getValue();
+            
+            // Validate that value is provided
+            if (dealValue == null || dealValue.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BadRequestException("Deal value is required when marking deal as WON. Please provide a value greater than 0.");
+            }
+            
+            // Update deal value if provided in request
+            if (request.value != null) {
+                deal.setValue(request.value);
+            }
+            
+            // Calculate commission based on deal source
+            BigDecimal calculatedCommission = calculateCommissionFromDealSource(dealValue, deal.getDealSource());
+            
+            // Use provided commissionAmount if given, otherwise use calculated commission
+            if (request.commissionAmount != null) {
+                deal.setCommissionAmount(request.commissionAmount);
+            } else {
+                deal.setCommissionAmount(calculatedCommission);
+            }
+        }
+        
         deal.setStatus(status);
         // Sync legacy 'won' column
         deal.setLegacyWon(status == DealStatus.WON);
-        if (status == DealStatus.WON && deal.getSource() != null && deal.getCommissionAmount() == null) {
-            deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
-        }
-        return dealRepository.save(deal);
+        deal.setUpdatedAt(LocalDateTime.now());
+        Deal saved = dealRepository.save(deal);
+        syncGoogleCalendarEvent(saved);
+        return saved;
     }
-
-    @Override
-    public void delete(Long id) {
-        Deal deal = get(id);
-        dealRepository.delete(deal);
+    
+    /**
+     * Calculates commission based on deal value and deal source.
+     * - 10% for Direct, Reference, or Planner
+     * - 15% for Divert
+     */
+    private BigDecimal calculateCommissionFromDealSource(BigDecimal dealValue, DealSource dealSource) {
+        if (dealValue == null || dealValue.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        
+        if (dealSource == null) {
+            // Default to 10% if no source specified
+            return dealValue.multiply(new BigDecimal("0.10"));
+        }
+        
+        BigDecimal commissionRate;
+        if (dealSource == DealSource.DIVERT) {
+            commissionRate = new BigDecimal("0.15"); // 15% for Divert
+        } else {
+            // 10% for Direct, Reference, or Planner
+            commissionRate = new BigDecimal("0.10");
+        }
+        
+        return dealValue.multiply(commissionRate);
     }
 
     private Category resolveOrCreateCategory(Organization.OrganizationCategory orgCategory) {
@@ -185,9 +784,13 @@ public class DealServiceImpl implements DealService {
     }
 
     private Category resolveSelectedCategory(DealDtos.CreateRequest request) {
+        return resolveCategoryFromStrings(request.categoryId, request.category);
+    }
+
+    private Category resolveCategoryFromStrings(String categoryId, String category) {
         // Try to interpret categoryId first (may be numeric id or string code)
-        if (request.categoryId != null && !request.categoryId.isBlank()) {
-            String trimmed = request.categoryId.trim();
+        if (categoryId != null && !categoryId.isBlank()) {
+            String trimmed = categoryId.trim();
             try {
                 Long id = Long.valueOf(trimmed);
                 return categoryRepository.findById(id)
@@ -201,15 +804,45 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        if (request.category != null && !request.category.isBlank()) {
-            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(request.category);
+        if (category != null && !category.isBlank()) {
+            Organization.OrganizationCategory orgCategory = Organization.OrganizationCategory.fromDbValue(category);
             if (orgCategory == null) {
-                throw new BadRequestException("Unknown category value: " + request.category);
+                throw new BadRequestException("Unknown category value: " + category);
             }
             return resolveOrCreateCategory(orgCategory);
         }
 
         return null;
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long id) {
+        // Check if deal exists and is not already deleted
+        Deal deal = dealRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Deal not found with id " + id));
+        
+        if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
+            throw new ResourceNotFoundException("Deal not found with id " + id);
+        }
+        
+        // Find all deals that reference this deal (diverted deals) - including soft-deleted ones
+        // We need to clear references from both deleted and non-deleted deals to prevent foreign key constraint violations
+        List<Deal> referencingDeals = dealRepository.findByReferencedDeal(deal);
+        
+        // Clear the reference for all deals that reference this one (both deleted and non-deleted)
+        // This prevents foreign key constraint violations
+        for (Deal referencingDeal : referencingDeals) {
+            referencingDeal.setReferencedDeal(null);
+            // Also clear the referenced pipeline since the original deal is being deleted
+            referencingDeal.setReferencedPipeline(null);
+            dealRepository.save(referencingDeal);
+        }
+        
+        // Soft delete: set is_deleted to true instead of hard delete
+        removeGoogleCalendarEvent(deal);
+        deal.setIsDeleted(Boolean.TRUE);
+        dealRepository.save(deal);
     }
 
     private BigDecimal calculateCommission(BigDecimal value, Source source) {
@@ -218,6 +851,230 @@ public class DealServiceImpl implements DealService {
         Integer pct = source.getCommissionPercentage() == null ? 0 : source.getCommissionPercentage();
         return value.multiply(BigDecimal.valueOf(pct)).divide(BigDecimal.valueOf(100));
     }
+
+    /**
+     * Gets the original pipeline from which a deal was diverted.
+     * If the deal is already diverted, traverses up the chain to find the original pipeline.
+     * If the deal is not diverted, returns its current pipeline.
+     */
+    private Pipeline getOriginalPipeline(Deal deal) {
+        // If the deal has a referenced pipeline, it means it was diverted
+        // Traverse up the chain to find the original pipeline
+        if (deal.getReferencedPipeline() != null) {
+            return deal.getReferencedPipeline();
+        }
+        
+        // If the deal is not diverted, return its current pipeline
+        return deal.getPipeline();
+    }
+
+    /**
+     * Gets the source pipeline (initial pipeline) from which a deal was first created/diverted.
+     * Traverses up the chain to find the source pipeline.
+     */
+    private Pipeline getSourcePipeline(Deal deal) {
+        // If the deal has a source pipeline, return it
+        if (deal.getSourcePipeline() != null) {
+            return deal.getSourcePipeline();
+        }
+        
+        // If not set, check if it's a diverted deal and get source from referenced deal
+        if (deal.getReferencedDeal() != null) {
+            return getSourcePipeline(deal.getReferencedDeal());
+        }
+        
+        // If not diverted, return current pipeline as source
+        return deal.getPipeline();
+    }
+
+    /**
+     * Gets the pipeline history as a list of pipeline IDs.
+     */
+    private List<Long> getPipelineHistory(Deal deal) {
+        List<Long> history = new ArrayList<>();
+        
+        // Skip deleted deals
+        if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
+            return history;
+        }
+        
+        // Get history from referenced deal if it exists and is not deleted
+        if (deal.getReferencedDeal() != null) {
+            Deal referencedDeal = deal.getReferencedDeal();
+            if (referencedDeal.getIsDeleted() == null || !referencedDeal.getIsDeleted()) {
+                history = getPipelineHistory(referencedDeal);
+            }
+        }
+        
+        // Parse JSON history if exists
+        if (deal.getPipelineHistory() != null && !deal.getPipelineHistory().isEmpty()) {
+            try {
+                List<Long> jsonHistory = objectMapper.readValue(
+                    deal.getPipelineHistory(),
+                    new TypeReference<List<Long>>() {}
+                );
+                // Merge with existing history, avoiding duplicates
+                for (Long pipelineId : jsonHistory) {
+                    if (!history.contains(pipelineId)) {
+                        history.add(pipelineId);
+                    }
+                }
+            } catch (Exception e) {
+                // If JSON parsing fails, continue with existing history
+            }
+        }
+        
+        return history;
+    }
+
+    /**
+     * Converts a list of pipeline IDs to JSON string.
+     */
+    private String pipelineHistoryToJson(List<Long> pipelineIds) {
+        try {
+            return objectMapper.writeValueAsString(pipelineIds);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    @Override
+    public List<PipelineDtos.PipelineResponse> getAvailablePipelinesForDiversion(Long dealId) {
+        // Get the deal (could be original or already diverted)
+        Deal deal = dealRepository.findById(dealId)
+                .orElseThrow(() -> new ResourceNotFoundException("Deal not found with id " + dealId));
+        
+        // Check if deal is deleted
+        if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
+            throw new ResourceNotFoundException("Deal not found with id " + dealId);
+        }
+        
+        // Get pipeline history - all pipelines this deal has been in
+        List<Long> pipelineHistory = getPipelineHistory(deal);
+        
+        // Also add current pipeline to history if not already there
+        if (deal.getPipeline() != null) {
+            Long currentPipelineId = deal.getPipeline().getId();
+            if (!pipelineHistory.contains(currentPipelineId)) {
+                pipelineHistory.add(currentPipelineId);
+            }
+        }
+        
+        // Get all active pipelines
+        List<Pipeline> allPipelines = pipelineRepository.findByDeletedFalseOrderByNameAsc();
+        
+        // Get all deals in the diversion chain (current deal + all deals it references)
+        List<Deal> dealsInChain = getAllDealsInChain(deal);
+        
+        // Filter out:
+        // 1. Pipelines where a diverted deal already exists for ANY deal in the chain
+        // 2. All pipelines in the history (pipelines the deal has already been in)
+        // 3. Pipelines where any deal diverted FROM this deal (or deals in chain) has been diverted to
+        return allPipelines.stream()
+                .filter(pipeline -> {
+                    // Exclude all pipelines in history (prevents diverting back to any previous pipeline)
+                    if (pipelineHistory.contains(pipeline.getId())) {
+                        return false;
+                    }
+                    
+                    // Exclude if ANY deal in the diversion chain has already been diverted to this pipeline (only non-deleted deals)
+                    for (Deal dealInChain : dealsInChain) {
+                        // Check if there's a non-deleted diverted deal
+                        List<Deal> divertedDeals = dealRepository.findByReferencedDealAndIsDeletedFalse(dealInChain);
+                        for (Deal divertedDeal : divertedDeals) {
+                            if (divertedDeal.getPipeline() != null && divertedDeal.getPipeline().getId().equals(pipeline.getId())) {
+                                return false;
+                            }
+                        }
+                    }
+                    
+                    // Exclude if any deal that was diverted FROM deals in the chain has been diverted to this pipeline
+                    // This handles the case: Pipeline1 → Pipeline2 → Pipeline3
+                    // When checking from Pipeline1, we need to exclude Pipeline3 because Pipeline2 (diverted from Pipeline1) was diverted to Pipeline3
+                    for (Deal dealInChain : dealsInChain) {
+                        // Get all deals that were diverted FROM this deal (only non-deleted)
+                        List<Deal> divertedDeals = dealRepository.findByReferencedDealAndIsDeletedFalse(dealInChain);
+                        // Check if any of those diverted deals have been diverted to the target pipeline (only non-deleted)
+                        for (Deal divertedDeal : divertedDeals) {
+                            List<Deal> furtherDivertedDeals = dealRepository.findByReferencedDealAndIsDeletedFalse(divertedDeal);
+                            for (Deal furtherDivertedDeal : furtherDivertedDeals) {
+                                if (furtherDivertedDeal.getPipeline() != null && furtherDivertedDeal.getPipeline().getId().equals(pipeline.getId())) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return true;
+                })
+                .map(pipeline -> PipelineMapper.toPipelineResponse(pipeline, Collections.emptyList(), false))
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Gets all deals in the diversion chain (current deal + all deals it references up to the original).
+     * Returns a list starting from the current deal and going up to the original deal.
+     */
+    private List<Deal> getAllDealsInChain(Deal deal) {
+        List<Deal> chain = new ArrayList<>();
+        Deal current = deal;
+        
+        // Add current deal and traverse up the chain (only non-deleted deals)
+        while (current != null) {
+            // Only add non-deleted deals to the chain
+            if (current.getIsDeleted() == null || !current.getIsDeleted()) {
+                chain.add(current);
+            }
+            current = current.getReferencedDeal();
+        }
+        
+        return chain;
+    }
+
+    private void syncGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        try {
+            boolean hasCalendar = deal.getOrganization() != null
+                    && StringUtils.hasText(deal.getOrganization().getGoogleCalendarId());
+            if (!hasCalendar || deal.getEventDate() == null) {
+                if (StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+                    removeGoogleCalendarEvent(deal);
+                }
+                return;
+            }
+            googleCalendarService.upsertDealEvent(deal)
+                    .ifPresent(eventId -> {
+                        if (!eventId.equals(deal.getGoogleCalendarEventId())) {
+                            deal.setGoogleCalendarEventId(eventId);
+                            dealRepository.save(deal);
+                        }
+                    });
+        } catch (Exception ex) {
+            log.warn("Google Calendar sync skipped for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        }
+    }
+
+    private void removeGoogleCalendarEvent(Deal deal) {
+        if (googleCalendarService == null || deal == null) {
+            return;
+        }
+        String existingEventId = deal.getGoogleCalendarEventId();
+        if (!StringUtils.hasText(existingEventId)) {
+            return;
+        }
+        try {
+            googleCalendarService.deleteDealEvent(deal);
+        } catch (Exception ex) {
+            log.warn("Failed to remove Google Calendar event for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+        } finally {
+            deal.setGoogleCalendarEventId(null);
+            dealRepository.save(deal);
+        }
+    }
 }
+
+
 
 

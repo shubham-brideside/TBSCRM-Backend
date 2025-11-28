@@ -9,10 +9,12 @@ public class DealResponse {
     public String name;
     public BigDecimal value;
     public Long personId;
+    public String personName; // Person name for display/tooltip
     public Long pipelineId;
     public Long stageId;
     public Long sourceId;
     public Long organizationId;
+    public String organizationName; // Organization name for display/tooltip
     public Long categoryId;
     public String eventType;
     public DealStatus status;
@@ -25,6 +27,16 @@ public class DealResponse {
     public Boolean contactNumberAsked;
     public Boolean venueAsked;
     public String eventDate; // ISO-8601 date
+    public String label; // DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
+    public String source; // Direct, Divert, Reference, Planner
+    public String subSource; // Instagram, Whatsapp, Landing Page, Email (only present when source is "Direct")
+    public Boolean isDiverted; // true if this deal was diverted from another deal
+    public Long referencedDealId; // ID of the original deal if this is a diverted deal
+    public Long referencedPipelineId; // ID of the pipeline from which the deal was diverted
+    public Long sourcePipelineId; // ID of the initial/source pipeline where the deal was first created
+    public String pipelineHistory; // JSON array of pipeline IDs the deal has been in: [1, 2, 3]
+    public Boolean isDeleted; // true if this deal has been soft deleted
+    public String lostReason; // Reason why deal was marked as LOST: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
 }
 
 

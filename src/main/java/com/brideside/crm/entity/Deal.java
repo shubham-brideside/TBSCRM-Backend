@@ -97,6 +97,46 @@ public class Deal {
     @Column(name = "event_date", nullable = true)
     private LocalDate eventDate;
 
+    @Column(name = "google_calendar_event_id", length = 255)
+    private String googleCalendarEventId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "label", length = 50, nullable = true)
+    private DealLabel label;
+
+    @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
+    @Column(name = "deal_source", length = 50, nullable = true)
+    private DealSource dealSource;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "deal_sub_source", length = 50, nullable = true)
+    private DealSubSource dealSubSource;
+
+    @Column(name = "is_diverted", nullable = false)
+    private Boolean isDiverted = Boolean.FALSE;
+
+    @Column(name = "is_deleted", nullable = false)
+    private Boolean isDeleted = Boolean.FALSE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lost_reason", length = 50, nullable = true)
+    private DealLostReason lostReason;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "referenced_deal_id", nullable = true)
+    private Deal referencedDeal;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "referenced_pipeline_id", nullable = true)
+    private Pipeline referencedPipeline;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_pipeline_id", nullable = true)
+    private Pipeline sourcePipeline;
+
+    @Column(name = "pipeline_history", columnDefinition = "JSON")
+    private String pipelineHistory; // JSON array of pipeline IDs: [1, 2, 3]
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -151,10 +191,32 @@ public class Deal {
     public void setVenueAsked(Boolean venueAsked) { this.venueAsked = venueAsked; }
     public LocalDate getEventDate() { return eventDate; }
     public void setEventDate(LocalDate eventDate) { this.eventDate = eventDate; }
+    public DealLabel getLabel() { return label; }
+    public void setLabel(DealLabel label) { this.label = label; }
+    public DealSource getDealSource() { return dealSource; }
+    public void setDealSource(DealSource dealSource) { this.dealSource = dealSource; }
+    public DealSubSource getDealSubSource() { return dealSubSource; }
+    public void setDealSubSource(DealSubSource dealSubSource) { this.dealSubSource = dealSubSource; }
+    public Boolean getIsDiverted() { return isDiverted; }
+    public void setIsDiverted(Boolean isDiverted) { this.isDiverted = isDiverted; }
+    public Boolean getIsDeleted() { return isDeleted; }
+    public void setIsDeleted(Boolean isDeleted) { this.isDeleted = isDeleted; }
+    public DealLostReason getLostReason() { return lostReason; }
+    public void setLostReason(DealLostReason lostReason) { this.lostReason = lostReason; }
+    public Deal getReferencedDeal() { return referencedDeal; }
+    public void setReferencedDeal(Deal referencedDeal) { this.referencedDeal = referencedDeal; }
+    public Pipeline getReferencedPipeline() { return referencedPipeline; }
+    public void setReferencedPipeline(Pipeline referencedPipeline) { this.referencedPipeline = referencedPipeline; }
+    public Pipeline getSourcePipeline() { return sourcePipeline; }
+    public void setSourcePipeline(Pipeline sourcePipeline) { this.sourcePipeline = sourcePipeline; }
+    public String getPipelineHistory() { return pipelineHistory; }
+    public void setPipelineHistory(String pipelineHistory) { this.pipelineHistory = pipelineHistory; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public String getGoogleCalendarEventId() { return googleCalendarEventId; }
+    public void setGoogleCalendarEventId(String googleCalendarEventId) { this.googleCalendarEventId = googleCalendarEventId; }
 
     @PrePersist
     public void prePersist() {

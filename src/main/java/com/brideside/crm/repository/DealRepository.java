@@ -34,6 +34,22 @@ public interface DealRepository extends JpaRepository<Deal, Long> {
     List<Deal> findWonDealsUpdatedBetween(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
+    List<Deal> findByReferencedDeal(Deal referencedDeal);
+    boolean existsByReferencedDealAndPipeline(Deal referencedDeal, Pipeline pipeline);
+    
+    // Methods that exclude deleted deals
+    List<Deal> findByIsDeletedFalse();
+    
+    @Query("SELECT d FROM Deal d LEFT JOIN FETCH d.person LEFT JOIN FETCH d.organization WHERE d.isDeleted = false OR d.isDeleted IS NULL")
+    List<Deal> findByIsDeletedFalseWithPersonAndOrganization();
+    
+    List<Deal> findByPipelineAndIsDeletedFalse(Pipeline pipeline);
+    List<Deal> findByStageAndIsDeletedFalse(Stage stage);
+    List<Deal> findByStatusAndIsDeletedFalse(DealStatus status);
+    List<Deal> findByPersonAndIsDeletedFalse(Person person);
+    List<Deal> findByOrganizationAndIsDeletedFalse(Organization organization);
+    List<Deal> findByDealCategoryAndIsDeletedFalse(Category category);
+    List<Deal> findByReferencedDealAndIsDeletedFalse(Deal referencedDeal);
 }
 
 

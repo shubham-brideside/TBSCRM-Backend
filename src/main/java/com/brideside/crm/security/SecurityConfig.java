@@ -53,8 +53,9 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        http
                 .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.deny())
@@ -92,12 +93,23 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         
         // Allow specific frontend origin (can use allowCredentials with specific origins)
+        // Make sure to include both http and https versions, and handle trailing slashes
+        String frontendUrl = frontendBaseUrl.endsWith("/") 
+            ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1) 
+            : frontendBaseUrl;
+        
         List<String> allowedOrigins = Arrays.asList(
-            frontendBaseUrl,
+            frontendUrl,
+            frontendUrl.replace("https://", "http://"),  // Also allow http version if needed
             "http://localhost:3000",  // For local development
             "http://localhost:5173",  // For Vite dev server
             "http://localhost:8080"   // For local backend testing
         );
+        
+        // Log the configured origins for debugging
+        System.out.println("CORS Configuration - Frontend URL: " + frontendUrl);
+        System.out.println("CORS Configuration - Allowed Origins: " + allowedOrigins);
+        
         configuration.setAllowedOrigins(allowedOrigins);
         
         // Allow credentials when using specific origins
@@ -106,11 +118,11 @@ public class SecurityConfig {
         // Allow all methods
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         
-        // Allow all headers
+        // Allow all headers (including Authorization)
         configuration.setAllowedHeaders(Arrays.asList("*"));
         
         // Expose headers that frontend needs
-        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With"));
         
         // Cache preflight response for 1 hour
         configuration.setMaxAge(3600L);
