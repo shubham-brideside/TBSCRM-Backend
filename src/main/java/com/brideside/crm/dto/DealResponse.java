@@ -2,6 +2,7 @@ package com.brideside.crm.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import com.brideside.crm.entity.DealStatus;
 
 public class DealResponse {
@@ -26,7 +27,8 @@ public class DealResponse {
     public Boolean eventDateAsked;
     public Boolean contactNumberAsked;
     public Boolean venueAsked;
-    public String eventDate; // ISO-8601 date
+    public String eventDate; // ISO-8601 date - legacy, use eventDates instead
+    public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
     public String label; // DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
     public String source; // Direct, Divert, Reference, Planner
     public String subSource; // Instagram, Whatsapp, Landing Page, Email (only present when source is "Direct")

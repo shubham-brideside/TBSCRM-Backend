@@ -144,8 +144,24 @@ public class DealServiceImpl implements DealService {
         deal.setEventDateAsked(request.eventDateAsked);
         deal.setContactNumberAsked(request.contactNumberAsked);
         deal.setVenueAsked(request.venueAsked);
-        if (request.eventDate != null && !request.eventDate.isEmpty()) {
+        
+        // Handle multiple event dates (preferred)
+        if (request.eventDates != null && !request.eventDates.isEmpty()) {
+            deal.setEventDates(eventDatesToJson(request.eventDates));
+            // Also set legacy eventDate to first date for backward compatibility
+            if (!request.eventDates.isEmpty()) {
+                try {
+                    deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
+                } catch (Exception e) {
+                    // Ignore parse errors
+                }
+            }
+        } else if (request.eventDate != null && !request.eventDate.isEmpty()) {
+            // Legacy support: single date
             deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
+            // Convert to eventDates format
+            List<String> singleDateList = List.of(request.eventDate);
+            deal.setEventDates(eventDatesToJson(singleDateList));
         }
         // Handle label field with validation
         if (request.label != null && !request.label.trim().isEmpty()) {
@@ -325,8 +341,24 @@ public class DealServiceImpl implements DealService {
         if (request.venueAsked != null) {
             deal.setVenueAsked(request.venueAsked);
         }
-        if (request.eventDate != null && !request.eventDate.isEmpty()) {
+        
+        // Handle multiple event dates (preferred)
+        if (request.eventDates != null && !request.eventDates.isEmpty()) {
+            deal.setEventDates(eventDatesToJson(request.eventDates));
+            // Also set legacy eventDate to first date for backward compatibility
+            if (!request.eventDates.isEmpty()) {
+                try {
+                    deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
+                } catch (Exception e) {
+                    // Ignore parse errors
+                }
+            }
+        } else if (request.eventDate != null && !request.eventDate.isEmpty()) {
+            // Legacy support: single date
             deal.setEventDate(java.time.LocalDate.parse(request.eventDate));
+            // Convert to eventDates format
+            List<String> singleDateList = List.of(request.eventDate);
+            deal.setEventDates(eventDatesToJson(singleDateList));
         }
         
         // Handle label field with validation
@@ -507,7 +539,7 @@ public class DealServiceImpl implements DealService {
                     Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
                 break;
             case "eventDate":
-                comparator = Comparator.comparing(Deal::getEventDate, 
+                comparator = Comparator.comparing(d -> getFirstEventDate(d), 
                     Comparator.nullsLast(Comparator.naturalOrder()));
                 break;
             case "createdAt":
@@ -648,6 +680,59 @@ public class DealServiceImpl implements DealService {
             return owner.getFirstName() + " " + owner.getLastName();
         }
         return null;
+    }
+    
+    /**
+     * Gets the first event date from the eventDates JSON array, or falls back to legacy eventDate.
+     */
+    private LocalDate getFirstEventDate(Deal deal) {
+        List<LocalDate> dates = parseEventDates(deal);
+        if (dates != null && !dates.isEmpty()) {
+            return dates.get(0);
+        }
+        // Fallback to legacy eventDate
+        return deal.getEventDate();
+    }
+    
+    /**
+     * Parses eventDates JSON string to a list of LocalDate objects.
+     */
+    private List<LocalDate> parseEventDates(Deal deal) {
+        if (deal.getEventDates() == null || deal.getEventDates().isEmpty()) {
+            return null;
+        }
+        try {
+            List<String> dateStrings = objectMapper.readValue(
+                deal.getEventDates(),
+                new TypeReference<List<String>>() {}
+            );
+            return dateStrings.stream()
+                .map(dateStr -> {
+                    try {
+                        return LocalDate.parse(dateStr);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(date -> date != null)
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    
+    /**
+     * Converts a list of date strings to JSON string.
+     */
+    private String eventDatesToJson(List<String> dateStrings) {
+        if (dateStrings == null || dateStrings.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(dateStrings);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
@@ -1038,16 +1123,25 @@ public class DealServiceImpl implements DealService {
         try {
             boolean hasCalendar = deal.getOrganization() != null
                     && StringUtils.hasText(deal.getOrganization().getGoogleCalendarId());
-            if (!hasCalendar || deal.getEventDate() == null) {
-                if (StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+            LocalDate firstEventDate = getFirstEventDate(deal);
+            if (!hasCalendar || firstEventDate == null) {
+                // Remove all calendar events if no dates or no calendar
+                if (StringUtils.hasText(deal.getGoogleCalendarEventIds()) || StringUtils.hasText(deal.getGoogleCalendarEventId())) {
                     removeGoogleCalendarEvent(deal);
                 }
                 return;
             }
-            googleCalendarService.upsertDealEvent(deal)
-                    .ifPresent(eventId -> {
-                        if (!eventId.equals(deal.getGoogleCalendarEventId())) {
-                            deal.setGoogleCalendarEventId(eventId);
+            
+            // Use new method to sync multiple events
+            googleCalendarService.upsertDealEvents(deal)
+                    .ifPresent(eventIdsMap -> {
+                        String eventIdsJson = eventIdsMapToJson(eventIdsMap);
+                        if (!eventIdsJson.equals(deal.getGoogleCalendarEventIds())) {
+                            deal.setGoogleCalendarEventIds(eventIdsJson);
+                            // Also set legacy eventId to first event for backward compatibility
+                            if (!eventIdsMap.isEmpty()) {
+                                deal.setGoogleCalendarEventId(eventIdsMap.values().iterator().next());
+                            }
                             dealRepository.save(deal);
                         }
                     });
@@ -1060,17 +1154,28 @@ public class DealServiceImpl implements DealService {
         if (googleCalendarService == null || deal == null) {
             return;
         }
-        String existingEventId = deal.getGoogleCalendarEventId();
-        if (!StringUtils.hasText(existingEventId)) {
-            return;
-        }
         try {
-            googleCalendarService.deleteDealEvent(deal);
+            googleCalendarService.deleteDealEvents(deal);
         } catch (Exception ex) {
-            log.warn("Failed to remove Google Calendar event for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+            log.warn("Failed to remove Google Calendar events for deal {}: {}", deal.getId(), ex.getMessage(), ex);
         } finally {
+            deal.setGoogleCalendarEventIds(null);
             deal.setGoogleCalendarEventId(null);
             dealRepository.save(deal);
+        }
+    }
+    
+    /**
+     * Converts a map of date strings to event IDs to JSON string.
+     */
+    private String eventIdsMapToJson(Map<String, String> eventIdsMap) {
+        if (eventIdsMap == null || eventIdsMap.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(eventIdsMap);
+        } catch (Exception e) {
+            return null;
         }
     }
 }

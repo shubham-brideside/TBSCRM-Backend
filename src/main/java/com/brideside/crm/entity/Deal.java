@@ -95,10 +95,16 @@ public class Deal {
     private Boolean venueAsked;
 
     @Column(name = "event_date", nullable = true)
-    private LocalDate eventDate;
+    private LocalDate eventDate; // Legacy field - kept for backward compatibility
+
+    @Column(name = "event_dates", columnDefinition = "JSON")
+    private String eventDates; // JSON array of dates: ["2024-01-01", "2024-01-02"]
 
     @Column(name = "google_calendar_event_id", length = 255)
-    private String googleCalendarEventId;
+    private String googleCalendarEventId; // Legacy field - kept for backward compatibility
+
+    @Column(name = "google_calendar_event_ids", columnDefinition = "JSON")
+    private String googleCalendarEventIds; // JSON object mapping dates to event IDs: {"2024-01-01": "event_id_1", "2024-01-02": "event_id_2"}
 
     @Enumerated(EnumType.STRING)
     @Column(name = "label", length = 50, nullable = true)
@@ -191,6 +197,9 @@ public class Deal {
     public void setVenueAsked(Boolean venueAsked) { this.venueAsked = venueAsked; }
     public LocalDate getEventDate() { return eventDate; }
     public void setEventDate(LocalDate eventDate) { this.eventDate = eventDate; }
+    
+    public String getEventDates() { return eventDates; }
+    public void setEventDates(String eventDates) { this.eventDates = eventDates; }
     public DealLabel getLabel() { return label; }
     public void setLabel(DealLabel label) { this.label = label; }
     public DealSource getDealSource() { return dealSource; }
@@ -217,6 +226,9 @@ public class Deal {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public String getGoogleCalendarEventId() { return googleCalendarEventId; }
     public void setGoogleCalendarEventId(String googleCalendarEventId) { this.googleCalendarEventId = googleCalendarEventId; }
+    
+    public String getGoogleCalendarEventIds() { return googleCalendarEventIds; }
+    public void setGoogleCalendarEventIds(String googleCalendarEventIds) { this.googleCalendarEventIds = googleCalendarEventIds; }
 
     @PrePersist
     public void prePersist() {

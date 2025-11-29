@@ -1,6 +1,7 @@
 package com.brideside.crm.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 import com.brideside.crm.entity.DealStatus;
 
 public class DealDtos {
@@ -26,7 +27,8 @@ public class DealDtos {
         public Boolean eventDateAsked; // optional
         public Boolean contactNumberAsked; // optional
         public Boolean venueAsked; // optional
-        public String eventDate; // ISO-8601 date string (yyyy-MM-dd)
+        public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
+        public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
@@ -66,7 +68,8 @@ public class DealDtos {
         public Boolean eventDateAsked;
         public Boolean contactNumberAsked;
         public Boolean venueAsked;
-        public String eventDate; // ISO-8601 date string (yyyy-MM-dd)
+        public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
+        public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
