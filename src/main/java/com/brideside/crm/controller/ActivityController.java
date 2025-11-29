@@ -3,6 +3,7 @@ package com.brideside.crm.controller;
 import com.brideside.crm.dto.ActivityDTO;
 import com.brideside.crm.dto.ActivityDtos;
 import com.brideside.crm.dto.ApiResponse;
+import com.brideside.crm.service.ActivityScopeService;
 import com.brideside.crm.service.ActivityService;
 import com.brideside.crm.service.AzureBlobStorageService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,25 +34,59 @@ import java.util.List;
         "GET /api/deals (deal linking), GET /api/persons (person selection with pagination)")
 public class ActivityController {
     private final ActivityService service;
+    private final ActivityScopeService scopeService;
     
     @Autowired(required = false)
     private AzureBlobStorageService azureBlobStorageService;
     
-    public ActivityController(ActivityService service) { this.service = service; }
+    public ActivityController(ActivityService service, ActivityScopeService scopeService) {
+        this.service = service;
+        this.scopeService = scopeService;
+    }
 
-    @Operation(summary = "List activities", description = "Get paginated list of activities with optional filters: personId, date range, assignedUser, category (Activity/Call/Meeting scheduler), status, done")
+    @Operation(summary = "List activities", description = "Get paginated list of activities with optional filters: personId, date range, assignedUser, category (Activity/Call/Meeting scheduler), status, done. " +
+            "Also supports role-based scoping using organizationId and assignedUserId for SALES, PRESALES and CATEGORY_MANAGER users.")
     @GetMapping
     public Page<ActivityDTO> list(
             @RequestParam(name = "personId", required = false) Long personId,
             @RequestParam(name = "dateFrom", required = false) String dateFrom,
             @RequestParam(name = "dateTo", required = false) String dateTo,
             @RequestParam(name = "assignedUser", required = false) String assignedUser,
+            @RequestParam(name = "organizationId", required = false) Long organizationId,
+            @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
             @RequestParam(name = "category", required = false) String category,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "done", required = false) Boolean done,
             @ParameterObject @PageableDefault(size = 25, sort = {"date"}) Pageable pageable
     ) {
-        return service.list(personId, dateFrom, dateTo, assignedUser, category, status, done, pageable);
+        return service.list(personId, dateFrom, dateTo, assignedUser, organizationId, assignedUserId, category, status, done, pageable);
+    }
+
+    @Operation(summary = "Activities summary", description = "Return counts for dashboard cards (total, pending, completed, assign call, meeting scheduled). " +
+            "Uses the same role-based scoping and filters as the list endpoint so cards always match the table.")
+    @GetMapping("/summary")
+    public ResponseEntity<ActivityDtos.Summary> summary(
+            @RequestParam(name = "personId", required = false) Long personId,
+            @RequestParam(name = "dateFrom", required = false) String dateFrom,
+            @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "assignedUser", required = false) String assignedUser,
+            @RequestParam(name = "organizationId", required = false) Long organizationId,
+            @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
+            @RequestParam(name = "category", required = false) String category,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "done", required = false) Boolean done
+    ) {
+        ActivityDtos.Summary s = service.summary(personId, dateFrom, dateTo, assignedUser,
+                organizationId, assignedUserId, category, status, done);
+        return ResponseEntity.ok(s);
+    }
+
+    @Operation(summary = "List scoped filters", description = "Returns organization and user filter options scoped to the current user's role.")
+    @GetMapping("/filters")
+    public ResponseEntity<ApiResponse<ActivityDtos.FilterOptions>> filters() {
+        ActivityScopeService.FilterContext ctx = scopeService.resolveFilterContext();
+        ActivityDtos.FilterOptions data = ActivityDtos.buildFilterOptions(ctx);
+        return ResponseEntity.ok(ApiResponse.success("Activity filters fetched", data));
     }
 
     @Operation(summary = "Create activity", description = "Create a new activity. 'subject' is required (trimmed non-empty string). 'category' defaults to ACTIVITY if not provided. " +

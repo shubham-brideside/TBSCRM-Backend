@@ -23,6 +23,11 @@ import jakarta.validation.constraints.NotBlank;
         "assignedUser",
         "notes",
         "organization",
+        "organizationId",
+        "organizationCategory",
+        "organizationOwnerId",
+        "organizationOwnerName",
+        "assignedUserId",
         "personId",
         "dealId",
         "dealName",
@@ -74,8 +79,23 @@ public class ActivityDTO {
     @Schema(description = "Activity notes (multiline text). Optional")
     private String notes;
     
-    @Schema(description = "Organization name. Optional")
+    @Schema(description = "Organization name. Optional (legacy display field)")
     private String organization;
+
+    @Schema(description = "Organization ID (FK to organizations.id). Preferred for filters and scoping", type = "integer", format = "int64")
+    private Long organizationId;
+
+    @Schema(description = "Organization category (e.g. PHOTOGRAPHY, MAKEUP, PLANNING_AND_DECOR). Derived from the linked organization, if present")
+    private String organizationCategory;
+
+    @Schema(description = "Organization owner user ID. Derived from the linked organization, if present", type = "integer", format = "int64")
+    private Long organizationOwnerId;
+
+    @Schema(description = "Organization owner full name. Derived from the linked organization, if present")
+    private String organizationOwnerName;
+
+    @Schema(description = "Assigned user ID (FK to users.id). Preferred for filters and scoping", type = "integer", format = "int64")
+    private Long assignedUserId;
     
     @Schema(description = "Person ID. Optional, only if > 0", type = "integer", format = "int64")
     private Long personId;
@@ -157,6 +177,21 @@ public class ActivityDTO {
     
     public String getOrganization() { return organization; }
     public void setOrganization(String organization) { this.organization = organization; }
+
+    public Long getOrganizationId() { return organizationId; }
+    public void setOrganizationId(Long organizationId) { this.organizationId = organizationId; }
+
+    public String getOrganizationCategory() { return organizationCategory; }
+    public void setOrganizationCategory(String organizationCategory) { this.organizationCategory = organizationCategory; }
+
+    public Long getOrganizationOwnerId() { return organizationOwnerId; }
+    public void setOrganizationOwnerId(Long organizationOwnerId) { this.organizationOwnerId = organizationOwnerId; }
+
+    public String getOrganizationOwnerName() { return organizationOwnerName; }
+    public void setOrganizationOwnerName(String organizationOwnerName) { this.organizationOwnerName = organizationOwnerName; }
+
+    public Long getAssignedUserId() { return assignedUserId; }
+    public void setAssignedUserId(Long assignedUserId) { this.assignedUserId = assignedUserId; }
     
     public Long getPersonId() { return personId; }
     public void setPersonId(Long personId) { this.personId = personId; }

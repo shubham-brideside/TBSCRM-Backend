@@ -26,7 +26,9 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
 - **Query params (all optional):**
   - `personId` — filter by linked person id.
   - `dateFrom`, `dateTo` — inclusive range on the `date` field (format `dd/MM/yyyy`).
-  - `assignedUser` — case-insensitive contains match on the assigned user email/name.
+  - `assignedUser` — case-insensitive contains match on the assigned user email/name (fuzzy text search).
+  - `organizationId` — exact match on `organizationId` FK (scoped by role).
+  - `assignedUserId` — exact match on `assignedUserId` FK (scoped by role).
   - `category` — one of `ACTIVITY`, `CALL`, `MEETING_SCHEDULER`.
   - `status` — one of `OPEN`, `PENDING`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`.
   - `done` — `true`/`false` to show completed or open items.
@@ -52,6 +54,8 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
         "personId": 55,
         "dealId": 21,
         "organization": "Brideside Chicago",
+        "organizationId": 10,
+        "assignedUserId": 5,
         "dealName": "Jackson Wedding",
         "instagramId": "@jacksonweds",
         "phone": "+1-555-0100",
@@ -95,6 +99,8 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
     "dealId": 21,                                 // optional for now
     "dealName": "Jackson Wedding",                // optional
     "organization": "Brideside Chicago",
+    "organizationId": 10,
+    "assignedUserId": 5,
     "instagramId": "@jacksonweds",
     "phone": "+1-555-0100",
     "dateTime": "2025-11-10T15:30:00+05:30"       // optional canonical timestamp
@@ -118,6 +124,8 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
     "dealId": 21,
     "dealName": "Jackson Wedding",
     "organization": "Brideside Chicago",
+    "organizationId": 10,
+    "assignedUserId": 5,
     "instagramId": "@jacksonweds",
     "phone": "+1-555-0100",
     "done": false,
@@ -168,6 +176,23 @@ Validation problems return HTTP `400` with `success: false`. Missing resources r
     { "code": "MEETING_SCHEDULER", "label": "Meeting Scheduler" }
   ]
   ```
+
+---
+
+### Activity filters (scoped)
+
+- **Method / URL:** `GET /api/activities/filters`
+- **Description:** Returns filter metadata already scoped to the logged-in user's role (Admin, Category Manager, Sales, Presales).
+- **Response (200 OK):**
+  ```json
+  {
+    "organizationIds": [1, 2, 3],
+    "assignedUserIds": [5, 6]
+  }
+  ```
+- **Notes:**
+  - Admins may receive empty sets, meaning "no restriction".
+  - Sales and Presales see only the organizations/users they are allowed to access; the frontend should hide category/user pickers as per role UI rules.
 
 ---
 

@@ -115,6 +115,21 @@ public class Activity {
     // Attachment URL (for Call tab - future file upload support)
     private String attachmentUrl;
 
+    // Scoped ownership references (nullable for legacy data / backfill)
+    @Column(name = "organization_id")
+    private Long organizationId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id", insertable = false, updatable = false)
+    private Organization organizationRef;
+
+    @Column(name = "assigned_user_id")
+    private Long assignedUserId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_user_id", insertable = false, updatable = false)
+    private User assignedUserRef;
+
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
@@ -171,6 +186,14 @@ public class Activity {
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
     public String getAttachmentUrl() { return attachmentUrl; }
     public void setAttachmentUrl(String attachmentUrl) { this.attachmentUrl = attachmentUrl; }
+    public Long getOrganizationId() { return organizationId; }
+    public void setOrganizationId(Long organizationId) { this.organizationId = organizationId; }
+    public Organization getOrganizationRef() { return organizationRef; }
+    public void setOrganizationRef(Organization organizationRef) { this.organizationRef = organizationRef; }
+    public Long getAssignedUserId() { return assignedUserId; }
+    public void setAssignedUserId(Long assignedUserId) { this.assignedUserId = assignedUserId; }
+    public User getAssignedUserRef() { return assignedUserRef; }
+    public void setAssignedUserRef(User assignedUserRef) { this.assignedUserRef = assignedUserRef; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

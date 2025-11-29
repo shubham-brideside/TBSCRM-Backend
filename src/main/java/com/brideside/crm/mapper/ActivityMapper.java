@@ -17,6 +17,21 @@ public class ActivityMapper {
         d.setNotes(e.getNotes());
         d.setPersonId(e.getPersonId());
         d.setOrganization(e.getOrganization());
+        d.setOrganizationId(e.getOrganizationId());
+        if (e.getOrganizationRef() != null) {
+            if (e.getOrganizationRef().getCategory() != null) {
+                d.setOrganizationCategory(e.getOrganizationRef().getCategory().name());
+            }
+            if (e.getOrganizationRef().getOwner() != null) {
+                d.setOrganizationOwnerId(e.getOrganizationRef().getOwner().getId());
+                String ownerFirst = e.getOrganizationRef().getOwner().getFirstName();
+                String ownerLast = e.getOrganizationRef().getOwner().getLastName();
+                String fullName = ((ownerFirst != null ? ownerFirst : "").trim() + " " +
+                        (ownerLast != null ? ownerLast : "").trim()).trim();
+                d.setOrganizationOwnerName(fullName.isEmpty() ? null : fullName);
+            }
+        }
+        d.setAssignedUserId(e.getAssignedUserId());
         d.setDone(e.isDone());
         d.setCategory(e.getCategory());
         d.setDealName(e.getDealName());
@@ -47,6 +62,8 @@ public class ActivityMapper {
         if (d.getNotes() != null) e.setNotes(d.getNotes());
         if (d.getPersonId() != null) e.setPersonId(d.getPersonId());
         if (d.getOrganization() != null) e.setOrganization(d.getOrganization());
+        if (d.getOrganizationId() != null) e.setOrganizationId(d.getOrganizationId());
+        if (d.getAssignedUserId() != null) e.setAssignedUserId(d.getAssignedUserId());
         // done is excluded - managed via POST /api/activities/{id}/done
         if (d.getCategory() != null) e.setCategory(d.getCategory());
         if (d.getDealName() != null) e.setDealName(d.getDealName());
@@ -76,6 +93,7 @@ public class ActivityMapper {
         if (d.getNotes() != null) e.setNotes(d.getNotes());
         if (d.getPersonId() != null) e.setPersonId(d.getPersonId());
         if (d.getOrganization() != null) e.setOrganization(d.getOrganization());
+        if (d.getOrganizationId() != null) e.setOrganizationId(d.getOrganizationId());
         if (d.getDone() != null) e.setDone(d.getDone());
         if (d.getCategory() != null) e.setCategory(d.getCategory());
         if (d.getDealName() != null) e.setDealName(d.getDealName());
@@ -88,6 +106,7 @@ public class ActivityMapper {
         if (d.getServiceCategory() != null) e.setServiceCategory(d.getServiceCategory());
         if (d.getDurationMinutes() != null) e.setDurationMinutes(d.getDurationMinutes());
         if (d.getAttachmentUrl() != null) e.setAttachmentUrl(d.getAttachmentUrl());
+        if (d.getAssignedUserId() != null) e.setAssignedUserId(d.getAssignedUserId());
     }
 }
 
