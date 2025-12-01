@@ -89,6 +89,92 @@ public class OrganizationServiceImpl implements OrganizationService {
         return OrganizationDtos.allCategoryOptions();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrganizationDtos.OrganizationResponse> listAccessibleForCurrentUser(String currentUserEmail) {
+        User currentUser = getCurrentUser(currentUserEmail);
+        Role.RoleName roleName = currentUser.getRole() != null ? currentUser.getRole().getName() : null;
+
+        if (roleName == null) {
+            return List.of();
+        }
+
+        List<Organization> organizations;
+
+        switch (roleName) {
+            case ADMIN:
+                // Admin can see all organizations
+                organizations = organizationRepository.findAll();
+                break;
+
+            case CATEGORY_MANAGER:
+                // Category Manager can see:
+                // 1. Organizations owned by them
+                // 2. Organizations owned by Sales/Presales under them
+                List<Long> accessibleOwnerIds = findAccessibleOwnerIdsForCategoryManager(currentUser);
+                organizations = organizationRepository.findAll().stream()
+                        .filter(org -> org.getOwner() != null && accessibleOwnerIds.contains(org.getOwner().getId()))
+                        .collect(Collectors.toList());
+                break;
+
+            case SALES:
+                // Sales can see organizations owned by them
+                organizations = organizationRepository.findByOwner_Id(currentUser.getId());
+                break;
+
+            case PRESALES:
+                // Presales can see organizations owned by them
+                organizations = organizationRepository.findByOwner_Id(currentUser.getId());
+                break;
+
+            default:
+                organizations = List.of();
+        }
+
+        return organizations.stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Find all user IDs that a Category Manager can access (for organization ownership)
+     * Includes: the category manager themselves, direct Sales/Presales reports, and Sales who have Presales under them
+     */
+    private List<Long> findAccessibleOwnerIdsForCategoryManager(User categoryManager) {
+        List<Long> ownerIds = new java.util.ArrayList<>();
+        ownerIds.add(categoryManager.getId()); // Category Manager's own organizations
+
+        // Find direct reports (Sales and Presales directly under this Category Manager)
+        List<User> directReports = userRepository.findByManagerId(categoryManager.getId());
+        for (User report : directReports) {
+            if (report.getRole() != null) {
+                Role.RoleName reportRole = report.getRole().getName();
+                if (reportRole == Role.RoleName.SALES || reportRole == Role.RoleName.PRESALES) {
+                    ownerIds.add(report.getId());
+                }
+            }
+        }
+
+        // Find Sales under this Category Manager, then find their Presales
+        for (User sales : directReports) {
+            if (sales.getRole() != null && sales.getRole().getName() == Role.RoleName.SALES) {
+                List<User> presalesUnderSales = userRepository.findByManagerId(sales.getId());
+                for (User presales : presalesUnderSales) {
+                    if (presales.getRole() != null && presales.getRole().getName() == Role.RoleName.PRESALES) {
+                        ownerIds.add(presales.getId());
+                    }
+                }
+            }
+        }
+
+        return ownerIds;
+    }
+
+    private User getCurrentUser(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("Current user not found"));
+    }
+
     private Organization getOrThrow(Long id) {
         return organizationRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Organization not found with id " + id));

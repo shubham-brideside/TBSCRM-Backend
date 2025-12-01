@@ -19,6 +19,8 @@ public interface OrganizationService {
     List<OrganizationDtos.OwnerOption> listOwnerOptions();
 
     List<OrganizationDtos.CategoryOption> listCategoryOptions();
+
+    List<OrganizationDtos.OrganizationResponse> listAccessibleForCurrentUser(String currentUserEmail);
 }
 
 

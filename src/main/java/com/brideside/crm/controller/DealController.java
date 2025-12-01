@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/deals")
@@ -24,6 +26,8 @@ public class DealController {
 
     @Autowired
     private DealService dealService;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostMapping
     @Operation(summary = "Create a deal")
@@ -143,7 +147,8 @@ public class DealController {
         r.eventDateAsked = d.getEventDateAsked();
         r.contactNumberAsked = d.getContactNumberAsked();
         r.venueAsked = d.getVenueAsked();
-        r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null;
+        r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null; // Legacy field
+        r.eventDates = parseEventDates(d); // New field for multiple dates
         r.label = d.getLabel() != null ? d.getLabel().toDisplayString() : null;
         r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
         r.subSource = d.getDealSubSource() != null ? d.getDealSubSource().toDisplayString() : null;
@@ -163,6 +168,29 @@ public class DealController {
         List<com.brideside.crm.dto.PipelineDtos.PipelineResponse> pipelines = dealService.getAvailablePipelinesForDiversion(dealId);
         return ResponseEntity.ok(pipelines);
     }
+    
+    /**
+     * Parses eventDates JSON string to a list of date strings.
+     */
+    private List<String> parseEventDates(Deal deal) {
+        if (deal.getEventDates() == null || deal.getEventDates().isEmpty()) {
+            // Fallback to legacy eventDate if eventDates is not set
+            if (deal.getEventDate() != null) {
+                return List.of(deal.getEventDate().toString());
+            }
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                deal.getEventDates(),
+                new TypeReference<List<String>>() {}
+            );
+        } catch (Exception e) {
+            // If parsing fails, fallback to legacy eventDate
+            if (deal.getEventDate() != null) {
+                return List.of(deal.getEventDate().toString());
+            }
+            return null;
 
     @GetMapping("/sources")
     @Operation(summary = "Get deal sources", description = "Returns list of available deal sources")

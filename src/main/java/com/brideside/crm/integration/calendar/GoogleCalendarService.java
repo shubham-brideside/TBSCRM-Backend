@@ -30,8 +30,11 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 @Service
 @ConditionalOnProperty(prefix = "google.calendar", name = "enabled", havingValue = "true")
@@ -77,23 +80,62 @@ public class GoogleCalendarService {
         this.httpClient = HttpClient.newHttpClient();
     }
 
-    public Optional<String> upsertDealEvent(Deal deal) {
+    /**
+     * Upserts multiple calendar events for a deal (one per event date).
+     * Returns a map of date strings to event IDs.
+     */
+    public Optional<Map<String, String>> upsertDealEvents(Deal deal) {
         if (!shouldSync(deal)) {
             return Optional.empty();
         }
+        
+        List<LocalDate> eventDates = getAllEventDates(deal);
+        if (eventDates == null || eventDates.isEmpty()) {
+            return Optional.empty();
+        }
+        
         String calendarId = deal.getOrganization().getGoogleCalendarId().trim();
-        ObjectNode payload = buildEventPayload(deal);
+        Map<String, String> existingEventIds = parseEventIds(deal);
+        Map<String, String> updatedEventIds = new HashMap<>();
+        
+        for (LocalDate eventDate : eventDates) {
+            String dateStr = eventDate.toString();
+            String existingEventId = existingEventIds != null ? existingEventIds.get(dateStr) : null;
+            
+            Optional<String> eventId = upsertSingleEvent(deal, calendarId, eventDate, existingEventId);
+            if (eventId.isPresent()) {
+                updatedEventIds.put(dateStr, eventId.get());
+            }
+        }
+        
+        // Delete events for dates that are no longer in the list
+        if (existingEventIds != null) {
+            for (Map.Entry<String, String> entry : existingEventIds.entrySet()) {
+                if (!updatedEventIds.containsKey(entry.getKey())) {
+                    deleteSingleEvent(calendarId, entry.getValue());
+                }
+            }
+        }
+        
+        return updatedEventIds.isEmpty() ? Optional.empty() : Optional.of(updatedEventIds);
+    }
+    
+    /**
+     * Upserts a single calendar event for a specific date.
+     */
+    private Optional<String> upsertSingleEvent(Deal deal, String calendarId, LocalDate eventDate, String existingEventId) {
+        ObjectNode payload = buildEventPayload(deal, eventDate);
         String body;
         try {
             body = objectMapper.writeValueAsString(payload);
         } catch (IOException e) {
-            log.warn("Failed to serialize calendar payload for deal {}: {}", deal.getId(), e.getMessage(), e);
+            log.warn("Failed to serialize calendar payload for deal {} date {}: {}", deal.getId(), eventDate, e.getMessage(), e);
             return Optional.empty();
         }
 
-        boolean updatingExisting = StringUtils.hasText(deal.getGoogleCalendarEventId());
+        boolean updatingExisting = StringUtils.hasText(existingEventId);
         String endpoint = updatingExisting
-                ? EVENT_URL.formatted(encode(calendarId), encode(deal.getGoogleCalendarEventId()))
+                ? EVENT_URL.formatted(encode(calendarId), encode(existingEventId))
                 : EVENTS_URL.formatted(encode(calendarId));
 
         HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -116,28 +158,73 @@ public class GoogleCalendarService {
                     return Optional.of(node.get("id").asText());
                 }
             } else {
-                log.warn("Google Calendar API upsert failed for deal {}: {} {}", deal.getId(), response.statusCode(), response.body());
+                log.warn("Google Calendar API upsert failed for deal {} date {}: {} {}", deal.getId(), eventDate, response.statusCode(), response.body());
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.warn("Google Calendar sync interrupted for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+            log.warn("Google Calendar sync interrupted for deal {} date {}: {}", deal.getId(), eventDate, ex.getMessage(), ex);
         } catch (IOException ex) {
-            log.warn("Google Calendar sync failed for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+            log.warn("Google Calendar sync failed for deal {} date {}: {}", deal.getId(), eventDate, ex.getMessage(), ex);
         }
         return Optional.empty();
     }
+    
+    /**
+     * Legacy method for backward compatibility - uses first event date.
+     * @deprecated Use upsertDealEvents instead
+     */
+    @Deprecated
+    public Optional<String> upsertDealEvent(Deal deal) {
+        if (!shouldSync(deal)) {
+            return Optional.empty();
+        }
+        LocalDate firstDate = getFirstEventDate(deal);
+        if (firstDate == null) {
+            return Optional.empty();
+        }
+        String calendarId = deal.getOrganization().getGoogleCalendarId().trim();
+        String existingEventId = deal.getGoogleCalendarEventId();
+        return upsertSingleEvent(deal, calendarId, firstDate, existingEventId);
+    }
 
-    public void deleteDealEvent(Deal deal) {
+    /**
+     * Deletes all calendar events for a deal.
+     */
+    public void deleteDealEvents(Deal deal) {
         if (deal == null || deal.getOrganization() == null) {
             return;
         }
         String calendarId = deal.getOrganization().getGoogleCalendarId();
-        if (!StringUtils.hasText(calendarId) || !StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+        if (!StringUtils.hasText(calendarId)) {
+            return;
+        }
+
+        // Delete events from google_calendar_event_ids
+        Map<String, String> eventIds = parseEventIds(deal);
+        if (eventIds != null && !eventIds.isEmpty()) {
+            for (String eventId : eventIds.values()) {
+                if (StringUtils.hasText(eventId)) {
+                    deleteSingleEvent(calendarId.trim(), eventId);
+                }
+            }
+        }
+        
+        // Also delete legacy single event if it exists
+        if (StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+            deleteSingleEvent(calendarId.trim(), deal.getGoogleCalendarEventId());
+        }
+    }
+    
+    /**
+     * Deletes a single calendar event.
+     */
+    private void deleteSingleEvent(String calendarId, String eventId) {
+        if (!StringUtils.hasText(calendarId) || !StringUtils.hasText(eventId)) {
             return;
         }
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(EVENT_URL.formatted(encode(calendarId.trim()), encode(deal.getGoogleCalendarEventId()))))
+                .uri(URI.create(EVENT_URL.formatted(encode(calendarId.trim()), encode(eventId))))
                 .header("Authorization", "Bearer " + fetchAccessToken())
                 .DELETE()
                 .build();
@@ -145,14 +232,23 @@ public class GoogleCalendarService {
         try {
             HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
             if (response.statusCode() >= 400) {
-                log.warn("Failed to delete Google Calendar event {} for deal {}: status {}", deal.getGoogleCalendarEventId(), deal.getId(), response.statusCode());
+                log.warn("Failed to delete Google Calendar event {}: status {}", eventId, response.statusCode());
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.warn("Delete Google Calendar event interrupted for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+            log.warn("Delete Google Calendar event interrupted for event {}: {}", eventId, ex.getMessage(), ex);
         } catch (IOException ex) {
-            log.warn("Unable to delete Google Calendar event for deal {}: {}", deal.getId(), ex.getMessage(), ex);
+            log.warn("Unable to delete Google Calendar event {}: {}", eventId, ex.getMessage(), ex);
         }
+    }
+    
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use deleteDealEvents instead
+     */
+    @Deprecated
+    public void deleteDealEvent(Deal deal) {
+        deleteDealEvents(deal);
     }
 
     public List<GoogleCalendarEventPayload> fetchEvents(String calendarId, Instant timeMin, Instant timeMax) {
@@ -212,11 +308,75 @@ public class GoogleCalendarService {
     }
 
     private boolean shouldSync(Deal deal) {
-        if (deal == null || deal.getEventDate() == null) {
+        if (deal == null) {
+            return false;
+        }
+        // Get first event date from eventDates or fallback to legacy eventDate
+        LocalDate firstEventDate = getFirstEventDate(deal);
+        if (firstEventDate == null) {
             return false;
         }
         Organization organization = deal.getOrganization();
         return organization != null && StringUtils.hasText(organization.getGoogleCalendarId());
+    }
+    
+    /**
+     * Gets all event dates from the eventDates JSON array, or falls back to legacy eventDate.
+     */
+    private List<LocalDate> getAllEventDates(Deal deal) {
+        List<LocalDate> dates = new ArrayList<>();
+        
+        if (deal.getEventDates() != null && !deal.getEventDates().isEmpty()) {
+            try {
+                List<String> dateStrings = objectMapper.readValue(
+                    deal.getEventDates(),
+                    new TypeReference<List<String>>() {}
+                );
+                if (dateStrings != null) {
+                    for (String dateStr : dateStrings) {
+                        try {
+                            dates.add(LocalDate.parse(dateStr));
+                        } catch (Exception e) {
+                            // Ignore parse errors for individual dates
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // If parsing fails, fallback to legacy eventDate
+            }
+        }
+        
+        // Fallback to legacy eventDate if no dates found
+        if (dates.isEmpty() && deal.getEventDate() != null) {
+            dates.add(deal.getEventDate());
+        }
+        
+        return dates.isEmpty() ? null : dates;
+    }
+    
+    /**
+     * Gets the first event date from the eventDates JSON array, or falls back to legacy eventDate.
+     */
+    private LocalDate getFirstEventDate(Deal deal) {
+        List<LocalDate> dates = getAllEventDates(deal);
+        return dates != null && !dates.isEmpty() ? dates.get(0) : null;
+    }
+    
+    /**
+     * Parses the google_calendar_event_ids JSON object to a map of date strings to event IDs.
+     */
+    private Map<String, String> parseEventIds(Deal deal) {
+        if (deal.getGoogleCalendarEventIds() == null || deal.getGoogleCalendarEventIds().isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                deal.getGoogleCalendarEventIds(),
+                new TypeReference<Map<String, String>>() {}
+            );
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private GoogleCredentials buildGoogleCredentials() throws IOException {
@@ -297,10 +457,12 @@ public class GoogleCalendarService {
         throw new IllegalStateException("No Google Calendar credentials configured. Please set GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable or GOOGLE_CALENDAR_CREDENTIALS_FILE property.");
     }
 
-    private ObjectNode buildEventPayload(Deal deal) {
-        LocalDate eventDate = deal.getEventDate();
+    private ObjectNode buildEventPayload(Deal deal, LocalDate eventDate) {
+        if (eventDate == null) {
+            throw new IllegalStateException("No event date provided for deal " + deal.getId());
+        }
         ObjectNode root = objectMapper.createObjectNode();
-        root.put("summary", buildSummary(deal));
+        root.put("summary", buildSummary(deal, eventDate));
         root.put("description", buildDescription(deal));
         if (StringUtils.hasText(deal.getVenue())) {
             root.put("location", deal.getVenue());
@@ -311,14 +473,20 @@ public class GoogleCalendarService {
         end.put("date", eventDate.plusDays(1).toString());
         return root;
     }
-
-    private String buildSummary(Deal deal) {
+    
+    private String buildSummary(Deal deal, LocalDate eventDate) {
         StringBuilder summary = new StringBuilder(deal.getName());
         if (deal.getOrganization() != null && StringUtils.hasText(deal.getOrganization().getName())) {
             summary.append(" • ").append(deal.getOrganization().getName());
         }
+        // If there are multiple dates, include the date in the summary
+        List<LocalDate> allDates = getAllEventDates(deal);
+        if (allDates != null && allDates.size() > 1) {
+            summary.append(" (").append(eventDate.toString()).append(")");
+        }
         return summary.toString();
     }
+
 
     private String buildDescription(Deal deal) {
         StringBuilder description = new StringBuilder();
@@ -405,4 +573,5 @@ public class GoogleCalendarService {
     ) {
     }
 }
+
 
