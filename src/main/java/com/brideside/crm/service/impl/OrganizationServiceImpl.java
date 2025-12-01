@@ -112,14 +112,15 @@ public class OrganizationServiceImpl implements OrganizationService {
                 // 1. Organizations owned by them
                 // 2. Organizations owned by Sales/Presales under them
                 List<Long> accessibleOwnerIds = findAccessibleOwnerIdsForCategoryManager(currentUser);
-                organizations = organizationRepository.findAll().stream()
-                        .filter(org -> org.getOwner() != null && accessibleOwnerIds.contains(org.getOwner().getId()))
-                        .collect(Collectors.toList());
+                organizations = organizationRepository.findByOwner_IdIn(accessibleOwnerIds);
                 break;
 
             case SALES:
-                // Sales can see organizations owned by them
-                organizations = organizationRepository.findByOwner_Id(currentUser.getId());
+                // Sales can see:
+                // 1. Organizations owned by them
+                // 2. Organizations owned by Presales under them
+                List<Long> salesAndPresalesOwnerIds = findAccessibleOwnerIdsForSales(currentUser);
+                organizations = organizationRepository.findByOwner_IdIn(salesAndPresalesOwnerIds);
                 break;
 
             case PRESALES:
@@ -164,6 +165,25 @@ public class OrganizationServiceImpl implements OrganizationService {
                         ownerIds.add(presales.getId());
                     }
                 }
+            }
+        }
+
+        return ownerIds;
+    }
+
+    /**
+     * Find all user IDs that a Sales user can access (for organization ownership)
+     * Includes: the sales user themselves and their direct Presales reports
+     */
+    private List<Long> findAccessibleOwnerIdsForSales(User salesUser) {
+        List<Long> ownerIds = new java.util.ArrayList<>();
+        ownerIds.add(salesUser.getId()); // Sales user's own organizations
+
+        // Find direct Presales reports under this Sales user
+        List<User> directReports = userRepository.findByManagerId(salesUser.getId());
+        for (User report : directReports) {
+            if (report.getRole() != null && report.getRole().getName() == Role.RoleName.PRESALES) {
+                ownerIds.add(report.getId());
             }
         }
 
