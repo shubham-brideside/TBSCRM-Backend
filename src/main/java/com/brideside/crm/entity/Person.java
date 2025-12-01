@@ -39,9 +39,13 @@ public class Person {
     @Column(name = "label", length = 50)
     private PersonLabel label;
 
+    @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
+    @Column(name = "source", length = 50)
+    private DealSource source;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "person_source", length = 50)
-    private PersonSource source;
+    @Column(name = "sub_source", length = 50)
+    private DealSubSource subSource;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -136,12 +140,20 @@ public class Person {
         this.label = label;
     }
 
-    public PersonSource getSource() {
+    public DealSource getSource() {
         return source;
     }
 
-    public void setSource(PersonSource source) {
+    public void setSource(DealSource source) {
         this.source = source;
+    }
+
+    public DealSubSource getSubSource() {
+        return subSource;
+    }
+
+    public void setSubSource(DealSubSource subSource) {
+        this.subSource = subSource;
     }
 
     public Instant getCreatedAt() {
@@ -178,21 +190,4 @@ public class Person {
         }
     }
 
-    public enum PersonSource {
-        INSTAGRAM("Instagram"),
-        WHATSAPP("Whatsapp"),
-        TBS_WEBSITE("TBS Website"),
-        REFERRAL("Referral"),
-        OTHER("Other");
-
-        private final String displayName;
-
-        PersonSource(String displayName) {
-            this.displayName = displayName;
-        }
-
-        public String getDisplayName() {
-            return displayName;
-        }
-    }
 }

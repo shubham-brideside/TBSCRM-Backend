@@ -1,5 +1,6 @@
 package com.brideside.crm.controller;
 
+import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.MergeRequest;
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.dto.PersonSummaryDTO;
@@ -8,7 +9,6 @@ import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.service.PersonService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 
 @RestController
@@ -47,7 +48,7 @@ public class PersonController {
             @ParameterObject @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         Person.PersonLabel label = parseLabel(labelCode);
-        Person.PersonSource source = parseSource(sourceCode);
+        com.brideside.crm.entity.DealSource source = parseSource(sourceCode);
         return service.list(query, label, organizationId, ownerId, source, leadFrom, leadTo, pageable);
     }
 
@@ -57,10 +58,28 @@ public class PersonController {
         return service.listLabelOptions();
     }
 
-    @Operation(summary = "List source options")
+    @Operation(summary = "List source options", description = "Returns list of available deal sources (same as /api/deals/sources)")
     @GetMapping("/sources")
-    public List<PersonDTO.EnumOption> sourceOptions() {
-        return service.listSourceOptions();
+    public ResponseEntity<ApiResponse<List<SourceOption>>> sourceOptions() {
+        List<SourceOption> sources = Arrays.asList(
+            new SourceOption("Direct", "Direct"),
+            new SourceOption("Divert", "Divert"),
+            new SourceOption("Reference", "Reference"),
+            new SourceOption("Planner", "Planner")
+        );
+        return ResponseEntity.ok(ApiResponse.success("Sources retrieved successfully", sources));
+    }
+
+    @Operation(summary = "List sub source options", description = "Returns list of available deal sub sources (same as /api/deals/sub-sources)")
+    @GetMapping("/sub-sources")
+    public ResponseEntity<ApiResponse<List<SourceOption>>> subSourceOptions() {
+        List<SourceOption> subSources = Arrays.asList(
+            new SourceOption("Instagram", "Instagram"),
+            new SourceOption("Whatsapp", "Whatsapp"),
+            new SourceOption("Landing Page", "Landing Page"),
+            new SourceOption("Email", "Email")
+        );
+        return ResponseEntity.ok(ApiResponse.success("Sub sources retrieved successfully", subSources));
     }
 
     @Operation(summary = "List eligible owners", description = "Returns active SALES users that can own a person")
@@ -70,8 +89,8 @@ public class PersonController {
     }
 
     @Operation(summary = "Get person by ID")
-    @ApiResponse(responseCode = "200", description = "Person found")
-    @ApiResponse(responseCode = "404", description = "Person not found")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Person found")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Person not found")
     @GetMapping("/{id}")
     public PersonDTO get(@Parameter(description = "Person ID") @PathVariable Long id) {
         return service.get(id);
@@ -84,7 +103,7 @@ public class PersonController {
     }
 
     @Operation(summary = "Create person")
-    @ApiResponse(responseCode = "201", description = "Person created successfully")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Person created successfully")
     @PostMapping
     public ResponseEntity<PersonDTO> create(@Valid @RequestBody PersonDTO dto) {
         return ResponseEntity.status(201).body(service.create(dto));
@@ -97,7 +116,7 @@ public class PersonController {
     }
 
     @Operation(summary = "Delete person")
-    @ApiResponse(responseCode = "204", description = "Person deleted successfully")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "204", description = "Person deleted successfully")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
@@ -127,14 +146,36 @@ public class PersonController {
         }
     }
 
-    private Person.PersonSource parseSource(String value) {
+    private com.brideside.crm.entity.DealSource parseSource(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        try {
-            return Person.PersonSource.valueOf(value.toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new BadRequestException("Invalid source value: " + value);
+        return com.brideside.crm.entity.DealSource.fromString(value);
+    }
+
+    public static class SourceOption {
+        private String code;
+        private String label;
+
+        public SourceOption(String code, String label) {
+            this.code = code;
+            this.label = label;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public void setCode(String code) {
+            this.code = code;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
         }
     }
 }

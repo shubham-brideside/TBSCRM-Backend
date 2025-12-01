@@ -40,7 +40,7 @@ public final class PersonSpecifications {
         return (root, query, cb) -> cb.equal(root.get("label"), label);
     }
 
-    public static Specification<Person> hasSource(Person.PersonSource source) {
+    public static Specification<Person> hasSource(com.brideside.crm.entity.DealSource source) {
         if (source == null) {
             return null;
         }

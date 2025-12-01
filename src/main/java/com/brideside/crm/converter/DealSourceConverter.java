@@ -23,28 +23,35 @@ public class DealSourceConverter implements AttributeConverter<DealSource, Strin
         
         String normalized = dbData.trim().toUpperCase();
         
-        // Handle old enum values by converting them to new values
+        // Handle old PersonSource enum values by converting them to new DealSource values
         switch (normalized) {
             case "INSTAGRAM":
             case "WHATSAPP":
             case "EMAIL":
             case "CALL":
             case "WEBSITE":
-                // Old values - convert to DIRECT
+            case "TBS_WEBSITE":
+                // Old PersonSource values - convert to DIRECT
+                return DealSource.DIRECT;
+            case "REFERRAL":
+                // Old PersonSource REFERRAL - convert to REFERENCE
+                return DealSource.REFERENCE;
+            case "OTHER":
+                // Old PersonSource OTHER - convert to DIRECT (or could be null)
                 return DealSource.DIRECT;
             case "DIRECT":
             case "DIVERT":
             case "REFERENCE":
             case "PLANNER":
-                // New values - use as is
+                // New DealSource values - use as is
                 try {
                     return DealSource.valueOf(normalized);
                 } catch (IllegalArgumentException e) {
                     return null;
                 }
             default:
-                // Unknown value - return null
-                return null;
+                // Unknown value - try using fromString method, return null if fails
+                return DealSource.fromString(dbData);
         }
     }
 }
