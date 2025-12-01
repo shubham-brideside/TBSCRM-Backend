@@ -191,6 +191,8 @@ public class DealController {
                 return List.of(deal.getEventDate().toString());
             }
             return null;
+        }
+    }
 
     @GetMapping("/sources")
     @Operation(summary = "Get deal sources", description = "Returns list of available deal sources")
