@@ -7,6 +7,7 @@ import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 public final class PersonSpecifications {
 
@@ -40,6 +41,13 @@ public final class PersonSpecifications {
         return (root, query, cb) -> cb.equal(root.get("label"), label);
     }
 
+    public static Specification<Person> hasLabels(List<Person.PersonLabel> labels) {
+        if (labels == null || labels.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> root.get("label").in(labels);
+    }
+
     public static Specification<Person> hasSource(com.brideside.crm.entity.DealSource source) {
         if (source == null) {
             return null;
@@ -54,11 +62,39 @@ public final class PersonSpecifications {
         return (root, query, cb) -> cb.equal(root.join("organization", JoinType.LEFT).get("id"), organizationId);
     }
 
+    public static Specification<Person> hasOrganizations(List<Long> organizationIds) {
+        if (organizationIds == null || organizationIds.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> root.join("organization", JoinType.LEFT).get("id").in(organizationIds);
+    }
+
     public static Specification<Person> hasOwner(Long ownerId) {
         if (ownerId == null) {
             return null;
         }
         return (root, query, cb) -> cb.equal(root.join("owner", JoinType.LEFT).get("id"), ownerId);
+    }
+
+    public static Specification<Person> hasOwners(List<Long> ownerIds) {
+        if (ownerIds == null || ownerIds.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> root.join("owner", JoinType.LEFT).get("id").in(ownerIds);
+    }
+
+    public static Specification<Person> hasCategory(Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        return (root, query, cb) -> cb.equal(root.join("category", JoinType.LEFT).get("id"), categoryId);
+    }
+
+    public static Specification<Person> hasCategories(List<Long> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> root.join("category", JoinType.LEFT).get("id").in(categoryIds);
     }
 
     public static Specification<Person> leadDateBetween(LocalDate fromInclusive, LocalDate toInclusive) {

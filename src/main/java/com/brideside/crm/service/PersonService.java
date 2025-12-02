@@ -2,12 +2,14 @@ package com.brideside.crm.service;
 
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.dto.PersonSummaryDTO;
+import com.brideside.crm.entity.Category;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.mapper.PersonMapper;
+import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PersonSpecifications;
@@ -35,28 +37,33 @@ public class PersonService {
     private final PersonRepository repository;
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final CategoryRepository categoryRepository;
 
     public PersonService(PersonRepository repository,
                          OrganizationRepository organizationRepository,
-                         UserRepository userRepository) {
+                         UserRepository userRepository,
+                         CategoryRepository categoryRepository) {
         this.repository = repository;
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
+        this.categoryRepository = categoryRepository;
     }
 
     public Page<PersonDTO> list(String q,
-                                Person.PersonLabel label,
-                                Long organizationId,
-                                Long ownerId,
+                                List<Person.PersonLabel> labels,
+                                List<Long> organizationIds,
+                                List<Long> ownerIds,
+                                List<Long> categoryIds,
                                 com.brideside.crm.entity.DealSource source,
                                 LocalDate leadDateFrom,
                                 LocalDate leadDateTo,
                                 Pageable pageable) {
 
         Specification<Person> spec = Specification.where(PersonSpecifications.search(q))
-                .and(PersonSpecifications.hasLabel(label))
-                .and(PersonSpecifications.hasOrganization(organizationId))
-                .and(PersonSpecifications.hasOwner(ownerId))
+                .and(PersonSpecifications.hasLabels(labels))
+                .and(PersonSpecifications.hasOrganizations(organizationIds))
+                .and(PersonSpecifications.hasOwners(ownerIds))
+                .and(PersonSpecifications.hasCategories(categoryIds))
                 .and(PersonSpecifications.hasSource(source))
                 .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo));
 
@@ -162,6 +169,38 @@ public class PersonService {
         return PersonDTO.labelOptions();
     }
 
+    public List<CategoryOption> listCategoryOptions() {
+        return categoryRepository.findAll().stream()
+                .map(cat -> new CategoryOption(cat.getId(), cat.getName()))
+                .collect(Collectors.toList());
+    }
+
+    public static class CategoryOption {
+        private Long id;
+        private String name;
+
+        public CategoryOption(Long id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
 
     private void apply(PersonDTO dto, Person entity) {
         if (!StringUtils.hasText(dto.getName())) {
@@ -185,6 +224,12 @@ public class PersonService {
 
         if (dto.getOwnerId() != null) {
             entity.setOwner(resolveOwner(dto.getOwnerId()));
+        }
+
+        if (dto.getCategoryId() != null) {
+            entity.setCategory(resolveCategory(dto.getCategoryId()));
+        } else {
+            entity.setCategory(null);
         }
 
         if (dto.getLeadDate() == null) {
@@ -214,6 +259,11 @@ public class PersonService {
             throw new BadRequestException("Owner must be active");
         }
         return user;
+    }
+
+    private Category resolveCategory(Long categoryId) {
+        return categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BadRequestException("Category not found with id " + categoryId));
     }
 
     private PersonDTO.OwnerOption toOwnerOption(User user) {

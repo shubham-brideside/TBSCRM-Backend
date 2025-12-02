@@ -1,6 +1,7 @@
 package com.brideside.crm.mapper;
 
 import com.brideside.crm.dto.PersonDTO;
+import com.brideside.crm.entity.Category;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.User;
@@ -45,6 +46,12 @@ public final class PersonMapper {
             }
             dto.setOwnerDisplayName(nameBuilder.isEmpty() ? owner.getEmail() : nameBuilder.toString());
             dto.setOwnerEmail(owner.getEmail());
+        }
+
+        Category category = person.getCategory();
+        if (category != null) {
+            dto.setCategoryId(category.getId());
+            dto.setCategoryName(category.getName());
         }
 
         return dto;

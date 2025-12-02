@@ -51,6 +51,12 @@ public class PersonDTO {
     @Schema(description = "Owner email", accessMode = Schema.AccessMode.READ_ONLY)
     private String ownerEmail;
 
+    @Schema(description = "Category ID (FK to categories.id)", type = "integer", format = "int64")
+    private Long categoryId;
+
+    @Schema(description = "Category name", accessMode = Schema.AccessMode.READ_ONLY)
+    private String categoryName;
+
     @Schema(description = "Lead label / category")
     private Person.PersonLabel label;
 
@@ -152,6 +158,22 @@ public class PersonDTO {
 
     public void setOwnerEmail(String ownerEmail) {
         this.ownerEmail = ownerEmail;
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public String getCategoryName() {
+        return categoryName;
+    }
+
+    public void setCategoryName(String categoryName) {
+        this.categoryName = categoryName;
     }
 
     public Person.PersonLabel getLabel() {

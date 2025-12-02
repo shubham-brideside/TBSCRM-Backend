@@ -22,7 +22,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/persons")
@@ -35,27 +37,37 @@ public class PersonController {
         this.service = service;
     }
 
-    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, source, and lead date range.")
+    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING).")
     @GetMapping
     public Page<PersonDTO> list(
             @RequestParam(name = "q", required = false) String query,
             @RequestParam(name = "label", required = false) String labelCode,
             @RequestParam(name = "source", required = false) String sourceCode,
-            @RequestParam(name = "organizationId", required = false) Long organizationId,
-            @RequestParam(name = "ownerId", required = false) Long ownerId,
-            @RequestParam(name = "leadFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate leadFrom,
-            @RequestParam(name = "leadTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate leadTo,
+            @RequestParam(name = "organizationId", required = false) String organizationId,
+            @RequestParam(name = "ownerId", required = false) String ownerId,
+            @RequestParam(name = "categoryId", required = false) String categoryId,
+            @RequestParam(name = "leadFrom", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadFrom,
+            @RequestParam(name = "leadTo", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadTo,
             @ParameterObject @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        Person.PersonLabel label = parseLabel(labelCode);
+        List<Person.PersonLabel> labels = parseCommaSeparatedLabels(labelCode);
         com.brideside.crm.entity.DealSource source = parseSource(sourceCode);
-        return service.list(query, label, organizationId, ownerId, source, leadFrom, leadTo, pageable);
+        List<Long> organizationIds = parseCommaSeparatedIds(organizationId);
+        List<Long> ownerIds = parseCommaSeparatedIds(ownerId);
+        List<Long> categoryIds = parseCommaSeparatedIds(categoryId);
+        return service.list(query, labels, organizationIds, ownerIds, categoryIds, source, leadFrom, leadTo, pageable);
     }
 
     @Operation(summary = "List label options")
     @GetMapping("/labels")
     public List<PersonDTO.EnumOption> labelOptions() {
         return service.listLabelOptions();
+    }
+
+    @Operation(summary = "List category options", description = "Returns list of available categories from the categories table")
+    @GetMapping("/categories")
+    public ResponseEntity<ApiResponse<List<PersonService.CategoryOption>>> categoryOptions() {
+        return ResponseEntity.ok(ApiResponse.success("Categories retrieved successfully", service.listCategoryOptions()));
     }
 
     @Operation(summary = "List source options", description = "Returns list of available deal sources (same as /api/deals/sources)")
@@ -146,11 +158,63 @@ public class PersonController {
         }
     }
 
+    /**
+     * Parses comma-separated label string into a list of PersonLabel enums.
+     * Handles single values, multiple values, empty strings, and whitespace.
+     * Validates that labels are valid enum values and removes duplicates.
+     *
+     * @param labels Comma-separated string of label codes (e.g., "BRIDAL_MAKEUP,BRIDAL_PLANNING" or "BRIDAL_MAKEUP")
+     * @return List of PersonLabel enums, empty list if input is null or empty
+     * @throws BadRequestException if any label is invalid
+     */
+    private List<Person.PersonLabel> parseCommaSeparatedLabels(String labels) {
+        if (labels == null || labels.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            return Arrays.stream(labels.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(s -> Person.PersonLabel.valueOf(s.toUpperCase()))
+                    .distinct() // Remove duplicates
+                    .collect(Collectors.toList());
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("Invalid label value: " + labels + ". Valid values are: " + 
+                    Arrays.toString(Person.PersonLabel.values()));
+        }
+    }
+
     private com.brideside.crm.entity.DealSource parseSource(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
         return com.brideside.crm.entity.DealSource.fromString(value);
+    }
+
+    /**
+     * Parses comma-separated ID string into a list of Long IDs.
+     * Handles single values, multiple values, empty strings, and whitespace.
+     * Validates that IDs are positive numbers and removes duplicates.
+     *
+     * @param ids Comma-separated string of IDs (e.g., "1,2,3" or "1")
+     * @return List of Long IDs, empty list if input is null or empty
+     * @throws BadRequestException if any ID is invalid or not a positive number
+     */
+    private List<Long> parseCommaSeparatedIds(String ids) {
+        if (ids == null || ids.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            return Arrays.stream(ids.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(Long::parseLong)
+                    .filter(id -> id > 0) // Ensure positive IDs
+                    .distinct() // Remove duplicates
+                    .collect(Collectors.toList());
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("Invalid ID format: " + ids + ". Expected comma-separated numbers (e.g., 1,2,3)");
+        }
     }
 
     public static class SourceOption {

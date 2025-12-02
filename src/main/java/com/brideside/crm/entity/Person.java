@@ -35,6 +35,10 @@ public class Person {
     @JoinColumn(name = "owner_id")
     private User owner;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private Category category;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "label", length = 50)
     private PersonLabel label;
@@ -130,6 +134,14 @@ public class Person {
 
     public void setOwner(User owner) {
         this.owner = owner;
+    }
+
+    public Category getCategory() {
+        return category;
+    }
+
+    public void setCategory(Category category) {
+        this.category = category;
     }
 
     public PersonLabel getLabel() {
