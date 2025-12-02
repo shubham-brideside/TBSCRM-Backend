@@ -165,7 +165,7 @@ public class TargetController {
     }
     
     @GetMapping("/users/{userId}/detail")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','CATEGORY_MANAGER','SALES','PRESALES')")
     @Operation(summary = "User monthly target breakdown", description = "Returns per-month target vs achieved statistics plus deal source splits for a sales user.")
     public ApiResponse<TargetDtos.TargetUserMonthlyDetailResponse> getUserMonthlyDetail(
             @PathVariable("userId") Long userId,

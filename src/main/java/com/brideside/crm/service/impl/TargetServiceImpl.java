@@ -3,6 +3,7 @@ package com.brideside.crm.service.impl;
 import com.brideside.crm.dto.TargetDtos;
 import com.brideside.crm.dto.TargetDtos.TargetTimePreset;
 import com.brideside.crm.entity.Deal;
+import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.SalesTarget;
@@ -11,6 +12,7 @@ import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.exception.UnauthorizedException;
+import com.brideside.crm.exception.ForbiddenException;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
@@ -92,9 +94,10 @@ public class TargetServiceImpl implements TargetService {
         User user = userRepository.findById(request.userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + request.userId));
 
-        // Validate user is SALES role
-        if (user.getRole() == null || user.getRole().getName() != Role.RoleName.SALES) {
-            throw new BadRequestException("Targets can only be set for SALES users");
+        // Validate user is allowed for targets (SALES or PRESALES)
+        Role.RoleName roleName = user.getRole() != null ? user.getRole().getName() : null;
+        if (roleName != Role.RoleName.SALES && roleName != Role.RoleName.PRESALES) {
+            throw new BadRequestException("Targets can only be set for SALES or PRESALES users");
         }
 
         // Check for duplicate target
@@ -137,9 +140,10 @@ public class TargetServiceImpl implements TargetService {
         if (!target.getUser().getId().equals(request.userId)) {
             User user = userRepository.findById(request.userId)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + request.userId));
-            // Validate user is SALES role
-            if (user.getRole() == null || user.getRole().getName() != Role.RoleName.SALES) {
-                throw new BadRequestException("Targets can only be set for SALES users");
+            // Validate user is allowed for targets (SALES or PRESALES)
+            Role.RoleName roleName = user.getRole() != null ? user.getRole().getName() : null;
+            if (roleName != Role.RoleName.SALES && roleName != Role.RoleName.PRESALES) {
+                throw new BadRequestException("Targets can only be set for SALES or PRESALES users");
             }
             target.setUser(user);
         }
@@ -262,7 +266,12 @@ public class TargetServiceImpl implements TargetService {
 
                 List<TargetDtos.TargetRow> rows = new ArrayList<>();
                 for (SalesTarget categoryTarget : categoryTargets) {
-                    rows.add(toTargetRow(categoryTarget, computation.achievedMap, ym, category));
+                    rows.add(toTargetRow(
+                            categoryTarget,
+                            computation.achievedMap,
+                            computation.presalesAllCategoryMap,
+                            ym,
+                            category));
                 }
                 table.rows = rows;
                 block.categories.add(table);
@@ -310,7 +319,12 @@ public class TargetServiceImpl implements TargetService {
                     .getOrDefault(ym, Collections.emptyMap())
                     .getOrDefault(safeFilter.category, Collections.emptyList());
             List<TargetDtos.TargetRow> users = categoryTargets.stream()
-                    .map(target -> toTargetRow(target, computation.achievedMap, ym, safeFilter.category))
+                    .map(target -> toTargetRow(
+                            target,
+                            computation.achievedMap,
+                            computation.presalesAllCategoryMap,
+                            ym,
+                            safeFilter.category))
                     .collect(Collectors.toList());
 
             BigDecimal monthTarget = users.stream()
@@ -369,14 +383,78 @@ public class TargetServiceImpl implements TargetService {
             months = List.of(YearMonth.now(zoneId));
         }
 
+        // Get the current logged-in user to filter targets and deals
+        User currentUser = requireCurrentUser();
+        Long currentUserId = currentUser.getId();
+        Role.RoleName currentUserRole = currentUser.getRole() != null 
+                ? currentUser.getRole().getName() 
+                : null;
+
         TargetCategory categoryFilter = filter.category;
         LocalDate startDate = months.get(0).atDay(1);
         LocalDate endDate = months.get(months.size() - 1).atEndOfMonth();
         LocalDate queryStart = resolveTargetQueryStart(startDate);
 
-        List<SalesTarget> targets = categoryFilter != null
+        // Filter targets to only include those for the current logged-in user and their team
+        List<SalesTarget> allTargets = categoryFilter != null
                 ? salesTargetRepository.findByCategoryAndPeriodStartBetween(categoryFilter, queryStart, endDate)
                 : salesTargetRepository.findByPeriodStartBetween(queryStart, endDate);
+        
+        // Get accessible users based on role hierarchy
+        Set<Long> accessibleUserIds = new HashSet<>();
+        accessibleUserIds.add(currentUserId);
+        
+        if (currentUserRole == Role.RoleName.ADMIN) {
+            // ADMIN can see all SALES and PRESALES users across all categories
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (user.getId() != null) {
+                    accessibleUserIds.add(user.getId());
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
+            // CATEGORY_MANAGER can see all SALES and PRESALES users under them
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (isAccessibleForTargets(currentUser, user, currentUserRole)) {
+                    if (user.getId() != null) {
+                        accessibleUserIds.add(user.getId());
+                    }
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.SALES) {
+            // SALES users can see their PRESALES team members' targets
+            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
+            List<User> presalesTeam = allSubordinates.stream()
+                    .filter(u -> u.getActive() != null && u.getActive()
+                            && u.getRole() != null 
+                            && u.getRole().getName() == Role.RoleName.PRESALES)
+                    .collect(Collectors.toList());
+            for (User presalesUser : presalesTeam) {
+                if (presalesUser.getId() != null) {
+                    accessibleUserIds.add(presalesUser.getId());
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.PRESALES 
+                && currentUser.getManager() != null 
+                && currentUser.getManager().getId() != null) {
+            // PRESALES users can see their manager's targets
+            accessibleUserIds.add(currentUser.getManager().getId());
+        }
+        
+        // Filter to only show targets for accessible users
+        final Set<Long> finalAccessibleUserIds = accessibleUserIds;
+        List<SalesTarget> targets = allTargets.stream()
+                .filter(target -> {
+                    if (target.getUser() == null || target.getUser().getId() == null) {
+                        return false;
+                    }
+                    Long targetUserId = target.getUser().getId();
+                    return finalAccessibleUserIds.contains(targetUserId);
+                })
+                .collect(Collectors.toList());
 
         Map<YearMonth, Map<TargetCategory, List<SalesTarget>>> targetsByMonth = new HashMap<>();
         for (SalesTarget target : targets) {
@@ -410,13 +488,82 @@ public class TargetServiceImpl implements TargetService {
 
         LocalDateTime dealsStart = startDate.atStartOfDay();
         LocalDateTime dealsEnd = endDate.plusDays(1).atStartOfDay();
-        List<Deal> wonDeals = dealRepository.findWonDealsUpdatedBetween(dealsStart, dealsEnd);
+        List<Deal> allWonDeals = dealRepository.findWonDealsUpdatedBetween(dealsStart, dealsEnd);
+        
+        // Filter deals to only include those related to accessible users (current user + their team)
+        final Set<Long> finalAccessibleUserIdsForDeals = accessibleUserIds;
+        List<Deal> wonDeals = allWonDeals.stream()
+                .filter(deal -> {
+                    User owner = resolveDealOwner(deal);
+                    if (owner == null || owner.getId() == null) {
+                        return false;
+                    }
+                    Long ownerId = owner.getId();
+                    return finalAccessibleUserIdsForDeals.contains(ownerId);
+                })
+                .collect(Collectors.toList());
+        
         wonDeals.sort(Comparator.comparing(
                 (Deal d) -> d.getUpdatedAt() != null ? d.getUpdatedAt() : d.getCreatedAt(),
                 Comparator.nullsLast(Comparator.naturalOrder())
         ).reversed());
 
+        // Pre-compute active PRESALES users grouped by their SALES manager so
+        // that diversion / deal counts can be mirrored onto Pre‑Sales target
+        // rows across all dashboard tables (main dashboard + category
+        // breakdowns). This keeps Pre‑Sales Achieved / Total Deals aligned
+        // with the diverted deals they help close, similar to the per-user
+        // logic in getUserMonthlyDetail.
+        // Only include PRESALES users related to the current user
+        Map<Long, List<User>> presalesByManagerId = new HashMap<>();
+        if (currentUserRole == Role.RoleName.ADMIN) {
+            // For ADMIN, include all PRESALES users, grouped by their SALES managers
+            List<User> allPresales = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.PRESALES);
+            for (User presalesUser : allPresales) {
+                if (presalesUser.getManager() != null 
+                        && presalesUser.getManager().getId() != null) {
+                    Long managerId = presalesUser.getManager().getId();
+                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(presalesUser);
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
+            // For CATEGORY_MANAGER, include all PRESALES users under them, grouped by their SALES managers
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (user.getRole() != null 
+                        && user.getRole().getName() == Role.RoleName.PRESALES
+                        && isAccessibleForTargets(currentUser, user, currentUserRole)
+                        && user.getManager() != null 
+                        && user.getManager().getId() != null) {
+                    Long managerId = user.getManager().getId();
+                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(user);
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.SALES) {
+            // For SALES users, include their PRESALES team members
+            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
+            List<User> presalesTeam = allSubordinates.stream()
+                    .filter(u -> u.getActive() != null && u.getActive()
+                            && u.getRole() != null 
+                            && u.getRole().getName() == Role.RoleName.PRESALES)
+                    .collect(Collectors.toList());
+            if (!presalesTeam.isEmpty()) {
+                presalesByManagerId.put(currentUserId, presalesTeam);
+            }
+        } else if (currentUserRole == Role.RoleName.PRESALES 
+                && currentUser.getManager() != null 
+                && currentUser.getManager().getId() != null) {
+            // For PRESALES users, only include themselves under their manager
+            presalesByManagerId.put(currentUser.getManager().getId(), List.of(currentUser));
+        }
+
         Map<YearMonth, Map<TargetCategory, Map<Long, DealAggregate>>> achievedMap = new HashMap<>();
+        // For PRESALES users we also need deal aggregates that are independent
+        // of category so that the dashboard mirrors the same Achieved / Deals
+        // behaviour as the per‑user detail API. This map tracks, per month,
+        // all won deals (all sources, all categories) attributed to each user.
+        Map<YearMonth, Map<Long, DealAggregate>> presalesAllCategoryMap = new HashMap<>();
         List<TargetDtos.DealSummary> dealSummaries = new ArrayList<>();
 
         for (Deal deal : wonDeals) {
@@ -429,31 +576,102 @@ public class TargetServiceImpl implements TargetService {
                 continue;
             }
 
-            TargetCategory dealCategory = TargetCategory.fromDeal(deal);
-            if (dealCategory == null) {
-                continue;
-            }
-            if (categoryFilter != null && categoryFilter != dealCategory) {
-                continue;
-            }
-
             User owner = resolveDealOwner(deal);
-            if (owner != null) {
-                DealAggregate aggregate = achievedMap
-                        .computeIfAbsent(dealMonth, key -> new EnumMap<>(TargetCategory.class))
-                        .computeIfAbsent(dealCategory, key -> new HashMap<>())
-                        .computeIfAbsent(owner.getId(), key -> new DealAggregate());
-                aggregate.achieved = aggregate.achieved.add(safeValue(deal.getValue()));
-                aggregate.dealsCount += 1;
+            if (owner != null && owner.getId() != null) {
+                Long ownerId = owner.getId();
+                // Only process deals for accessible users (already filtered above, but double-check)
+                if (!finalAccessibleUserIdsForDeals.contains(ownerId)) {
+                    continue;
+                }
+                
+                TargetCategory dealCategory = TargetCategory.fromDeal(deal);
+                if (dealCategory != null) {
+                    // Category‑scoped aggregates used for SALES rows and
+                    // category‑specific breakdowns. These respect the
+                    // dashboard's category filter.
+                    if (categoryFilter == null || categoryFilter == dealCategory) {
+                        DealAggregate aggregate = achievedMap
+                                .computeIfAbsent(dealMonth, key -> new EnumMap<>(TargetCategory.class))
+                                .computeIfAbsent(dealCategory, key -> new HashMap<>())
+                                .computeIfAbsent(ownerId, key -> new DealAggregate());
+                        aggregate.achieved = aggregate.achieved.add(safeValue(deal.getValue()));
+                        aggregate.dealsCount += 1;
+
+                        // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
+                        boolean diverted = Boolean.TRUE.equals(deal.getIsDiverted()) 
+                                || (deal.getDealSource() != null && deal.getDealSource() == DealSource.DIVERT);
+                        if (diverted) {
+                            aggregate.diversionDeals += 1;
+                        } else {
+                            aggregate.directDeals += 1;
+                        }
+                    }
+                }
+
+                // Category‑agnostic aggregates for PRESALES rows. These match
+                // the detail API behaviour by counting all won deals (all
+                // sources and categories) under the linked SALES manager and
+                // mirroring them to each PRESALES user.
+                // Owner entry (SALES) – primarily useful if we ever want a
+                // unified per‑user view; harmless for now.
+                DealAggregate ownerAllAggregate = presalesAllCategoryMap
+                        .computeIfAbsent(dealMonth, key -> new HashMap<>())
+                        .computeIfAbsent(ownerId, key -> new DealAggregate());
+                ownerAllAggregate.achieved = ownerAllAggregate.achieved.add(safeValue(deal.getValue()));
+                ownerAllAggregate.dealsCount += 1;
+                // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
+                boolean diverted = Boolean.TRUE.equals(deal.getIsDiverted()) 
+                        || (deal.getDealSource() != null && deal.getDealSource() == DealSource.DIVERT);
+                if (diverted) {
+                    ownerAllAggregate.diversionDeals += 1;
+                } else {
+                    ownerAllAggregate.directDeals += 1;
+                }
+
+                // Mirror onto all PRESALES users reporting to this SALES owner.
+                List<User> presalesTeam = presalesByManagerId.get(ownerId);
+                if (presalesTeam != null && !presalesTeam.isEmpty()) {
+                    for (User presalesUser : presalesTeam) {
+                        Long presalesId = presalesUser.getId();
+                        if (presalesId == null) {
+                            continue;
+                        }
+                        DealAggregate presalesAggregate = presalesAllCategoryMap
+                                .computeIfAbsent(dealMonth, key -> new HashMap<>())
+                                .computeIfAbsent(presalesId, key -> new DealAggregate());
+                        presalesAggregate.achieved = presalesAggregate.achieved.add(safeValue(deal.getValue()));
+                        presalesAggregate.dealsCount += 1;
+                        if (diverted) {
+                            presalesAggregate.diversionDeals += 1;
+                        } else {
+                            presalesAggregate.directDeals += 1;
+                        }
+                    }
+                }
             }
 
-            dealSummaries.add(toDealSummary(deal, owner, dealCategory));
+            // For the won deals table we still tag each deal with its
+            // category (when available) using the same helper as before.
+            // For PRESALES users, attribute deals to the PRESALES user instead of the manager
+            TargetCategory summaryCategory = TargetCategory.fromDeal(deal);
+            User summaryUser = owner;
+            if (currentUserRole == Role.RoleName.PRESALES 
+                    && currentUser.getManager() != null 
+                    && currentUser.getManager().getId() != null
+                    && owner != null 
+                    && owner.getId() != null
+                    && owner.getId().equals(currentUser.getManager().getId())) {
+                // Attribute manager's deals to the PRESALES user
+                summaryUser = currentUser;
+            }
+            dealSummaries.add(toDealSummary(deal, summaryUser, summaryCategory));
         }
 
         DashboardComputation computation = new DashboardComputation();
         computation.months = months;
         computation.targetsByMonth = targetsByMonth;
         computation.achievedMap = achievedMap;
+        computation.presalesAllCategoryMap = presalesAllCategoryMap;
         computation.dealSummaries = dealSummaries;
         computation.categoryFilter = categoryFilter;
         return computation;
@@ -463,7 +681,39 @@ public class TargetServiceImpl implements TargetService {
     @Transactional(readOnly = true)
     public TargetDtos.FiltersResponse filters() {
         TargetDtos.FiltersResponse response = new TargetDtos.FiltersResponse();
-        response.categories = Arrays.stream(TargetCategory.values())
+        User currentUser = requireCurrentUser();
+        Role.RoleName currentRole = currentUser.getRole() != null
+                ? currentUser.getRole().getName()
+                : null;
+
+        // --- Category options (role-aware default) ---
+        List<TargetCategory> allCategories = Arrays.asList(TargetCategory.values());
+        List<TargetCategory> scopedCategories;
+
+        if (currentRole == Role.RoleName.ADMIN) {
+            // Admin can always see all categories.
+            scopedCategories = allCategories;
+        } else {
+            // For non-admins, try to infer categories from organizations they own.
+            List<Organization> ownedOrganizations = organizationRepository.findByOwner_Id(currentUser.getId());
+            Set<TargetCategory> inferred = ownedOrganizations.stream()
+                    .map(Organization::getCategory)
+                    .filter(Objects::nonNull)
+                    .map(cat -> TargetCategory.fromValue(cat.getDbValue()))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(TargetCategory.class)));
+
+            if (inferred.isEmpty()) {
+                // Fallback: if we can't infer anything yet (e.g. new user with no orgs),
+                // keep behaviour same as before and expose all categories.
+                scopedCategories = allCategories;
+            } else {
+                scopedCategories = new ArrayList<>(inferred);
+                scopedCategories.sort(Comparator.comparing(TargetCategory::getLabel));
+            }
+        }
+
+        response.categories = scopedCategories.stream()
                 .map(category -> {
                     TargetDtos.FilterOption option = new TargetDtos.FilterOption();
                     option.code = category.getCode();
@@ -482,7 +732,131 @@ public class TargetServiceImpl implements TargetService {
                 .collect(Collectors.toList());
 
         response.minYear = minTargetYear;
+
+        // --- User options (role-aware "Select Users" dropdown) ---
+        List<User> accessibleUsers = resolveTargetFilterUsers(currentUser);
+        List<TargetDtos.UserFilterOption> userOptions = accessibleUsers.stream()
+                .map(user -> {
+                    TargetDtos.UserFilterOption option = new TargetDtos.UserFilterOption();
+                    option.id = user.getId();
+                    option.name = ((user.getFirstName() != null ? user.getFirstName() : "") + " "
+                            + (user.getLastName() != null ? user.getLastName() : "")).trim();
+                    option.role = user.getRole() != null ? user.getRole().getName().name() : null;
+                    option.currentUser = Objects.equals(user.getId(), currentUser.getId());
+                    return option;
+                })
+                .sorted(Comparator.comparing(opt -> opt.name.toLowerCase(Locale.ROOT)))
+                .collect(Collectors.toList());
+
+        response.users = userOptions;
+        response.currentUserId = currentUser.getId();
+        response.currentUserName = ((currentUser.getFirstName() != null ? currentUser.getFirstName() : "") + " "
+                + (currentUser.getLastName() != null ? currentUser.getLastName() : "")).trim();
+        response.currentUserRole = currentRole != null ? currentRole.name() : null;
+
+        if (!scopedCategories.isEmpty() && currentRole != Role.RoleName.ADMIN) {
+            TargetCategory defaultCat = scopedCategories.get(0);
+            response.defaultCategoryCode = defaultCat.getCode();
+            response.defaultCategoryLabel = defaultCat.getLabel();
+        }
+
         return response;
+    }
+
+    /**
+     * Resolve which users should appear in the Target dashboard "Select Users"
+     * dropdown for the current user. This mirrors the user access hierarchy:
+     * - ADMIN: all active SALES + PRESALES users
+     * - CATEGORY_MANAGER: self + SALES/PRESALES under them
+     * - SALES: self + PRESALES under them
+     * - PRESALES: self only
+     */
+    private List<User> resolveTargetFilterUsers(User currentUser) {
+        Role.RoleName role = currentUser.getRole() != null
+                ? currentUser.getRole().getName()
+                : null;
+
+        if (role == null) {
+            return List.of(currentUser);
+        }
+
+        if (role == Role.RoleName.ADMIN) {
+            // Admin sees all active sales + presales users
+            return userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+        }
+
+        if (role == Role.RoleName.PRESALES) {
+            // Presales sees only themselves
+            return List.of(currentUser);
+        }
+
+        // For CATEGORY_MANAGER and SALES we need to filter based on hierarchy.
+        List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+
+        return allActiveSalesAndPresales.stream()
+                .filter(user -> isAccessibleForTargets(currentUser, user, role))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Minimal copy of the user hierarchy rules for the Target page.
+     */
+    private boolean isAccessibleForTargets(User currentUser, User targetUser, Role.RoleName currentRole) {
+        Role.RoleName targetRole = targetUser.getRole() != null
+                ? targetUser.getRole().getName()
+                : null;
+
+        // Users can always see themselves
+        if (Objects.equals(currentUser.getId(), targetUser.getId())) {
+            return true;
+        }
+
+        if (currentRole == Role.RoleName.CATEGORY_MANAGER) {
+            if (targetRole == Role.RoleName.SALES || targetRole == Role.RoleName.PRESALES) {
+                return isUnderUser(currentUser, targetUser);
+            }
+            return false;
+        }
+
+        if (currentRole == Role.RoleName.SALES) {
+            if (targetRole == Role.RoleName.PRESALES) {
+                return isUnderUser(currentUser, targetUser);
+            }
+            // Sales should always see themselves (handled above).
+            return false;
+        }
+
+        // Fallback: only self
+        return Objects.equals(currentUser.getId(), targetUser.getId());
+    }
+
+    /**
+     * Check if target user is under current user in the manager hierarchy.
+     * This mirrors the helper used in {@link com.brideside.crm.service.impl.UserServiceImpl}.
+     */
+    private boolean isUnderUser(User currentUser, User targetUser) {
+        // Direct manager relationship
+        if (targetUser.getManager() != null
+                && Objects.equals(targetUser.getManager().getId(), currentUser.getId())) {
+            return true;
+        }
+
+        if (currentUser.getRole() != null
+                && currentUser.getRole().getName() == Role.RoleName.CATEGORY_MANAGER) {
+            if (targetUser.getManager() != null) {
+                User targetManager = targetUser.getManager();
+                if (targetManager.getRole() != null
+                        && targetManager.getRole().getName() == Role.RoleName.SALES
+                        && targetManager.getManager() != null
+                        && Objects.equals(targetManager.getManager().getId(), currentUser.getId())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private void validateUpsertRequest(TargetDtos.TargetUpsertRequest request) {
@@ -603,13 +977,27 @@ public class TargetServiceImpl implements TargetService {
                     .map(Organization::getId)
                     .collect(Collectors.toSet());
         
-        // Validate organizations: allow reassignment from non-sales owners, but block other sales reps
+        // Determine role of the target owner user (SALES vs PRESALES, etc.)
+        Role.RoleName targetUserRole = salesUser.getRole() != null ? salesUser.getRole().getName() : null;
+
+        // Validate organizations: for SALES targets we enforce exclusive ownership,
+        // but for PRESALES targets we allow attaching organizations without changing owner.
         for (Organization org : organizations) {
             if (grandfatheredIds.contains(org.getId())) {
                 continue; // Allow legacy assignments to stay linked
             }
-            
+
             User owner = org.getOwner();
+
+            // If the target is for a PRESALES user, do not change ownership and do not block
+            // if the organization is already owned by a SALES user – PRESALES targets may
+            // work with any organization's deals.
+            if (targetUserRole != Role.RoleName.SALES) {
+                continue;
+            }
+
+            // SALES target: keep a single SALES owner per organization, but allow
+            // reassignment instead of blocking with an error.
             if (owner == null) {
                 org.setOwner(salesUser);
                 continue;
@@ -617,11 +1005,10 @@ public class TargetServiceImpl implements TargetService {
 
             if (!owner.getId().equals(salesUser.getId())) {
                 Role.RoleName ownerRole = owner.getRole() != null ? owner.getRole().getName() : null;
-                if (ownerRole == Role.RoleName.SALES) {
-                    throw new BadRequestException("Organization " + org.getId() + " (" + org.getName() +
-                            ") is already assigned to another sales user");
-                }
-                // Owner is not a sales rep (likely manager/admin) – reassign to the selected sales user
+                // Whether the current owner is another SALES user or a non-sales role,
+                // we now reassign the organization to the selected sales user instead
+                // of throwing an error. This ensures the "Set Target" flow works even
+                // when organizations were previously owned by someone else.
                 org.setOwner(salesUser);
             }
         }
@@ -710,9 +1097,9 @@ public class TargetServiceImpl implements TargetService {
     private TargetDtos.TargetRow toTargetRow(
             SalesTarget target,
             Map<YearMonth, Map<TargetCategory, Map<Long, DealAggregate>>> achievedMap,
+            Map<YearMonth, Map<Long, DealAggregate>> presalesAllCategoryMap,
             YearMonth month,
             TargetCategory category) {
-
         TargetDtos.TargetRow row = new TargetDtos.TargetRow();
         Long userId = target.getUser() != null ? target.getUser().getId() : null;
 
@@ -720,20 +1107,88 @@ public class TargetServiceImpl implements TargetService {
         row.userName = target.getUser() != null
                 ? (target.getUser().getFirstName() + " " + target.getUser().getLastName()).trim()
                 : null;
-        row.totalTarget = target.getTargetAmount();
+        row.userRole = target.getUser() != null && target.getUser().getRole() != null
+                ? target.getUser().getRole().getName().name()
+                : null;
 
         DealAggregate aggregate = achievedMap
                 .getOrDefault(month, Collections.emptyMap())
                 .getOrDefault(category, Collections.emptyMap())
                 .get(userId);
 
-        BigDecimal achieved = aggregate != null ? aggregate.achieved : BigDecimal.ZERO;
-        row.achieved = achieved;
-        row.totalDeals = aggregate != null ? aggregate.dealsCount : 0;
-        row.achievementPercent = calculateAchievementPercent(achieved, target.getTargetAmount());
-        row.incentivePercent = calculateIncentive(row.achievementPercent);
-        row.incentiveAmount = row.incentivePercent.multiply(achieved)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        // For PRESALES users we intentionally base Achieved / Total Deals on
+        // all won deals under their linked SALES manager (all categories and
+        // sources), mirroring the detail API behaviour. We read those values
+        // from the category‑agnostic presalesAllCategoryMap.
+        DealAggregate presalesAllAggregate = presalesAllCategoryMap != null
+                ? presalesAllCategoryMap
+                        .getOrDefault(month, Collections.emptyMap())
+                        .get(userId)
+                : null;
+
+        Role.RoleName roleName = target.getUser() != null && target.getUser().getRole() != null
+                ? target.getUser().getRole().getName()
+                : null;
+
+        // Default target amount from entity
+        BigDecimal rawTargetAmount = target.getTargetAmount() != null
+                ? target.getTargetAmount()
+                : BigDecimal.ZERO;
+
+        if (roleName == Role.RoleName.PRESALES) {
+            // PRESALES: target represents number of diverted deals to be won
+            int diversionDeals = presalesAllAggregate != null ? presalesAllAggregate.diversionDeals : 0;
+            int totalDeals = presalesAllAggregate != null ? presalesAllAggregate.dealsCount : 0;
+            int directDeals = presalesAllAggregate != null ? presalesAllAggregate.directDeals : 0;
+
+            int targetCount = rawTargetAmount.intValue();
+            int achievedCount = diversionDeals;
+
+            row.totalTarget = BigDecimal.valueOf(targetCount);
+            row.achieved = BigDecimal.valueOf(achievedCount);
+            // Total deals should include all won deals (all sources).
+            row.totalDeals = totalDeals;
+
+            // Achievement % based on diverted deals vs target (counts)
+            BigDecimal achievedBd = BigDecimal.valueOf(achievedCount);
+            BigDecimal targetBd = BigDecimal.valueOf(targetCount);
+            row.achievementPercent = calculateAchievementPercent(achievedBd, targetBd);
+
+            // Incentive for PRESALES: based on direct/diversion deal counts and target attainment
+            BigDecimal baseIncentive = BigDecimal.valueOf(500L)
+                    .multiply(BigDecimal.valueOf(directDeals))
+                    .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)));
+
+            BigDecimal multiplier = BigDecimal.ZERO;
+            if (baseIncentive.compareTo(BigDecimal.ZERO) > 0) {
+                if (targetCount > 0) {
+                    if (achievedCount > targetCount) {
+                        multiplier = BigDecimal.valueOf(1.15); // 115%
+                    } else if (achievedCount == targetCount) {
+                        multiplier = BigDecimal.ONE; // 100%
+                    } else {
+                        multiplier = BigDecimal.valueOf(0.75); // 75%
+                    }
+                } else {
+                    // No target configured – treat as neutral (100%)
+                    multiplier = BigDecimal.ONE;
+                }
+            }
+
+            row.incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            row.incentiveAmount = baseIncentive.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+        } else {
+            // SALES (or default): original value-based incentive logic
+            row.totalTarget = rawTargetAmount;
+
+            BigDecimal achieved = aggregate != null ? aggregate.achieved : BigDecimal.ZERO;
+            row.achieved = achieved;
+            row.totalDeals = aggregate != null ? aggregate.dealsCount : 0;
+            row.achievementPercent = calculateAchievementPercent(achieved, rawTargetAmount);
+            row.incentivePercent = calculateIncentive(row.achievementPercent);
+            row.incentiveAmount = row.incentivePercent.multiply(achieved)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        }
 
         return row;
     }
@@ -750,10 +1205,18 @@ public class TargetServiceImpl implements TargetService {
         if (achievementPercent == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
+        // New SALES incentive slabs:
+        // < 80%         -> 0%
+        // 80% - <100%   -> 8%
+        // 100% - <150%  -> 10%
+        // >= 150%       -> 15%
         if (achievementPercent.compareTo(BigDecimal.valueOf(80)) < 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-        if (achievementPercent.compareTo(BigDecimal.valueOf(100)) <= 0) {
+        if (achievementPercent.compareTo(BigDecimal.valueOf(100)) < 0) {
+            return BigDecimal.valueOf(8).setScale(2, RoundingMode.HALF_UP);
+        }
+        if (achievementPercent.compareTo(BigDecimal.valueOf(150)) < 0) {
             return BigDecimal.TEN.setScale(2, RoundingMode.HALF_UP);
         }
         return BigDecimal.valueOf(15).setScale(2, RoundingMode.HALF_UP);
@@ -778,9 +1241,24 @@ public class TargetServiceImpl implements TargetService {
         summary.dealName = deal.getName();
         summary.dealValue = safeValue(deal.getValue());
         summary.commissionAmount = safeValue(deal.getCommissionAmount());
-        summary.dealSource = deal.getSource() != null ? deal.getSource().getType() : null;
+        // Prefer the new DealSource enum (set via the WON dialog) so that the
+        // Won Deals table on Sales / Pre‑Sales target pages shows the same
+        // source that users select when marking a deal as WON. Fall back to the
+        // legacy Source entity only when the enum has not been populated.
+        if (deal.getDealSource() != null) {
+            summary.dealSource = deal.getDealSource().getDisplayName();
+        } else if (deal.getSource() != null) {
+            summary.dealSource = deal.getSource().getType();
+        } else {
+            summary.dealSource = null;
+        }
         summary.venue = deal.getVenue();
         summary.eventDate = deal.getEventDate() != null ? deal.getEventDate().toString() : null;
+        // Won date – mirror the reference timestamp used elsewhere in target
+        // calculations (updatedAt when present, otherwise createdAt).
+        java.time.LocalDateTime wonReference =
+                deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+        summary.wonDate = wonReference != null ? wonReference.toLocalDate().toString() : null;
         summary.phoneNumber = resolvePhone(deal);
         summary.category = category != null ? category.getLabel() : null;
         summary.organization = resolveOrganizationName(deal);
@@ -997,26 +1475,76 @@ public class TargetServiceImpl implements TargetService {
     @Override
     @Transactional(readOnly = true)
     public TargetDtos.SalesUserOrganizationsResponse getSalesUserOrganizations(Long userId) {
-        User user = userRepository.findById(userId)
+        User requestedUser = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
-        
-        if (user.getRole() == null || user.getRole().getName() != Role.RoleName.SALES) {
-            throw new BadRequestException("User must have SALES role");
+
+        // Resolve the SALES user whose organizations should be used.
+        // - If the provided user is SALES → use them directly.
+        // - If the provided user is PRESALES → use their manager when the manager has SALES role.
+        // This allows the frontend to call this endpoint with either the sales manager id or
+        // a pre‑sales user id and still receive the correct organizations for the linked sales team.
+        Role.RoleName requestedRole = requestedUser.getRole() != null
+                ? requestedUser.getRole().getName()
+                : null;
+
+        User salesUser;
+        if (requestedRole == Role.RoleName.SALES) {
+            salesUser = requestedUser;
+        } else if (requestedRole == Role.RoleName.PRESALES
+                && requestedUser.getManager() != null
+                && requestedUser.getManager().getRole() != null
+                && requestedUser.getManager().getRole().getName() == Role.RoleName.SALES) {
+            salesUser = requestedUser.getManager();
+        } else {
+            throw new BadRequestException("User must be SALES or a PRESALES user linked to a SALES manager");
         }
-        
+
         TargetDtos.SalesUserOrganizationsResponse response = new TargetDtos.SalesUserOrganizationsResponse();
-        response.userId = user.getId();
-        response.userName = (user.getFirstName() + " " + user.getLastName()).trim();
-        response.email = user.getEmail();
-        
-        List<Organization> organizations = organizationRepository.findByOwner_Id(userId);
+        response.userId = salesUser.getId();
+        response.userName = (salesUser.getFirstName() + " " + salesUser.getLastName()).trim();
+        response.email = salesUser.getEmail();
+
+        // --- Resolve organizations for the sales team context ---
+        //
+        // Primary source: organizations explicitly owned by the SALES user.
+        // Fallback / augmentation: organizations linked to this user's targets.
+        // This ensures that as long as targets are configured with organizations,
+        // the frontend will always receive at least one OrganizationSummary with
+        // name + category, even if ownership has not been fully normalized.
+        List<Organization> ownedOrganizations = organizationRepository.findByOwner_Id(salesUser.getId());
+
+        // Use a LinkedHashMap keyed by id to de‑duplicate while preserving
+        // a stable ordering for the frontend.
+        Map<Long, Organization> organizationsById = new LinkedHashMap<>();
+        for (Organization org : ownedOrganizations) {
+            if (org != null && org.getId() != null) {
+                organizationsById.put(org.getId(), org);
+            }
+        }
+
+        // Augment with organizations that are attached to any SalesTarget for this
+        // SALES user. This mirrors how the sales user's own detail page infers
+        // category + organization context from targets.
+        List<SalesTarget> userTargets = salesTargetRepository.findByUser_Id(salesUser.getId());
+        for (SalesTarget target : userTargets) {
+            if (target.getOrganizations() == null) {
+                continue;
+            }
+            for (Organization org : target.getOrganizations()) {
+                if (org != null && org.getId() != null) {
+                    organizationsById.putIfAbsent(org.getId(), org);
+                }
+            }
+        }
+
+        List<Organization> organizations = new ArrayList<>(organizationsById.values());
         response.organizations = organizations.stream()
                 .map(this::toOrganizationSummary)
                 .collect(Collectors.toList());
         
-        // Group organizations by month (based on when they were created/assigned)
+        // Group organizations by month (based on when they were created/assigned).
         // For now, we'll group all organizations together, but this can be enhanced
-        // to show month-wise distribution if needed
+        // to show month-wise distribution if needed.
         Map<String, List<TargetDtos.OrganizationSummary>> orgsByMonth = new LinkedHashMap<>();
         for (Organization org : organizations) {
             String monthKey = org.getCreatedAt() != null 
@@ -1026,6 +1554,29 @@ public class TargetServiceImpl implements TargetService {
                     .add(toOrganizationSummary(org));
         }
         response.organizationsByMonth = orgsByMonth;
+
+        // Derive default category and organizations from the resolved
+        // organizations list. This is the canonical "sales team" context that
+        // the Pre‑Sales target detail page should mirror.
+        if (!organizations.isEmpty()) {
+            Set<TargetCategory> orgCategories = organizations.stream()
+                    .map(Organization::getCategory)
+                    .filter(Objects::nonNull)
+                    .map(cat -> TargetCategory.fromValue(cat.getDbValue()))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toCollection(() -> EnumSet.noneOf(TargetCategory.class)));
+
+            if (orgCategories.size() == 1) {
+                TargetCategory singleCategory = orgCategories.iterator().next();
+                response.defaultCategoryCode = singleCategory.getCode();
+                response.defaultCategoryLabel = singleCategory.getLabel();
+            }
+
+            response.defaultOrganizationIds = organizations.stream()
+                    .map(Organization::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+        }
         
         return response;
     }
@@ -1034,11 +1585,48 @@ public class TargetServiceImpl implements TargetService {
     @Transactional(readOnly = true)
     public TargetDtos.TargetUserMonthlyDetailResponse getUserMonthlyDetail(Long userId, int year) {
         ensureYearAllowed(year);
-        
+
+        // Enforce role-based visibility:
+        // - ADMIN can see any SALES/PRESALES user's targets.
+        // - CATEGORY_MANAGER can see self + SALES/PRESALES under them (same hierarchy as dashboard filters).
+        // - Other roles are not allowed to call this endpoint.
+        User currentUser = requireCurrentUser();
+        Role.RoleName currentRole = currentUser.getRole() != null
+                ? currentUser.getRole().getName()
+                : null;
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + userId));
-        if (user.getRole() == null || user.getRole().getName() != Role.RoleName.SALES) {
-            throw new BadRequestException("User must have SALES role");
+        Role.RoleName userRole = user.getRole() != null ? user.getRole().getName() : null;
+        if (userRole != Role.RoleName.SALES && userRole != Role.RoleName.PRESALES) {
+            throw new BadRequestException("User must have SALES or PRESALES role");
+        }
+
+        // For PRESALES users, we attribute deals via their linked SALES manager.
+        // This ensures that the Pre‑Sales detail page can show a realistic Won
+        // Deals table (Direct, Divert, Instagram, Reference, Planner, etc.)
+        // even though the underlying deals are still owned by the SALES user.
+        User presalesManager = null;
+        if (userRole == Role.RoleName.PRESALES
+                && user.getManager() != null
+                && user.getManager().getRole() != null
+                && user.getManager().getRole().getName() == Role.RoleName.SALES) {
+            presalesManager = user.getManager();
+        }
+
+        // Admin can always view, others must follow hierarchy rules.
+        if (currentRole != Role.RoleName.ADMIN) {
+            // Reuse the same access rules used for the dashboard user filter.
+            boolean allowed = false;
+            if (Objects.equals(currentUser.getId(), user.getId())) {
+                allowed = true;
+            } else if (currentRole == Role.RoleName.CATEGORY_MANAGER || currentRole == Role.RoleName.SALES) {
+                allowed = isAccessibleForTargets(currentUser, user, currentRole);
+            }
+
+            if (!allowed) {
+                throw new ForbiddenException("You are not allowed to view targets for this user");
+            }
         }
         
         List<YearMonth> months = yearMonths(year);
@@ -1079,12 +1667,38 @@ public class TargetServiceImpl implements TargetService {
         LocalDateTime dealsStart = startDate.atStartOfDay();
         LocalDateTime dealsEnd = endDate.plusDays(1).atStartOfDay();
         List<Deal> deals = dealRepository.findWonDealsUpdatedBetween(dealsStart, dealsEnd);
-        
+
+        // Per-user won deals list for the detail page (Won Deals table)
+        List<TargetDtos.DealSummary> userDeals = new ArrayList<>();
+
         Map<YearMonth, MonthlyDealAggregate> monthlyDeals = new HashMap<>();
         for (Deal deal : deals) {
             User owner = resolveDealOwner(deal);
-            if (owner == null || owner.getId() == null || !owner.getId().equals(userId)) {
+            if (owner == null || owner.getId() == null) {
                 continue;
+            }
+
+            boolean include;
+            if (userRole == Role.RoleName.SALES) {
+                include = owner.getId().equals(userId);
+            } else {
+                // PRESALES: include deals under their linked SALES manager
+                include = presalesManager != null && owner.getId().equals(presalesManager.getId());
+            }
+            if (!include) {
+                continue;
+            }
+
+            // Build per-deal summary attributed to the current user:
+            // - SALES: attribute to the sales owner (existing behaviour)
+            // - PRESALES: attribute to the presales user so frontend receives
+            //   deals keyed by the presales userId.
+            TargetCategory dealCategory = TargetCategory.fromDeal(deal);
+            if (dealCategory != null) {
+                TargetDtos.DealSummary summary = (userRole == Role.RoleName.SALES)
+                        ? toDealSummary(deal, owner, dealCategory)
+                        : toDealSummary(deal, user, dealCategory);
+                userDeals.add(summary);
             }
             LocalDateTime reference = deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
             if (reference == null) {
@@ -1099,16 +1713,24 @@ public class TargetServiceImpl implements TargetService {
             BigDecimal value = safeValue(deal.getValue());
             aggregate.achieved = aggregate.achieved.add(value);
             aggregate.totalDeals += 1;
-            
-            String source = normalizeSource(resolveDealSourceLabel(deal));
-            if ("DIVERSION".equals(source)) {
+
+            // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
+            // Use the canonical diverted flag on the Deal entity for diversion
+            // counts, and fall back to source-based classification only for
+            // secondary breakdowns (Instagram / Reference / Planner).
+            boolean diverted = Boolean.TRUE.equals(deal.getIsDiverted()) 
+                    || (deal.getDealSource() != null && deal.getDealSource() == DealSource.DIVERT);
+            if (diverted) {
                 aggregate.diversionDeals += 1;
-            } else if ("INSTA".equals(source) || "INSTAGRAM".equals(source)) {
-                aggregate.instaDeals += 1;
-            } else if ("REFERENCE".equals(source) || "REFERRAL".equals(source)) {
-                aggregate.referenceDeals += 1;
-            } else if ("PLANNER".equals(source)) {
-                aggregate.plannerDeals += 1;
+            } else {
+                String source = normalizeSource(resolveDealSourceLabel(deal));
+                if ("INSTA".equals(source) || "INSTAGRAM".equals(source)) {
+                    aggregate.instaDeals += 1;
+                } else if ("REFERENCE".equals(source) || "REFERRAL".equals(source)) {
+                    aggregate.referenceDeals += 1;
+                } else if ("PLANNER".equals(source)) {
+                    aggregate.plannerDeals += 1;
+                }
             }
         }
         
@@ -1116,28 +1738,82 @@ public class TargetServiceImpl implements TargetService {
         for (YearMonth ym : months) {
             BigDecimal targetValue = monthlyTargets.get(ym);
             MonthlyDealAggregate aggregate = monthlyDeals.get(ym);
-            BigDecimal achieved = aggregate != null ? aggregate.achieved : BigDecimal.ZERO;
-            BigDecimal achievementPercent = (targetValue == null || targetValue.compareTo(BigDecimal.ZERO) == 0)
-                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                    : calculateAchievementPercent(achieved, targetValue);
-            BigDecimal incentivePercent = calculateIncentive(achievementPercent);
-            BigDecimal incentiveAmount = achieved.compareTo(BigDecimal.ZERO) == 0
-                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                    : incentivePercent.multiply(achieved)
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-            
+
             TargetDtos.UserMonthlyBreakdown breakdown = new TargetDtos.UserMonthlyBreakdown();
             breakdown.month = ym.getMonthValue();
             breakdown.year = ym.getYear();
-            breakdown.target = targetValue != null ? targetValue.setScale(2, RoundingMode.HALF_UP) : null;
-            breakdown.achieved = achieved.setScale(2, RoundingMode.HALF_UP);
-            breakdown.achievementPercent = achievementPercent;
-            breakdown.totalDeals = aggregate != null ? aggregate.totalDeals : 0;
-            breakdown.incentive = incentiveAmount;
-            breakdown.diversionDeals = aggregate != null ? aggregate.diversionDeals : 0;
-            breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
-            breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;
-            breakdown.plannerDeals = aggregate != null ? aggregate.plannerDeals : 0;
+
+            if (userRole == Role.RoleName.PRESALES) {
+                int diversionDeals = aggregate != null ? aggregate.diversionDeals : 0;
+                int totalDeals = aggregate != null ? aggregate.totalDeals : 0;
+                int directDeals = totalDeals - diversionDeals;
+
+                int targetCount = targetValue != null ? targetValue.intValue() : 0;
+                int achievedCount = diversionDeals;
+
+                BigDecimal targetBd = targetCount > 0
+                        ? BigDecimal.valueOf(targetCount).setScale(2, RoundingMode.HALF_UP)
+                        : null;
+                BigDecimal achievedBd = BigDecimal.valueOf(achievedCount).setScale(2, RoundingMode.HALF_UP);
+
+                breakdown.target = targetBd;
+                breakdown.achieved = achievedBd;
+
+                if (targetCount > 0) {
+                    breakdown.achievementPercent = calculateAchievementPercent(achievedBd, BigDecimal.valueOf(targetCount));
+                } else {
+                    breakdown.achievementPercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+                }
+
+                // Incentive for PRESALES
+                BigDecimal baseIncentive = BigDecimal.valueOf(500L)
+                        .multiply(BigDecimal.valueOf(directDeals))
+                        .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)));
+
+                BigDecimal multiplier = BigDecimal.ZERO;
+                if (baseIncentive.compareTo(BigDecimal.ZERO) > 0) {
+                    if (targetCount > 0) {
+                        if (achievedCount > targetCount) {
+                            multiplier = BigDecimal.valueOf(1.15); // 115%
+                        } else if (achievedCount == targetCount) {
+                            multiplier = BigDecimal.ONE; // 100%
+                        } else {
+                            multiplier = BigDecimal.valueOf(0.75); // 75%
+                        }
+                    } else {
+                        // No target configured – treat as neutral (100%)
+                        multiplier = BigDecimal.ONE;
+                    }
+                }
+                breakdown.incentive = baseIncentive.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+
+                breakdown.totalDeals = totalDeals;
+                breakdown.diversionDeals = diversionDeals;
+                breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
+                breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;
+                breakdown.plannerDeals = aggregate != null ? aggregate.plannerDeals : 0;
+            } else {
+                // SALES (or default) behaviour – value-based incentive
+                BigDecimal achieved = aggregate != null ? aggregate.achieved : BigDecimal.ZERO;
+                BigDecimal achievementPercent = (targetValue == null || targetValue.compareTo(BigDecimal.ZERO) == 0)
+                        ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                        : calculateAchievementPercent(achieved, targetValue);
+                BigDecimal incentivePercent = calculateIncentive(achievementPercent);
+                BigDecimal incentiveAmount = achieved.compareTo(BigDecimal.ZERO) == 0
+                        ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                        : incentivePercent.multiply(achieved)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+                breakdown.target = targetValue != null ? targetValue.setScale(2, RoundingMode.HALF_UP) : null;
+                breakdown.achieved = achieved.setScale(2, RoundingMode.HALF_UP);
+                breakdown.achievementPercent = achievementPercent;
+                breakdown.totalDeals = aggregate != null ? aggregate.totalDeals : 0;
+                breakdown.incentive = incentiveAmount;
+                breakdown.diversionDeals = aggregate != null ? aggregate.diversionDeals : 0;
+                breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
+                breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;
+                breakdown.plannerDeals = aggregate != null ? aggregate.plannerDeals : 0;
+            }
             rows.add(breakdown);
         }
         
@@ -1167,7 +1843,59 @@ public class TargetServiceImpl implements TargetService {
         response.availableOrganizationIds = organizationIds;
         response.organizations = organizationSummaries;
         response.availableOrganizations = organizationSummaries;
-        
+
+        // --- Default category & organizations for Goal Details (Sales/Pre‑Sales) ---
+        // For PRESALES users, derive defaults primarily from the linked SALES
+        // manager's organizations (the "sales team" context). If that is not
+        // available, fall back to the categories/organizations directly linked
+        // to this user's targets.
+        TargetCategory defaultCategory = null;
+        List<Long> defaultOrgIds = new ArrayList<>();
+
+        if (userRole == Role.RoleName.PRESALES
+                && user.getManager() != null
+                && user.getManager().getRole() != null
+                && user.getManager().getRole().getName() == Role.RoleName.SALES) {
+            User salesManager = user.getManager();
+            List<Organization> salesTeamOrgs = organizationRepository.findByOwner_Id(salesManager.getId());
+
+            if (!salesTeamOrgs.isEmpty()) {
+                Set<TargetCategory> managerCategories = salesTeamOrgs.stream()
+                        .map(Organization::getCategory)
+                        .filter(Objects::nonNull)
+                        .map(cat -> TargetCategory.fromValue(cat.getDbValue()))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toCollection(() -> EnumSet.noneOf(TargetCategory.class)));
+
+                if (managerCategories.size() == 1) {
+                    defaultCategory = managerCategories.iterator().next();
+                }
+
+                defaultOrgIds = salesTeamOrgs.stream()
+                        .map(Organization::getId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+            }
+        }
+
+        // Fallbacks when we couldn't derive from the sales manager context.
+        if (defaultCategory == null && !uniqueCategories.isEmpty()) {
+            if (uniqueCategories.size() == 1) {
+                defaultCategory = uniqueCategories.iterator().next();
+            }
+        }
+        if (defaultOrgIds.isEmpty() && !uniqueOrganizations.isEmpty()) {
+            if (uniqueOrganizations.size() == 1) {
+                defaultOrgIds = List.of(uniqueOrganizations.iterator().next().getId());
+            }
+        }
+
+        if (defaultCategory != null) {
+            response.defaultCategoryCode = defaultCategory.getCode();
+            response.defaultCategoryLabel = defaultCategory.getLabel();
+        }
+        response.defaultOrganizationIds = defaultOrgIds;
+        response.deals = userDeals;
         response.monthlyData = rows;
         return response;
     }
@@ -1200,6 +1928,11 @@ public class TargetServiceImpl implements TargetService {
     }
     
     private String resolveDealSourceLabel(Deal deal) {
+        // Prefer the new DealSource enum captured on the deal itself.
+        if (deal.getDealSource() != null) {
+            return deal.getDealSource().getDisplayName();
+        }
+        // Fallback to legacy Source entity when present.
         if (deal.getSource() != null && deal.getSource().getType() != null) {
             return deal.getSource().getType();
         }
@@ -1217,6 +1950,7 @@ public class TargetServiceImpl implements TargetService {
         private List<YearMonth> months;
         private Map<YearMonth, Map<TargetCategory, List<SalesTarget>>> targetsByMonth;
         private Map<YearMonth, Map<TargetCategory, Map<Long, DealAggregate>>> achievedMap;
+        private Map<YearMonth, Map<Long, DealAggregate>> presalesAllCategoryMap;
         private List<TargetDtos.DealSummary> dealSummaries;
         private TargetCategory categoryFilter;
     }
@@ -1224,6 +1958,9 @@ public class TargetServiceImpl implements TargetService {
     private static class DealAggregate {
         private BigDecimal achieved = BigDecimal.ZERO;
         private int dealsCount = 0;
+        // Number of diversion and direct deals for PRESALES incentive logic
+        private int diversionDeals = 0;
+        private int directDeals = 0;
     }
     
     private static class MonthlyDealAggregate {

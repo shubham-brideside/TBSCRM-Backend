@@ -77,7 +77,8 @@ GET /api/targets/dashboard?timePreset=THIS_MONTH&category=PHOTOGRAPHY
 ### 2. Get Filter Metadata
 **GET** `/api/targets/filters`
 
-Returns available filter options (categories, time presets, minimum year).
+Returns available filter options (categories, time presets, minimum year) plus
+role-aware user options for the **Select Users** dropdown.
 
 **Response:** `FiltersResponse`
 
@@ -383,6 +384,7 @@ interface CategoryTable {
 interface TargetRow {
   userId: number;
   userName: string;
+  userRole: string; // SALES or PRESALES
   totalTarget: number;
   achieved: number;
   achievementPercent: number;
@@ -401,7 +403,8 @@ interface DealSummary {
   personSource?: string;
   phoneNumber?: string;
   venue?: string;
-  eventDate?: string;
+  eventDate?: string; // Wedding date (yyyy-MM-dd)
+  wonDate?: string;   // Date when deal was marked WON (yyyy-MM-dd)
   organization?: string;
   category: string;
   userId: number;
@@ -468,6 +471,30 @@ interface TargetUserMonthlyDetailResponse {
   availableCategories: string[];
   availableOrganizationIds: number[];
   availableOrganizations: OrganizationSummary[];
+  /**
+   * Optional defaults that capture the primary target context for this
+   * user/year. The Pre‑Sales detail page can use these to show a specific
+   * Category and Organization in the "Goal Details" card instead of falling
+   * back to "All Categories" / "All organizations under the linked Sales team".
+   *
+   * For PRESALES users, these are derived from the linked SALES manager's
+   * organizations (the "sales team" context). For SALES users, they fall
+   * back to the categories/organizations directly linked to this user's
+   * targets when they are unambiguous.
+   */
+  defaultCategoryCode?: string;
+  defaultCategoryLabel?: string;
+  defaultOrganizationIds?: number[];
+  /**
+   * Optional list of won deals attributed to this user for the selected year.
+   *
+   * - For SALES users: all won deals they own.
+   * - For PRESALES users: all won deals under their linked SALES manager that
+   *   count towards their targets (Direct, Divert, Instagram, Reference, Planner, etc.).
+   *
+   * The Pre‑Sales detail page uses this to populate the "Won Deals" table.
+   */
+  deals?: DealSummary[];
   monthlyData: UserMonthlyBreakdown[];
 }
 
@@ -483,6 +510,44 @@ interface UserMonthlyBreakdown {
   instaDeals: number;
   referenceDeals: number;
   plannerDeals: number;
+}
+
+interface FiltersResponse {
+  categories: FilterOption[];
+  presets: FilterOption[];
+  minYear: number;
+  /**
+   * Role-aware user options for the "Select Users" dropdown on the Target
+   * dashboard.
+   *
+   * - ADMIN: all active SALES + PRESALES users
+   * - CATEGORY_MANAGER: self + SALES/PRESALES under them
+   * - SALES: self + PRESALES under them
+   * - PRESALES: self only
+   */
+  users: UserFilterOption[];
+  currentUserId: number;
+  currentUserName: string;
+  currentUserRole: 'ADMIN' | 'CATEGORY_MANAGER' | 'SALES' | 'PRESALES';
+  /**
+   * Optional default category for the logged-in user, derived from the
+   * organizations they own. Frontend can use this to pre-select the
+   * Category dropdown instead of "All Categories".
+   */
+  defaultCategoryCode?: string;
+  defaultCategoryLabel?: string;
+}
+
+interface UserFilterOption {
+  id: number;
+  name: string;
+  role: 'ADMIN' | 'CATEGORY_MANAGER' | 'SALES' | 'PRESALES' | string;
+  /**
+   * True when this option represents the logged-in user.
+   * The frontend can use this to append " - me" in the label, e.g.
+   * "Ayushi Malhotra - me".
+   */
+  currentUser: boolean;
 }
 ```
 
