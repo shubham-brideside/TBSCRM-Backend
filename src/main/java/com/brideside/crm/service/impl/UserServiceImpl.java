@@ -161,14 +161,35 @@ public class UserServiceImpl implements UserService {
     @Override
     public List<UserResponse> getAllUsers(String currentUserEmail) {
         User currentUser = getCurrentUser(currentUserEmail);
-        
+
+        // Special handling for PRESALES:
+        // For Activities page filters, frontend expects:
+        // - the logged‑in Presales user
+        // - their Sales manager (user with id = presales.managerId)
+        if (currentUser.getRole() != null
+                && currentUser.getRole().getName() == Role.RoleName.PRESALES) {
+            // Always include the Presales user themselves
+            List<User> scopedUsers = new java.util.ArrayList<>();
+            scopedUsers.add(currentUser);
+
+            // Include their Sales manager if configured
+            User manager = currentUser.getManager();
+            if (manager != null) {
+                scopedUsers.add(manager);
+            }
+
+            return scopedUsers.stream()
+                    .map(this::convertToResponse)
+                    .collect(Collectors.toList());
+        }
+
         List<User> allUsers = userRepository.findAll();
-        
+
         // Filter users based on role hierarchy
         List<User> accessibleUsers = allUsers.stream()
                 .filter(user -> canAccessUser(currentUser, user))
                 .collect(Collectors.toList());
-        
+
         return accessibleUsers.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());

@@ -51,6 +51,8 @@ public class ActivityController {
             @RequestParam(name = "personId", required = false) Long personId,
             @RequestParam(name = "dateFrom", required = false) String dateFrom,
             @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
+            @RequestParam(name = "organizationCategory", required = false) String organizationCategory,
             @RequestParam(name = "assignedUser", required = false) String assignedUser,
             @RequestParam(name = "organizationId", required = false) Long organizationId,
             @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
@@ -59,7 +61,8 @@ public class ActivityController {
             @RequestParam(name = "done", required = false) Boolean done,
             @ParameterObject @PageableDefault(size = 25, sort = {"date"}) Pageable pageable
     ) {
-        return service.list(personId, dateFrom, dateTo, assignedUser, organizationId, assignedUserId, category, status, done, pageable);
+        return service.list(personId, dateFrom, dateTo, assignedUser, organizationId, assignedUserId,
+                category, status, done, serviceCategory, organizationCategory, pageable);
     }
 
     @Operation(summary = "Activities summary", description = "Return counts for dashboard cards (total, pending, completed, assign call, meeting scheduled). " +
@@ -69,6 +72,8 @@ public class ActivityController {
             @RequestParam(name = "personId", required = false) Long personId,
             @RequestParam(name = "dateFrom", required = false) String dateFrom,
             @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
+            @RequestParam(name = "organizationCategory", required = false) String organizationCategory,
             @RequestParam(name = "assignedUser", required = false) String assignedUser,
             @RequestParam(name = "organizationId", required = false) Long organizationId,
             @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
@@ -77,7 +82,7 @@ public class ActivityController {
             @RequestParam(name = "done", required = false) Boolean done
     ) {
         ActivityDtos.Summary s = service.summary(personId, dateFrom, dateTo, assignedUser,
-                organizationId, assignedUserId, category, status, done);
+                organizationId, assignedUserId, category, status, done, serviceCategory, organizationCategory);
         return ResponseEntity.ok(s);
     }
 
