@@ -8,5 +8,8 @@ import java.util.List;
 
 public interface PersonRepository extends JpaRepository<Person, Long>, JpaSpecificationExecutor<Person> {
     List<Person> findByOwner_Id(Long ownerId);
+    
+    // Methods that exclude soft-deleted persons
+    List<Person> findByIsDeletedFalse();
 }
 

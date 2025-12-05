@@ -14,6 +14,16 @@ public final class PersonSpecifications {
     private PersonSpecifications() {
     }
 
+    /**
+     * Excludes soft-deleted persons from queries
+     */
+    public static Specification<Person> notDeleted() {
+        return (root, query, cb) -> cb.or(
+            cb.isNull(root.get("isDeleted")),
+            cb.equal(root.get("isDeleted"), false)
+        );
+    }
+
     public static Specification<Person> search(String q) {
         if (q == null || q.isBlank()) {
             return null;

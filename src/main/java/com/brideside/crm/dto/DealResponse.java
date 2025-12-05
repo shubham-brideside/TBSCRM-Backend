@@ -3,6 +3,7 @@ package com.brideside.crm.dto;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.brideside.crm.entity.CreatedByType;
 import com.brideside.crm.entity.DealStatus;
 
 public class DealResponse {
@@ -39,6 +40,9 @@ public class DealResponse {
     public String pipelineHistory; // JSON array of pipeline IDs the deal has been in: [1, 2, 3]
     public Boolean isDeleted; // true if this deal has been soft deleted
     public String lostReason; // Reason why deal was marked as LOST: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
+    public CreatedByType createdBy; // USER or BOT - who created the deal
+    public Long createdByUserId; // User ID if created by USER
+    public String createdByName; // User name if created by USER
 }
 
 

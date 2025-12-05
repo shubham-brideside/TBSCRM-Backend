@@ -143,6 +143,20 @@ public class Deal {
     @Column(name = "pipeline_history", columnDefinition = "JSON")
     private String pipelineHistory; // JSON array of pipeline IDs: [1, 2, 3]
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "created_by", length = 10)
+    private CreatedByType createdBy = CreatedByType.USER;
+
+    @Column(name = "created_by_user_id")
+    private Long createdByUserId;
+
+    @Column(name = "created_by_name", length = 255)
+    private String createdByName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id", insertable = false, updatable = false)
+    private User createdByUser;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -230,10 +244,25 @@ public class Deal {
     public String getGoogleCalendarEventIds() { return googleCalendarEventIds; }
     public void setGoogleCalendarEventIds(String googleCalendarEventIds) { this.googleCalendarEventIds = googleCalendarEventIds; }
 
+    public CreatedByType getCreatedBy() { return createdBy; }
+    public void setCreatedBy(CreatedByType createdBy) { this.createdBy = createdBy; }
+
+    public Long getCreatedByUserId() { return createdByUserId; }
+    public void setCreatedByUserId(Long createdByUserId) { this.createdByUserId = createdByUserId; }
+
+    public String getCreatedByName() { return createdByName; }
+    public void setCreatedByName(String createdByName) { this.createdByName = createdByName; }
+
+    public User getCreatedByUser() { return createdByUser; }
+    public void setCreatedByUser(User createdByUser) { this.createdByUser = createdByUser; }
+
     @PrePersist
     public void prePersist() {
         if (this.updatedAt == null) {
             this.updatedAt = this.createdAt;
+        }
+        if (this.createdBy == null) {
+            this.createdBy = CreatedByType.USER;
         }
     }
 }

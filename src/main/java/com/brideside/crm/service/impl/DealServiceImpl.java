@@ -8,12 +8,15 @@ import com.brideside.crm.entity.DealLabel;
 import com.brideside.crm.entity.DealLostReason;
 import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.DealSubSource;
+import com.brideside.crm.entity.Activity;
+import com.brideside.crm.entity.CreatedByType;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Source;
 import com.brideside.crm.entity.Stage;
+import com.brideside.crm.entity.User;
 import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
@@ -26,10 +29,16 @@ import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
+import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.DealService;
+import com.brideside.crm.service.DealStageHistoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -61,8 +70,12 @@ public class DealServiceImpl implements DealService {
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private ActivityRepository activityRepository;
+    @Autowired private UserRepository userRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired(required = false)
     private GoogleCalendarService googleCalendarService;
+    @Autowired
+    private DealStageHistoryService dealStageHistoryService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -83,6 +96,10 @@ public class DealServiceImpl implements DealService {
         if (request.personId != null) {
             Person person = personRepository.findById(request.personId)
                 .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
+            // Check if person is soft-deleted
+            if (Boolean.TRUE.equals(person.getIsDeleted())) {
+                throw new ResourceNotFoundException("Person not found");
+            }
             deal.setPerson(person);
             String phone = person.getPhone();
             if (phone != null) {
@@ -254,7 +271,60 @@ public class DealServiceImpl implements DealService {
             // If source is cleared, also clear subSource
             deal.setDealSubSource(null);
         }
+        
+        // Handle createdBy fields
+        if (request.createdBy != null) {
+            deal.setCreatedBy(request.createdBy);
+        } else {
+            // Default to USER if not specified
+            deal.setCreatedBy(CreatedByType.USER);
+        }
+        
+        // If created by USER, get user info from authentication context or request
+        if (deal.getCreatedBy() == CreatedByType.USER) {
+            User user = null;
+            
+            // First, try to get from request if provided
+            if (request.createdByUserId != null) {
+                user = userRepository.findById(request.createdByUserId).orElse(null);
+            }
+            
+            // If not in request, try to get from authentication context
+            if (user == null) {
+                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+                if (authentication != null && authentication.getPrincipal() instanceof UserDetails) {
+                    String email = ((UserDetails) authentication.getPrincipal()).getUsername();
+                    user = userRepository.findByEmail(email).orElse(null);
+                }
+            }
+            
+            // Set user info if found
+            if (user != null) {
+                deal.setCreatedByUserId(user.getId());
+                deal.setCreatedByName(user.getFirstName() + " " + user.getLastName());
+            } else {
+                log.warn("Could not determine user for USER-created deal. createdByUserId and createdByName will be null.");
+            }
+        } else if (deal.getCreatedBy() == CreatedByType.BOT) {
+            // For bot-created deals, set createdByUserId to null
+            deal.setCreatedByUserId(null);
+            deal.setCreatedByName(null);
+        }
+        
         Deal savedDeal = dealRepository.save(deal);
+        
+        // Record stage entry if stage is set
+        if (savedDeal.getStage() != null) {
+            dealStageHistoryService.recordStageEntry(savedDeal, savedDeal.getStage());
+        }
+        
+        // Create activities ONLY if created by BOT and in Qualified stage
+        // Frontend will handle activity creation for USER-created deals
+        if (savedDeal.getCreatedBy() == CreatedByType.BOT && savedDeal.getStage() != null 
+            && "Qualified".equalsIgnoreCase(savedDeal.getStage().getName())) {
+            createQualifiedStageActivities(savedDeal);
+        }
+        
         syncGoogleCalendarEvent(savedDeal);
         return savedDeal;
     }
@@ -263,6 +333,9 @@ public class DealServiceImpl implements DealService {
     @Transactional
     public Deal update(Long id, DealDtos.UpdateRequest request) {
         Deal deal = get(id); // This will check if deal is deleted
+        
+        // Capture old stage before any updates
+        Stage oldStage = deal.getStage();
         
         // Update fields only if provided (partial update)
         if (request.name != null) {
@@ -274,6 +347,10 @@ public class DealServiceImpl implements DealService {
         if (request.personId != null) {
             Person person = personRepository.findById(request.personId)
                 .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
+            // Check if person is soft-deleted
+            if (Boolean.TRUE.equals(person.getIsDeleted())) {
+                throw new ResourceNotFoundException("Person not found");
+            }
             deal.setPerson(person);
             String phone = person.getPhone();
             if (phone != null) {
@@ -407,8 +484,33 @@ public class DealServiceImpl implements DealService {
             deal.setDealSubSource(null);
         }
         
+        // Track stage change before saving
+        boolean stageChanged = false;
+        if (request.stageId != null) {
+            Stage newStage = deal.getStage(); // Already set above
+            if (oldStage == null || newStage == null || !oldStage.getId().equals(newStage.getId())) {
+                stageChanged = true;
+            }
+        }
+        
         deal.setUpdatedAt(LocalDateTime.now());
         Deal savedDeal = dealRepository.save(deal);
+        
+        // Record stage change if stage was updated
+        if (stageChanged && savedDeal.getStage() != null) {
+            dealStageHistoryService.recordStageEntry(savedDeal, savedDeal.getStage());
+            
+            // Create activities ONLY if:
+            // 1. Deal was created by BOT (backend handles it)
+            // 2. Stage changed from "Lead In" to "Qualified"
+            // Frontend will handle activity creation for USER-created deals
+            if (savedDeal.getCreatedBy() == CreatedByType.BOT 
+                && oldStage != null && "Lead In".equalsIgnoreCase(oldStage.getName()) 
+                && "Qualified".equalsIgnoreCase(savedDeal.getStage().getName())) {
+                createQualifiedStageActivities(savedDeal);
+            }
+        }
+        
         syncGoogleCalendarEvent(savedDeal);
         return savedDeal;
     }
@@ -749,6 +851,10 @@ public class DealServiceImpl implements DealService {
     public List<Deal> listByPerson(Long personId) {
         Person person = personRepository.findById(personId)
             .orElseThrow(() -> new ResourceNotFoundException("Person not found"));
+        // Check if person is soft-deleted
+        if (Boolean.TRUE.equals(person.getIsDeleted())) {
+            throw new ResourceNotFoundException("Person not found");
+        }
         return dealRepository.findByPersonAndIsDeletedFalse(person);
     }
 
@@ -767,12 +873,45 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional
     public Deal updateStage(Long id, DealDtos.UpdateStageRequest request) {
+        log.info("updateStage called for deal {} with stageId: {}", id, request.stageId);
+        
         Deal deal = get(id);
+        Stage oldStage = deal.getStage();
+        String oldStageName = oldStage != null ? oldStage.getName() : "null";
+        log.info("Deal {} current stage: {} (ID: {})", id, oldStageName, oldStage != null ? oldStage.getId() : "null");
+        
         Stage stage = stageRepository.findById(request.stageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
+        log.info("Moving deal {} to stage: {} (ID: {})", id, stage.getName(), stage.getId());
+        
         deal.setStage(stage);
         Deal saved = dealRepository.save(deal);
+        
+        log.info("Deal {} createdBy: {}", saved.getId(), saved.getCreatedBy());
+        
+        // Record stage change in history
+        dealStageHistoryService.recordStageEntry(saved, stage);
+        
+        // Create activities ONLY if:
+        // 1. Deal was created by BOT (backend handles it)
+        // 2. Stage changed from "Lead In" to "Qualified"
+        // Frontend will handle activity creation for USER-created deals
+        boolean isBotCreated = saved.getCreatedBy() == CreatedByType.BOT;
+        boolean isFromLeadIn = oldStage != null && "Lead In".equalsIgnoreCase(oldStage.getName());
+        boolean isToQualified = "Qualified".equalsIgnoreCase(stage.getName());
+        
+        log.info("Activity creation check for deal {}: isBotCreated={}, isFromLeadIn={}, isToQualified={}", 
+            saved.getId(), isBotCreated, isFromLeadIn, isToQualified);
+        
+        if (isBotCreated && isFromLeadIn && isToQualified) {
+            log.info("All conditions met - calling createQualifiedStageActivities for deal {}", saved.getId());
+            createQualifiedStageActivities(saved);
+        } else {
+            log.info("Skipping activity creation for deal {} - conditions not met", saved.getId());
+        }
+        
         return saved;
     }
 
@@ -1176,6 +1315,298 @@ public class DealServiceImpl implements DealService {
             return objectMapper.writeValueAsString(eventIdsMap);
         } catch (Exception e) {
             return null;
+        }
+    }
+    
+    /**
+     * Creates activities when a deal moves from "Lead In" to "Qualified" stage.
+     * Creates "Make first call" and "Send Quotes" activities assigned to the team manager.
+     * This method should ONLY be called for BOT-created deals.
+     * Frontend handles activity creation for USER-created deals.
+     */
+    private void createQualifiedStageActivities(Deal deal) {
+        // Double-check: Only create for BOT-created deals
+        if (deal.getCreatedBy() != CreatedByType.BOT) {
+            log.warn("Skipping activity creation for deal {} - not created by BOT", deal.getId());
+            return;
+        }
+        try {
+            log.info("Creating activities for Qualified stage deal {} (BOT-created)", deal.getId());
+            
+            // Reload deal from database to ensure we have fresh data with all relationships
+            Deal freshDeal = dealRepository.findById(deal.getId())
+                .orElse(null);
+            if (freshDeal == null) {
+                log.error("Cannot create activities: Deal {} not found in database", deal.getId());
+                return;
+            }
+            
+            // 1. Check if person has a phone number
+            Person person = freshDeal.getPerson();
+            if (person == null || person.getPhone() == null || person.getPhone().trim().isEmpty()) {
+                log.warn("Skipping activity creation for deal {}: Person has no phone number", freshDeal.getId());
+                return;
+            }
+            log.debug("Deal {} has person {} with phone {}", freshDeal.getId(), person.getId(), person.getPhone());
+            
+            // 2. Get team manager using direct SQL query following the exact path:
+            // deals.pipeline_id -> pipelines.team_id -> teams.manager_id -> users
+            Long assignedUserId = null;
+            String assignedUserName = null;
+            
+            try {
+                // Step 1: Get pipeline_id from deal
+                Long pipelineId = freshDeal.getPipeline() != null ? freshDeal.getPipeline().getId() : null;
+                if (pipelineId == null) {
+                    log.error("Cannot create activities for Qualified stage: Deal {} has no pipeline_id", freshDeal.getId());
+                    return;
+                }
+                log.info("Deal {} has pipeline_id: {}", freshDeal.getId(), pipelineId);
+                
+                // Step 2: Get team_id from pipeline
+                String teamIdQuery = "SELECT team_id FROM pipelines WHERE id = ?";
+                Long teamId = null;
+                try {
+                    teamId = jdbcTemplate.queryForObject(teamIdQuery, Long.class, pipelineId);
+                } catch (Exception e) {
+                    log.error("Cannot create activities for Qualified stage: Pipeline {} has no team_id or query failed: {}", 
+                        pipelineId, e.getMessage());
+                    return;
+                }
+                if (teamId == null) {
+                    log.error("Cannot create activities for Qualified stage: Pipeline {} has no team_id", pipelineId);
+                    return;
+                }
+                log.info("Pipeline {} has team_id: {}", pipelineId, teamId);
+                
+                // Step 3: Get manager_id from team
+                String managerIdQuery = "SELECT manager_id FROM teams WHERE id = ?";
+                Long managerId = null;
+                try {
+                    managerId = jdbcTemplate.queryForObject(managerIdQuery, Long.class, teamId);
+                } catch (Exception e) {
+                    log.error("Cannot create activities for Qualified stage: Team {} has no manager_id or query failed: {}", 
+                        teamId, e.getMessage());
+                    return;
+                }
+                if (managerId == null) {
+                    log.error("Cannot create activities for Qualified stage: Team {} has no manager_id", teamId);
+                    return;
+                }
+                log.info("Team {} has manager_id: {}", teamId, managerId);
+                
+                // Step 4: Get user details from users table
+                String userQuery = "SELECT id, first_name, last_name FROM users WHERE id = ?";
+                Map<String, Object> userRow = null;
+                try {
+                    userRow = jdbcTemplate.queryForMap(userQuery, managerId);
+                } catch (Exception e) {
+                    log.error("Cannot create activities for Qualified stage: User {} not found or query failed: {}", 
+                        managerId, e.getMessage());
+                    return;
+                }
+                
+                if (userRow == null || userRow.isEmpty()) {
+                    log.error("Cannot create activities for Qualified stage: User {} not found", managerId);
+                    return;
+                }
+                
+                Long userId = ((Number) userRow.get("id")).longValue();
+                String firstName = (String) userRow.get("first_name");
+                String lastName = (String) userRow.get("last_name");
+                
+                assignedUserId = userId;
+                assignedUserName = (firstName != null ? firstName : "") + " " + 
+                                  (lastName != null ? lastName : "");
+                assignedUserName = assignedUserName.trim();
+                
+                if (assignedUserId == null) {
+                    log.error("Team manager ID is null for deal {} - cannot assign activities", freshDeal.getId());
+                    return;
+                }
+                if (assignedUserName == null || assignedUserName.trim().isEmpty()) {
+                    log.error("Team manager name is null or empty for deal {} - cannot assign activities", freshDeal.getId());
+                    return;
+                }
+                
+                log.info("Found team manager for deal {}: {} (ID: {}) - Activities will be assigned to this user", 
+                    freshDeal.getId(), assignedUserName, assignedUserId);
+                    
+            } catch (Exception e) {
+                log.error("Error getting team manager for deal {}: {}", freshDeal.getId(), e.getMessage(), e);
+                // Don't return yet - try fallback options
+            }
+            
+            // FALLBACK 1: Try to use person owner if team manager not found
+            if (assignedUserId == null && freshDeal.getPerson() != null && freshDeal.getPerson().getOwner() != null) {
+                try {
+                    User personOwner = freshDeal.getPerson().getOwner();
+                    assignedUserId = personOwner.getId();
+                    assignedUserName = (personOwner.getFirstName() != null ? personOwner.getFirstName() : "") + " " + 
+                                    (personOwner.getLastName() != null ? personOwner.getLastName() : "");
+                    assignedUserName = assignedUserName.trim();
+                    
+                    log.info("Using person owner as fallback for deal {}: {} (ID: {})", 
+                        freshDeal.getId(), assignedUserName, assignedUserId);
+                    
+                } catch (Exception e) {
+                    log.warn("Could not get person owner for deal {}: {}", freshDeal.getId(), e.getMessage());
+                }
+            }
+            
+            // FALLBACK 2: Try to use organization owner if deal owner not found
+            if (assignedUserId == null && freshDeal.getOrganization() != null && freshDeal.getOrganization().getId() != null) {
+                try {
+                    // First get organization owner_id
+                    String orgOwnerQuery = "SELECT owner_id FROM organizations WHERE id = ?";
+                    Long orgOwnerId = jdbcTemplate.queryForObject(orgOwnerQuery, Long.class, freshDeal.getOrganization().getId());
+                    
+                    if (orgOwnerId != null) {
+                        String orgOwnerUserQuery = "SELECT id, first_name, last_name FROM users WHERE id = ?";
+                        Map<String, Object> orgOwnerRow = jdbcTemplate.queryForMap(orgOwnerUserQuery, orgOwnerId);
+                        
+                        if (orgOwnerRow != null && !orgOwnerRow.isEmpty()) {
+                            Long ownerId = ((Number) orgOwnerRow.get("id")).longValue();
+                            String ownerFirstName = (String) orgOwnerRow.get("first_name");
+                            String ownerLastName = (String) orgOwnerRow.get("last_name");
+                            
+                            assignedUserId = ownerId;
+                            assignedUserName = (ownerFirstName != null ? ownerFirstName : "") + " " + 
+                                            (ownerLastName != null ? ownerLastName : "");
+                            assignedUserName = assignedUserName.trim();
+                            
+                            log.info("Using organization owner as fallback for deal {}: {} (ID: {})", 
+                                freshDeal.getId(), assignedUserName, assignedUserId);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not get organization owner for deal {}: {}", freshDeal.getId(), e.getMessage());
+                }
+            }
+            
+            // CRITICAL: If still no user assigned, log error and DO NOT create activities
+            if (assignedUserId == null) {
+                log.error("CRITICAL: Cannot assign activities for deal {} - no team manager, person owner, or organization owner found. Pipeline: {}, Team: {}, Person Owner: {}, Organization: {}", 
+                    freshDeal.getId(), 
+                    freshDeal.getPipeline() != null ? freshDeal.getPipeline().getId() : "null",
+                    freshDeal.getPipeline() != null && freshDeal.getPipeline().getTeam() != null ? freshDeal.getPipeline().getTeam().getId() : "null",
+                    freshDeal.getPerson() != null && freshDeal.getPerson().getOwner() != null ? freshDeal.getPerson().getOwner().getId() : "null",
+                    freshDeal.getOrganization() != null ? freshDeal.getOrganization().getId() : "null");
+                return; // Don't create activities without assignedUserId
+            }
+            
+            // 3. Get organization
+            Organization organization = freshDeal.getOrganization();
+            Long organizationId = organization != null ? organization.getId() : null;
+            String organizationName = organization != null ? organization.getName() : null;
+            
+            // 4. Check for existing activities to prevent duplicates
+            List<Activity> existingActivities = activityRepository.findAll().stream()
+                .filter(a -> freshDeal.getId().equals(a.getDealId()))
+                .collect(Collectors.toList());
+            
+            boolean hasMakeFirstCall = existingActivities.stream()
+                .anyMatch(a -> "Make first call".equals(a.getSubject()));
+            boolean hasSendQuotes = existingActivities.stream()
+                .anyMatch(a -> "Send Quotes".equals(a.getSubject()));
+            
+            if (hasMakeFirstCall && hasSendQuotes) {
+                log.debug("Activities already exist for Qualified stage deal {}, skipping creation", freshDeal.getId());
+                return;
+            }
+            
+            // 5. Calculate tomorrow's date in DD/MM/YYYY format
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            String tomorrowStr = tomorrow.format(formatter);
+            
+            // 6. Create "Make first call" activity
+            if (!hasMakeFirstCall) {
+                Activity makeFirstCall = new Activity();
+                makeFirstCall.setSubject("Make first call");
+                makeFirstCall.setCategory(Activity.ActivityCategory.CALL);
+                makeFirstCall.setStatus(Activity.ActivityStatus.OPEN);
+                makeFirstCall.setDealId(freshDeal.getId());
+                makeFirstCall.setPersonId(person != null ? person.getId() : null);
+                makeFirstCall.setOrganizationId(organizationId);
+                makeFirstCall.setOrganization(organizationName);
+                makeFirstCall.setAssignedUser(assignedUserName);
+                makeFirstCall.setAssignedUserId(assignedUserId);
+                makeFirstCall.setDate(tomorrowStr);
+                makeFirstCall.setDone(false);
+                makeFirstCall.setDealName(freshDeal.getName());
+                if (person != null) {
+                    makeFirstCall.setPhone(person.getPhone());
+                }
+                
+                // Verify values before saving
+                if (makeFirstCall.getAssignedUserId() == null || makeFirstCall.getAssignedUser() == null) {
+                    log.error("ERROR: Activity assignment values are null before saving! assignedUserId={}, assignedUser='{}'", 
+                        makeFirstCall.getAssignedUserId(), makeFirstCall.getAssignedUser());
+                    return;
+                }
+                
+                log.info("Creating 'Make first call' activity for deal {} with assignedUserId={}, assignedUser='{}'", 
+                    freshDeal.getId(), makeFirstCall.getAssignedUserId(), makeFirstCall.getAssignedUser());
+                
+                Activity saved = activityRepository.save(makeFirstCall);
+                
+                // Verify after saving
+                log.info("Created 'Make first call' activity (ID: {}) for deal {} - Verifying saved values: assignedUserId={}, assignedUser='{}'", 
+                    saved.getId(), freshDeal.getId(), saved.getAssignedUserId(), saved.getAssignedUser());
+                
+                if (saved.getAssignedUserId() == null || saved.getAssignedUser() == null) {
+                    log.error("CRITICAL ERROR: Activity was saved with null assignment! Activity ID: {}, Deal ID: {}", 
+                        saved.getId(), freshDeal.getId());
+                }
+            }
+            
+            // 7. Create "Send Quotes" activity
+            if (!hasSendQuotes) {
+                Activity sendQuotes = new Activity();
+                sendQuotes.setSubject("Send Quotes");
+                sendQuotes.setCategory(Activity.ActivityCategory.ACTIVITY);
+                sendQuotes.setStatus(Activity.ActivityStatus.OPEN);
+                sendQuotes.setDealId(freshDeal.getId());
+                sendQuotes.setPersonId(person != null ? person.getId() : null);
+                sendQuotes.setOrganizationId(organizationId);
+                sendQuotes.setOrganization(organizationName);
+                sendQuotes.setAssignedUser(assignedUserName);
+                sendQuotes.setAssignedUserId(assignedUserId);
+                sendQuotes.setDate(tomorrowStr);
+                sendQuotes.setDone(false);
+                sendQuotes.setDealName(freshDeal.getName());
+                if (person != null) {
+                    sendQuotes.setPhone(person.getPhone());
+                }
+                
+                // Verify values before saving
+                if (sendQuotes.getAssignedUserId() == null || sendQuotes.getAssignedUser() == null) {
+                    log.error("ERROR: Activity assignment values are null before saving! assignedUserId={}, assignedUser='{}'", 
+                        sendQuotes.getAssignedUserId(), sendQuotes.getAssignedUser());
+                    return;
+                }
+                
+                log.info("Creating 'Send Quotes' activity for deal {} with assignedUserId={}, assignedUser='{}', organizationId={}", 
+                    freshDeal.getId(), sendQuotes.getAssignedUserId(), sendQuotes.getAssignedUser(), sendQuotes.getOrganizationId());
+                
+                try {
+                    Activity saved = activityRepository.save(sendQuotes);
+                    log.info("✅ Created 'Send Quotes' activity (ID: {}) for deal {} - assignedUserId={}, assignedUser='{}', organizationId={}", 
+                        saved.getId(), freshDeal.getId(), saved.getAssignedUserId(), saved.getAssignedUser(), saved.getOrganizationId());
+                } catch (Exception e) {
+                    if (e.getMessage() != null && e.getMessage().contains("unique_deal_subject")) {
+                        log.warn("Activity 'Send Quotes' already exists for deal {} (duplicate prevented by unique constraint)", freshDeal.getId());
+                    } else {
+                        log.error("Error creating 'Send Quotes' activity for deal {}: {}", freshDeal.getId(), e.getMessage(), e);
+                        throw e;
+                    }
+                }
+            }
+                
+        } catch (Exception e) {
+            log.error("Error creating activities for Qualified stage deal {}: {}", deal.getId(), e.getMessage(), e);
+            e.printStackTrace();
         }
     }
 }

@@ -296,9 +296,13 @@ public class UserServiceImpl implements UserService {
             organizationRepository.save(organization);
         }
 
-        // Reassign or clear person ownerships
+        // Reassign or clear person ownerships (skip soft-deleted persons)
         List<Person> ownedPersons = personRepository.findByOwner_Id(id);
         for (Person person : ownedPersons) {
+            // Skip soft-deleted persons
+            if (Boolean.TRUE.equals(person.getIsDeleted())) {
+                continue;
+            }
             if (newManager != null && newManager.getRole() != null &&
                     newManager.getRole().getName() == Role.RoleName.SALES) {
                 person.setOwner(newManager);

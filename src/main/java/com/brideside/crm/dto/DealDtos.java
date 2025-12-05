@@ -2,6 +2,7 @@ package com.brideside.crm.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import com.brideside.crm.entity.CreatedByType;
 import com.brideside.crm.entity.DealStatus;
 
 public class DealDtos {
@@ -33,6 +34,8 @@ public class DealDtos {
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
         public Long referencedDealId; // optional: ID of the original deal when diverting (required when label is DIVERT)
+        public CreatedByType createdBy; // optional: USER (default) or BOT
+        public Long createdByUserId; // optional: User ID when createdBy is USER
     }
 
     public static class UpdateStageRequest {

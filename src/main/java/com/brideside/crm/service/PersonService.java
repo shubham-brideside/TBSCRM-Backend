@@ -59,7 +59,8 @@ public class PersonService {
                                 LocalDate leadDateTo,
                                 Pageable pageable) {
 
-        Specification<Person> spec = Specification.where(PersonSpecifications.search(q))
+        Specification<Person> spec = Specification.where(PersonSpecifications.notDeleted())
+                .and(PersonSpecifications.search(q))
                 .and(PersonSpecifications.hasLabels(labels))
                 .and(PersonSpecifications.hasOrganizations(organizationIds))
                 .and(PersonSpecifications.hasOwners(ownerIds))
@@ -71,14 +72,26 @@ public class PersonService {
     }
 
     public PersonDTO get(Long id) {
-        return repository.findById(id)
-                .map(PersonMapper::toDto)
+        Person person = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if person is soft-deleted
+        if (Boolean.TRUE.equals(person.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
+        return PersonMapper.toDto(person);
     }
 
     public PersonSummaryDTO getSummary(Long id) {
         Person person = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if person is soft-deleted
+        if (Boolean.TRUE.equals(person.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
         PersonSummaryDTO summary = new PersonSummaryDTO();
         summary.setPerson(PersonMapper.toDto(person));
         summary.setDealsCount(0L);
@@ -95,19 +108,43 @@ public class PersonService {
     public PersonDTO update(Long id, PersonDTO dto) {
         Person entity = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if person is soft-deleted
+        if (Boolean.TRUE.equals(entity.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
         apply(dto, entity);
         Person saved = repository.save(entity);
         return PersonMapper.toDto(saved);
     }
 
     public void delete(Long id) {
-        repository.deleteById(id);
+        Person person = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if person is already soft-deleted
+        if (Boolean.TRUE.equals(person.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
+        // Soft delete: set is_deleted to true instead of hard delete
+        person.setIsDeleted(Boolean.TRUE);
+        repository.save(person);
     }
 
     public long bulkDelete(List<Long> ids) {
         List<Person> all = repository.findAllById(ids);
-        repository.deleteAllInBatch(all);
-        return all.size();
+        // Filter out already deleted persons
+        List<Person> toDelete = all.stream()
+                .filter(p -> !Boolean.TRUE.equals(p.getIsDeleted()))
+                .toList();
+        
+        // Soft delete: set is_deleted to true for all persons
+        toDelete.forEach(p -> p.setIsDeleted(Boolean.TRUE));
+        repository.saveAll(toDelete);
+        
+        return toDelete.size();
     }
 
     public PersonDTO merge(Long targetId, List<Long> duplicateIds) {
@@ -117,6 +154,12 @@ public class PersonService {
 
         Person target = repository.findById(targetId)
                 .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if target person is soft-deleted
+        if (Boolean.TRUE.equals(target.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
         List<Person> sources = repository.findAllById(duplicateIds);
 
         for (Person source : sources) {
@@ -154,7 +197,10 @@ public class PersonService {
                 .filter(id -> !id.equals(targetId))
                 .collect(Collectors.toList());
         if (!toDelete.isEmpty()) {
-            repository.deleteAllByIdInBatch(toDelete);
+            // Soft delete duplicate persons instead of hard delete
+            List<Person> duplicates = repository.findAllById(toDelete);
+            duplicates.forEach(p -> p.setIsDeleted(Boolean.TRUE));
+            repository.saveAll(duplicates);
         }
         return PersonMapper.toDto(saved);
     }

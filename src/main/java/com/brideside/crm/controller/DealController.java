@@ -6,6 +6,7 @@ import com.brideside.crm.dto.DealResponse;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.service.DealService;
+import com.brideside.crm.service.DealStageHistoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +28,9 @@ public class DealController {
 
     @Autowired
     private DealService dealService;
+    
+    @Autowired
+    private DealStageHistoryService dealStageHistoryService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -159,6 +164,9 @@ public class DealController {
         r.pipelineHistory = d.getPipelineHistory();
         r.isDeleted = d.getIsDeleted();
         r.lostReason = d.getLostReason() != null ? d.getLostReason().toDisplayString() : null;
+        r.createdBy = d.getCreatedBy();
+        r.createdByUserId = d.getCreatedByUserId();
+        r.createdByName = d.getCreatedByName();
         return r;
     }
 
@@ -167,6 +175,20 @@ public class DealController {
     public ResponseEntity<List<com.brideside.crm.dto.PipelineDtos.PipelineResponse>> getAvailablePipelinesForDiversion(@PathVariable Long dealId) {
         List<com.brideside.crm.dto.PipelineDtos.PipelineResponse> pipelines = dealService.getAvailablePipelinesForDiversion(dealId);
         return ResponseEntity.ok(pipelines);
+    }
+
+    @GetMapping("/{dealId}/stage-durations")
+    @Operation(summary = "Get stage durations for a deal", description = "Returns a map of stageId -> days for each stage the deal has been in")
+    public ResponseEntity<Map<Long, Integer>> getStageDurations(@PathVariable Long dealId) {
+        Map<Long, Integer> durations = dealStageHistoryService.getAllStageDurations(dealId);
+        return ResponseEntity.ok(durations);
+    }
+
+    @GetMapping("/{dealId}/current-stage-duration")
+    @Operation(summary = "Get current stage duration for a deal", description = "Returns the number of days the deal has been in its current stage")
+    public ResponseEntity<Integer> getCurrentStageDuration(@PathVariable Long dealId) {
+        int days = dealStageHistoryService.getDaysInCurrentStage(dealId);
+        return ResponseEntity.ok(days);
     }
     
     /**
