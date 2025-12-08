@@ -54,6 +54,18 @@ public class ActivityScopeService {
         return userRepository.findByEmail(email);
     }
 
+    /**
+     * Get the current user's role name, if available.
+     * Returns null if user is not authenticated or has no role.
+     */
+    public Role.RoleName getCurrentUserRole() {
+        Optional<User> userOpt = currentUser();
+        if (userOpt.isEmpty() || userOpt.get().getRole() == null) {
+            return null;
+        }
+        return userOpt.get().getRole().getName();
+    }
+
     public Scope resolveScope() {
         Optional<User> userOpt = currentUser();
         if (userOpt.isEmpty() || userOpt.get().getRole() == null) {
@@ -73,7 +85,10 @@ public class ActivityScopeService {
         } else if (roleName == Role.RoleName.CATEGORY_MANAGER) {
             // Category Manager sees activities for:
             // 1. Organizations owned by their Sales reports (Sales users they manage)
+            //    (These appear in "All Organizations" filter dropdown for filtering purposes)
+            //    NOTE: Activities are NOT shown based on organization ownership - only by assignment
             // 2. Activities assigned to: Category Manager + their Sales reports + Presales under those Sales
+            //    Activities assigned to other Sales users or Presales under other Sales managers are NOT visible
             
             // Start with the Category Manager themselves
             userIds.add(currentUser.getId());
@@ -111,6 +126,7 @@ public class ActivityScopeService {
 
             // Get organizations owned by Sales users under this Category Manager
             // Also include organizations directly owned by the Category Manager (if any)
+            // NOTE: These are included for filter dropdown purposes, but NOT used for activity visibility
             if (!salesIds.isEmpty() || currentUser.getId() != null) {
                 List<Organization> organizations = organizationRepository.findAll().stream()
                         .filter(org -> org.getOwner() != null && org.getOwner().getId() != null)
@@ -131,8 +147,8 @@ public class ActivityScopeService {
         } else if (roleName == Role.RoleName.SALES) {
             // Sales user sees:
             // 1. Organizations: All organizations owned by this Sales user
-            //    (These appear in "All Organizations" filter dropdown)
-            //    Activities for these organizations will be visible regardless of who they're assigned to
+            //    (These appear in "All Organizations" filter dropdown for filtering purposes)
+            //    NOTE: Activities are NOT shown based on organization ownership - only by assignment
             List<Organization> organizations = organizationRepository.findByOwner_Id(currentUser.getId());
             organizations.forEach(org -> {
                 if (org.getId() != null) {
@@ -142,8 +158,8 @@ public class ActivityScopeService {
             });
 
             // 2. Users: This Sales user + all Presales team members under them
-            //    (These appear in "All Users" filter dropdown)
-            //    Activities assigned to these users will also be visible
+            //    Activities assigned to these users will be visible
+            //    Activities assigned to other Sales users or Presales under other Sales managers are NOT visible
             userIds.add(currentUser.getId());
             addEmail(userEmails, currentUser.getEmail());
             List<Team> teams = teamRepository.findByManager_Id(currentUser.getId());
@@ -158,16 +174,17 @@ public class ActivityScopeService {
         } else if (roleName == Role.RoleName.PRESALES) {
             // Presales user sees:
             // 1. Organizations: All organizations owned by their Sales manager
-            //    (These appear in "All Organizations" filter dropdown)
-            //    Activities for these organizations will be visible regardless of assignment
-            // 2. Users: Only themselves (for activity assignment visibility)
-            //    "All Users" filter should be hidden/disabled for Presales as they have no users under them
+            //    (These appear in "All Organizations" filter dropdown for filtering purposes)
+            //    NOTE: Activities are NOT shown based on organization ownership - only by assignment
+            // 2. Users: Themselves + their Sales manager
+            //    Activities assigned to these users will be visible
+            //    Activities assigned to other users are NOT visible
             
             // Add themselves for activity assignment visibility
             userIds.add(currentUser.getId());
             addEmail(userEmails, currentUser.getEmail());
 
-            // Find their Sales manager via teams
+            // Find their Sales manager via teams and add to assigned user IDs
             List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
             Set<Long> managerIds = teams.stream()
                     .map(Team::getManager)
@@ -175,7 +192,19 @@ public class ActivityScopeService {
                     .map(User::getId)
                     .collect(Collectors.toSet());
 
+            // Add Sales manager(s) to the assigned user IDs so Presales can see their activities
+            for (Long managerId : managerIds) {
+                userIds.add(managerId);
+                // Also add the manager's email if available
+                userRepository.findById(managerId).ifPresent(manager -> {
+                    if (manager.getEmail() != null) {
+                        addEmail(userEmails, manager.getEmail());
+                    }
+                });
+            }
+
             // Get all organizations owned by their Sales manager(s)
+            // NOTE: These are included for filter dropdown purposes, but NOT used for activity visibility
             if (!managerIds.isEmpty()) {
                 List<Organization> organizations = organizationRepository.findAll().stream()
                         .filter(org -> org.getOwner() != null && org.getOwner().getId() != null)
