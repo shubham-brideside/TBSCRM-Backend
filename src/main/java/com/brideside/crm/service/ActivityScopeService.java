@@ -28,7 +28,8 @@ public class ActivityScopeService {
     public record Scope(Set<Long> organizationIds,
                         Set<String> organizationNames,
                         Set<Long> assignedUserIds,
-                        Set<String> assignedUserEmails) {}
+                        Set<String> assignedUserEmails,
+                        Set<String> assignedUserNames) {}
     public record FilterContext(boolean restricted,
                                 List<Organization> organizations,
                                 List<User> users) {}
@@ -69,7 +70,7 @@ public class ActivityScopeService {
     public Scope resolveScope() {
         Optional<User> userOpt = currentUser();
         if (userOpt.isEmpty() || userOpt.get().getRole() == null) {
-            return new Scope(Set.of(), Set.of(), Set.of(), Set.of());
+            return new Scope(Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
         }
         User currentUser = userOpt.get();
         Role.RoleName roleName = currentUser.getRole().getName();
@@ -79,9 +80,11 @@ public class ActivityScopeService {
         Set<Long> userIds = new HashSet<>();
         Set<String> userEmails = new HashSet<>();
 
+        Set<String> userNames = new HashSet<>();
+        
         if (roleName == Role.RoleName.ADMIN) {
             // Admin: unrestricted – empty sets mean "no restriction" to callers that know how to interpret it
-            return new Scope(Set.of(), Set.of(), Set.of(), Set.of());
+            return new Scope(Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
         } else if (roleName == Role.RoleName.CATEGORY_MANAGER) {
             // Category Manager sees activities for:
             // 1. Organizations owned by their Sales reports (Sales users they manage)
@@ -93,6 +96,7 @@ public class ActivityScopeService {
             // Start with the Category Manager themselves
             userIds.add(currentUser.getId());
             addEmail(userEmails, currentUser.getEmail());
+            addUserName(userNames, currentUser);
             
             // Find all direct reports (Sales users managed by this Category Manager)
             Set<Long> salesIds = new HashSet<>();
@@ -110,6 +114,7 @@ public class ActivityScopeService {
                 if (user.getManager() != null && currentUser.getId().equals(user.getManager().getId())) {
                     userIds.add(user.getId());
                     addEmail(userEmails, user.getEmail());
+                    addUserName(userNames, user);
                     if (user.getRole().getName() == Role.RoleName.SALES) {
                         salesIds.add(user.getId());
                     }
@@ -121,6 +126,7 @@ public class ActivityScopeService {
                         currentUser.getId().equals(user.getManager().getManager().getId())) {
                     userIds.add(user.getId());
                     addEmail(userEmails, user.getEmail());
+                    addUserName(userNames, user);
                 }
             }
 
@@ -162,12 +168,14 @@ public class ActivityScopeService {
             //    Activities assigned to other Sales users or Presales under other Sales managers are NOT visible
             userIds.add(currentUser.getId());
             addEmail(userEmails, currentUser.getEmail());
+            addUserName(userNames, currentUser);
             List<Team> teams = teamRepository.findByManager_Id(currentUser.getId());
             for (Team team : teams) {
                 for (User member : team.getMembers()) {
                     if (member.getId() != null) {
                         userIds.add(member.getId());
                         addEmail(userEmails, member.getEmail());
+                        addUserName(userNames, member);
                     }
                 }
             }
@@ -183,6 +191,7 @@ public class ActivityScopeService {
             // Add themselves for activity assignment visibility
             userIds.add(currentUser.getId());
             addEmail(userEmails, currentUser.getEmail());
+            addUserName(userNames, currentUser);
 
             // Find their Sales manager via teams and add to assigned user IDs
             List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
@@ -195,11 +204,12 @@ public class ActivityScopeService {
             // Add Sales manager(s) to the assigned user IDs so Presales can see their activities
             for (Long managerId : managerIds) {
                 userIds.add(managerId);
-                // Also add the manager's email if available
+                // Also add the manager's email and name if available
                 userRepository.findById(managerId).ifPresent(manager -> {
                     if (manager.getEmail() != null) {
                         addEmail(userEmails, manager.getEmail());
                     }
+                    addUserName(userNames, manager);
                 });
             }
 
@@ -219,7 +229,7 @@ public class ActivityScopeService {
             }
         }
 
-        return new Scope(orgIds, orgNames, userIds, userEmails);
+        return new Scope(orgIds, orgNames, userIds, userEmails, userNames);
     }
 
     /**
@@ -279,6 +289,24 @@ public class ActivityScopeService {
         String normalized = normalize(value);
         if (normalized != null) {
             target.add(normalized);
+        }
+    }
+    
+    private void addUserName(Set<String> target, User user) {
+        if (user == null) {
+            return;
+        }
+        String firstName = user.getFirstName();
+        String lastName = user.getLastName();
+        if (firstName != null || lastName != null) {
+            String fullName = (firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "");
+            fullName = fullName.trim();
+            if (!fullName.isEmpty()) {
+                String normalized = normalize(fullName);
+                if (normalized != null) {
+                    target.add(normalized);
+                }
+            }
         }
     }
 

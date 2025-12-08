@@ -45,7 +45,8 @@ public class ActivityController {
     }
 
     @Operation(summary = "List activities", description = "Get paginated list of activities with optional filters: personId, date range, assignedUser, category (Activity/Call/Meeting scheduler), status, done. " +
-            "Also supports role-based scoping using organizationId and assignedUserId for SALES, PRESALES and CATEGORY_MANAGER users.")
+            "Also supports role-based scoping using organizationId and assignedUserId for SALES, PRESALES and CATEGORY_MANAGER users. " +
+            "Supports infinite scroll with default size=20 and sort=dueDate,desc. Multiple organizationId and assignedUserId values can be provided as arrays.")
     @GetMapping
     public Page<ActivityDTO> list(
             @RequestParam(name = "personId", required = false) Long personId,
@@ -54,15 +55,16 @@ public class ActivityController {
             @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
             @RequestParam(name = "organizationCategory", required = false) String organizationCategory,
             @RequestParam(name = "assignedUser", required = false) String assignedUser,
-            @RequestParam(name = "organizationId", required = false) Long organizationId,
-            @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
+            @RequestParam(name = "organizationId", required = false) List<Long> organizationIds,
+            @RequestParam(name = "assignedUserId", required = false) List<Long> assignedUserIds,
             @RequestParam(name = "category", required = false) String category,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "done", required = false) Boolean done,
-            @ParameterObject @PageableDefault(size = 25, sort = {"date"}) Pageable pageable
+            @RequestParam(name = "dealId", required = false) Long dealId,
+            @ParameterObject @PageableDefault(size = 25, sort = {"dueDate"}, direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable
     ) {
-        return service.list(personId, dateFrom, dateTo, assignedUser, organizationId, assignedUserId,
-                category, status, done, serviceCategory, organizationCategory, pageable);
+        return service.list(personId, dateFrom, dateTo, assignedUser, organizationIds, assignedUserIds,
+                category, status, done, serviceCategory, organizationCategory, dealId, pageable);
     }
 
     @Operation(summary = "Activities summary", description = "Return counts for dashboard cards (total, pending, completed, assign call, meeting scheduled). " +
@@ -75,14 +77,14 @@ public class ActivityController {
             @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
             @RequestParam(name = "organizationCategory", required = false) String organizationCategory,
             @RequestParam(name = "assignedUser", required = false) String assignedUser,
-            @RequestParam(name = "organizationId", required = false) Long organizationId,
-            @RequestParam(name = "assignedUserId", required = false) Long assignedUserId,
+            @RequestParam(name = "organizationId", required = false) List<Long> organizationIds,
+            @RequestParam(name = "assignedUserId", required = false) List<Long> assignedUserIds,
             @RequestParam(name = "category", required = false) String category,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "done", required = false) Boolean done
     ) {
         ActivityDtos.Summary s = service.summary(personId, dateFrom, dateTo, assignedUser,
-                organizationId, assignedUserId, category, status, done, serviceCategory, organizationCategory);
+                organizationIds, assignedUserIds, category, status, done, serviceCategory, organizationCategory);
         return ResponseEntity.ok(s);
     }
 

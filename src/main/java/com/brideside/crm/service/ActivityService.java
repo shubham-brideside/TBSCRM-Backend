@@ -16,10 +16,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.PageImpl;
 
 @Service
 @Transactional(readOnly = true)
@@ -101,22 +106,76 @@ public class ActivityService {
                                   String dateFrom,
                                   String dateTo,
                                   String assignedUser,
-                                  Long organizationId,
-                                  Long assignedUserId,
+                                  List<Long> organizationIds,
+                                  List<Long> assignedUserIds,
                                   String category,
                                   String status,
                                   Boolean done,
                                   String serviceCategoryCodes,
                                   String organizationCategoryCodes,
+                                  Long dealId,
                                   Pageable pageable) {
+        // Build specification WITHOUT date filters (we'll filter dates in memory)
         Specification<Activity> spec = buildSpecification(
-                personId, dateFrom, dateTo, assignedUser,
-                organizationId, assignedUserId, category, status, done,
-                serviceCategoryCodes, organizationCategoryCodes
+                personId, null, null, assignedUser, // Pass null for dateFrom/dateTo
+                organizationIds, assignedUserIds, category, status, done,
+                serviceCategoryCodes, organizationCategoryCodes, dealId
         );
 
+        // Parse date filters for in-memory filtering
+        LocalDate fromDate = null;
+        LocalDate toDate = null;
+        if (dateFrom != null && !dateFrom.isBlank()) {
+            try {
+                fromDate = LocalDate.parse(dateFrom.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            } catch (Exception e) {
+                // Invalid date format, ignore
+            }
+        }
+        if (dateTo != null && !dateTo.isBlank()) {
+            try {
+                toDate = LocalDate.parse(dateTo.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+            } catch (Exception e) {
+                // Invalid date format, ignore
+            }
+        }
+        
+        final LocalDate finalFromDate = fromDate;
+        final LocalDate finalToDate = toDate;
+        final boolean hasDateFilter = finalFromDate != null || finalToDate != null;
+
         // Fetch activities with organization and owner data loaded
-        Page<Activity> activities = repository.findAll(spec, pageable);
+        // If we have date filters, we need to load more activities to filter in memory
+        // This is a trade-off for accurate date filtering with different formats
+        Pageable fetchPageable = hasDateFilter && pageable.getPageSize() > 0 
+            ? org.springframework.data.domain.PageRequest.of(0, Math.max(pageable.getPageSize() * 10, 1000), pageable.getSort())
+            : pageable;
+        
+        Page<Activity> activities = repository.findAll(spec, fetchPageable);
+
+        // Filter by date in memory if date filters are provided
+        if (hasDateFilter) {
+            List<Activity> filteredActivities = activities.getContent().stream()
+                .filter(activity -> matchesDateFilter(activity, finalFromDate, finalToDate))
+                .collect(java.util.stream.Collectors.toList());
+            
+            // Apply pagination to filtered results
+            int page = pageable.getPageNumber();
+            int size = pageable.getPageSize();
+            int start = page * size;
+            int end = Math.min(start + size, filteredActivities.size());
+            
+            List<Activity> paginatedActivities = start < filteredActivities.size() 
+                ? filteredActivities.subList(start, end)
+                : new ArrayList<>();
+            
+            // Create a new Page with filtered and paginated results
+            activities = new PageImpl<>(
+                paginatedActivities,
+                pageable,
+                filteredActivities.size()
+            );
+        }
 
         // Force load organizationRef and owner for each activity to avoid lazy loading issues
         activities.getContent().forEach(activity -> {
@@ -130,6 +189,108 @@ public class ActivityService {
 
         return activities.map(ActivityMapper::toDto);
     }
+    
+    /**
+     * Check if an activity matches the date filter by checking all date fields:
+     * date (DD/MM/YYYY), dueDate (DD/MM/YYYY), and dateTime (ISO format)
+     */
+    private boolean matchesDateFilter(Activity activity, LocalDate fromDate, LocalDate toDate) {
+        if (fromDate == null && toDate == null) {
+            return true; // No date filter
+        }
+        
+        DateTimeFormatter ddMMyyyyFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter isoFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+        DateTimeFormatter isoFormatterWithZone = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+        DateTimeFormatter isoDateOnly = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        
+        // Check date field (DD/MM/YYYY format)
+        if (activity.getDate() != null && !activity.getDate().trim().isEmpty()) {
+            try {
+                LocalDate activityDate = LocalDate.parse(activity.getDate().trim(), ddMMyyyyFormatter);
+                if (isDateInRange(activityDate, fromDate, toDate)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // Invalid date format, skip this field
+            }
+        }
+        
+        // Check dueDate field (DD/MM/YYYY format)
+        if (activity.getDueDate() != null && !activity.getDueDate().trim().isEmpty()) {
+            try {
+                LocalDate activityDueDate = LocalDate.parse(activity.getDueDate().trim(), ddMMyyyyFormatter);
+                if (isDateInRange(activityDueDate, fromDate, toDate)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // Invalid date format, skip this field
+            }
+        }
+        
+        // Check dateTime field (ISO format or other formats)
+        if (activity.getDateTime() != null && !activity.getDateTime().trim().isEmpty()) {
+            try {
+                String dateTimeStr = activity.getDateTime().trim();
+                LocalDate activityDateTime = null;
+                
+                // Try different date formats
+                if (dateTimeStr.contains("T")) {
+                    // ISO format with time
+                    try {
+                        // Check if it has timezone indicator (+, Z, or - after position 10)
+                        boolean hasTimezone = dateTimeStr.contains("+") || dateTimeStr.contains("Z") || 
+                            (dateTimeStr.length() > 10 && dateTimeStr.charAt(10) == '-' && dateTimeStr.length() > 19);
+                        if (hasTimezone) {
+                            // Has timezone
+                            activityDateTime = OffsetDateTime.parse(dateTimeStr, isoFormatterWithZone).toLocalDate();
+                        } else {
+                            // No timezone
+                            activityDateTime = LocalDateTime.parse(dateTimeStr, isoFormatter).toLocalDate();
+                        }
+                    } catch (Exception e) {
+                        // Try parsing as LocalDateTime without seconds
+                        try {
+                            activityDateTime = LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")).toLocalDate();
+                        } catch (Exception e2) {
+                            // Try extracting just the date portion
+                            if (dateTimeStr.length() >= 10) {
+                                activityDateTime = LocalDate.parse(dateTimeStr.substring(0, 10), isoDateOnly);
+                            }
+                        }
+                    }
+                } else if (dateTimeStr.length() == 10) {
+                    // Just date portion
+                    activityDateTime = LocalDate.parse(dateTimeStr, isoDateOnly);
+                }
+                
+                if (activityDateTime != null && isDateInRange(activityDateTime, fromDate, toDate)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                // Invalid date format, skip this field
+            }
+        }
+        
+        // If no date fields match, exclude the activity
+        return false;
+    }
+    
+    /**
+     * Check if a date falls within the specified range (inclusive)
+     */
+    private boolean isDateInRange(LocalDate date, LocalDate fromDate, LocalDate toDate) {
+        if (date == null) {
+            return false;
+        }
+        if (fromDate != null && date.isBefore(fromDate)) {
+            return false;
+        }
+        if (toDate != null && date.isAfter(toDate)) {
+            return false;
+        }
+        return true;
+    }
 
     /**
      * Compute summary counts for dashboard cards using the same scope and filters as list().
@@ -138,42 +299,122 @@ public class ActivityService {
                                         String dateFrom,
                                         String dateTo,
                                         String assignedUser,
-                                        Long organizationId,
-                                        Long assignedUserId,
+                                        List<Long> organizationIds,
+                                        List<Long> assignedUserIds,
                                         String category,
                                         String status,
                                         Boolean done,
                                         String serviceCategoryCodes,
                                         String organizationCategoryCodes) {
-        Specification<Activity> baseSpec = buildSpecification(
-                personId, dateFrom, dateTo, assignedUser,
-                organizationId, assignedUserId, category, status, done,
-                serviceCategoryCodes, organizationCategoryCodes
-        );
-
         ActivityDtos.Summary s = new ActivityDtos.Summary();
-        // Total: all matching activities
-        s.setTotal(repository.count(baseSpec));
+        
+        // Build base spec without category filter (we'll add category filter per count)
+        // This ensures each count uses the correct category filter regardless of request parameters
+        Specification<Activity> baseSpecWithoutCategory = buildSpecification(
+                personId, dateFrom, dateTo, assignedUser,
+                organizationIds, assignedUserIds, null, status, done, // category = null (we'll filter by category per count)
+                serviceCategoryCodes, organizationCategoryCodes, null
+        );
+        
+        // Total Activities: category = 'ACTIVITY' (always filter by ACTIVITY category)
+        // SELECT * FROM activities WHERE category = 'ACTIVITY'
+        Specification<Activity> activityTotalSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.equal(root.get("category"), Activity.ActivityCategory.ACTIVITY));
+        long totalCount = repository.count(activityTotalSpec);
+        s.setActivityTotalCount(totalCount);
 
-        // Pending: status = PENDING
-        Specification<Activity> pendingSpec = baseSpec.and((root, q, cb) ->
-                cb.equal(root.get("status"), Activity.ActivityStatus.PENDING));
-        s.setPending(repository.count(pendingSpec));
+        // Pending: category = 'ACTIVITY' and done = false
+        // SELECT * FROM activities WHERE category = 'ACTIVITY' AND done = 0
+        Specification<Activity> pendingSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.and(
+                    cb.equal(root.get("category"), Activity.ActivityCategory.ACTIVITY),
+                    cb.isFalse(root.get("done"))
+                ));
+        long pendingCount = repository.count(pendingSpec);
+        s.setActivityPendingCount(pendingCount);
 
-        // Completed: status = COMPLETED
-        Specification<Activity> completedSpec = baseSpec.and((root, q, cb) ->
-                cb.equal(root.get("status"), Activity.ActivityStatus.COMPLETED));
-        s.setCompleted(repository.count(completedSpec));
+        // Completed: category = 'ACTIVITY' and done = true
+        // SELECT * FROM activities WHERE category = 'ACTIVITY' AND done = 1
+        Specification<Activity> completedSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.and(
+                    cb.equal(root.get("category"), Activity.ActivityCategory.ACTIVITY),
+                    cb.isTrue(root.get("done"))
+                ));
+        long completedCount = repository.count(completedSpec);
+        s.setActivityCompletedCount(completedCount);
 
-        // Assign Call: category = CALL
-        Specification<Activity> callSpec = baseSpec.and((root, q, cb) ->
+        // Call Assigned: category = 'CALL' (always filter by CALL category, regardless of done status)
+        // SELECT * FROM activities WHERE category = 'CALL'
+        Specification<Activity> callSpec = baseSpecWithoutCategory.and((root, q, cb) ->
                 cb.equal(root.get("category"), Activity.ActivityCategory.CALL));
-        s.setAssignCall(repository.count(callSpec));
+        s.setCallAssignedCount(repository.count(callSpec));
 
-        // Meeting scheduled: category = MEETING_SCHEDULER
-        Specification<Activity> meetingSpec = baseSpec.and((root, q, cb) ->
+        // Meeting Assigned: category = 'MEETING_SCHEDULER' (always filter by MEETING_SCHEDULER category, regardless of done status)
+        Specification<Activity> meetingSpec = baseSpecWithoutCategory.and((root, q, cb) ->
                 cb.equal(root.get("category"), Activity.ActivityCategory.MEETING_SCHEDULER));
-        s.setMeetingScheduled(repository.count(meetingSpec));
+        s.setMeetingAssignedCount(repository.count(meetingSpec));
+
+        // Optional: Call Taken - category = 'CALL' and done = true
+        Specification<Activity> callTakenSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.and(
+                    cb.equal(root.get("category"), Activity.ActivityCategory.CALL),
+                    cb.isTrue(root.get("done"))
+                ));
+        s.setCallTakenCount(repository.count(callTakenSpec));
+
+        // Optional: Meeting Done - category = 'MEETING_SCHEDULER' and done = true
+        Specification<Activity> meetingDoneSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.and(
+                    cb.equal(root.get("category"), Activity.ActivityCategory.MEETING_SCHEDULER),
+                    cb.isTrue(root.get("done"))
+                ));
+        s.setMeetingDoneCount(repository.count(meetingDoneSpec));
+
+        // Optional: Overdue - category = 'ACTIVITY' and not completed and dueDate is in the past
+        // Note: dueDate is stored as string in "dd/MM/yyyy" format
+        // We need to compare dates properly - load activities and filter in memory
+        // for accurate date comparison since string comparison doesn't work for dates
+        Specification<Activity> overdueBaseSpec = baseSpecWithoutCategory.and((root, q, cb) -> 
+            cb.and(
+                cb.equal(root.get("category"), Activity.ActivityCategory.ACTIVITY),
+                cb.isFalse(root.get("done")),
+                cb.isNotNull(root.get("dueDate"))
+            ));
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            LocalDate today = LocalDate.now();
+            long overdueCount = repository.findAll(overdueBaseSpec).stream()
+                .filter(a -> {
+                    if (a.getDueDate() == null || a.getDueDate().trim().isEmpty()) {
+                        return false;
+                    }
+                    try {
+                        LocalDate dueDate = LocalDate.parse(a.getDueDate(), formatter);
+                        return dueDate.isBefore(today);
+                    } catch (Exception e) {
+                        // If date parsing fails, skip this activity
+                        return false;
+                    }
+                })
+                .count();
+            s.setOverdueCount(overdueCount);
+        } catch (Exception e) {
+            // If calculation fails, set to null (optional field)
+            s.setOverdueCount(null);
+        }
+
+        // Optional: Total Call Duration - sum of durationMinutes for completed CALL activities
+        // This requires a custom query to sum the durationMinutes field
+        try {
+            Long totalDuration = repository.findAll(callTakenSpec).stream()
+                .filter(a -> a.getDurationMinutes() != null)
+                .mapToLong(Activity::getDurationMinutes)
+                .sum();
+            s.setTotalCallDurationMinutes(totalDuration);
+        } catch (Exception e) {
+            // If calculation fails, set to null (optional field)
+            s.setTotalCallDurationMinutes(null);
+        }
 
         return s;
     }
@@ -196,13 +437,14 @@ public class ActivityService {
                                                        String dateFrom,
                                                        String dateTo,
                                                        String assignedUser,
-                                                       Long organizationId,
-                                                       Long assignedUserId,
+                                                       List<Long> organizationIds,
+                                                       List<Long> assignedUserIds,
                                                        String category,
                                                        String status,
                                                        Boolean done,
                                                        String serviceCategoryCodes,
-                                                       String organizationCategoryCodes) {
+                                                       String organizationCategoryCodes,
+                                                       Long dealId) {
         Specification<Activity> spec = Specification.where(null);
 
         // Apply role-based scoping first (by IDs)
@@ -222,12 +464,13 @@ public class ActivityService {
         boolean hasOrgNames = !scope.organizationNames().isEmpty();
         boolean hasUserIds = !scope.assignedUserIds().isEmpty();
         boolean hasUserEmails = !scope.assignedUserEmails().isEmpty();
+        boolean hasUserNames = !scope.assignedUserNames().isEmpty();
 
         // For SALES, CATEGORY_MANAGER, and PRESALES users, skip organization-based filtering - only show by assignment
         boolean restrictsByOrg = (currentUserRole != Role.RoleName.SALES && 
                                   currentUserRole != Role.RoleName.CATEGORY_MANAGER && 
                                   currentUserRole != Role.RoleName.PRESALES) && (hasOrgIds || hasOrgNames);
-        boolean restrictsByUser = hasUserIds || hasUserEmails;
+        boolean restrictsByUser = hasUserIds || hasUserEmails || hasUserNames;
 
         if (restrictsByOrg || restrictsByUser) {
             Specification<Activity> scopeSpec = (root, q, cb) -> {
@@ -256,6 +499,11 @@ public class ActivityService {
                         userPredicates.add(
                                 cb.lower(root.get("assignedUser")).in(scope.assignedUserEmails()));
                     }
+                    if (hasUserNames) {
+                        // Also check assignedUser against user display names (firstName + lastName)
+                        userPredicates.add(
+                                cb.lower(root.get("assignedUser")).in(scope.assignedUserNames()));
+                    }
                     if (!userPredicates.isEmpty()) {
                         disjuncts.add(orPredicates(cb, userPredicates));
                     }
@@ -270,11 +518,17 @@ public class ActivityService {
         }
 
         // Narrow by explicit IDs, but always inside scope
-        if (organizationId != null) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("organizationId"), organizationId));
+        // Support both single value and list of values for organizationId and assignedUserId
+        if (organizationIds != null && !organizationIds.isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("organizationId").in(organizationIds));
         }
-        if (assignedUserId != null) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("assignedUserId"), assignedUserId));
+        if (assignedUserIds != null && !assignedUserIds.isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("assignedUserId").in(assignedUserIds));
+        }
+        
+        // Filter by dealId if provided
+        if (dealId != null) {
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("dealId"), dealId));
         }
 
         if (personId != null) {
@@ -302,26 +556,9 @@ public class ActivityService {
         if (done != null) {
             spec = spec.and((root, q, cb) -> cb.equal(root.get("done"), done));
         }
-        if (dateFrom != null && !dateFrom.isBlank()) {
-            String from = dateFrom.trim();
-            // Apply lower bound on both `date` and `dueDate` so filters work for
-            // task-style activities that only populate `dueDate` (Overdue tab).
-            spec = spec.and((root, q, cb) -> {
-                Predicate byDate = cb.greaterThanOrEqualTo(root.get("date"), from);
-                Predicate byDueDate = cb.greaterThanOrEqualTo(root.get("dueDate"), from);
-                return cb.or(byDate, byDueDate);
-            });
-        }
-        if (dateTo != null && !dateTo.isBlank()) {
-            String to = dateTo.trim();
-            // Apply upper bound on both `date` and `dueDate` so "Overdue" and
-            // other date range filters include activities using either field.
-            spec = spec.and((root, q, cb) -> {
-                Predicate byDate = cb.lessThanOrEqualTo(root.get("date"), to);
-                Predicate byDueDate = cb.lessThanOrEqualTo(root.get("dueDate"), to);
-                return cb.or(byDate, byDueDate);
-            });
-        }
+        // Date filtering is now handled in the list() method after loading activities
+        // This allows us to properly parse and compare dates in different formats
+        // (Frontend sends YYYY-MM-DD, backend stores DD/MM/YYYY in date/dueDate fields)
 
         // Filter by service/organization category codes (PHOTOGRAPHY / MAKEUP / PLANNING_DECOR)
         List<String> categoryCodes = parseCategoryCodes(serviceCategoryCodes, organizationCategoryCodes);

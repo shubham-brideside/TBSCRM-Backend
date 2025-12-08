@@ -152,50 +152,91 @@ public class ActivityDtos {
      * All counts are computed with the same role-based scope and filters as the main list endpoint.
      */
     public static class Summary {
-        private long total;
-        private long pending;
-        private long completed;
-        private long assignCall;
-        private long meetingScheduled;
+        // Required fields
+        private long activityTotalCount;
+        private long activityPendingCount;
+        private long activityCompletedCount;
+        private long callAssignedCount;
+        private long meetingAssignedCount;
+        
+        // Optional fields
+        private Long callTakenCount;
+        private Long meetingDoneCount;
+        private Long overdueCount;
+        private Long totalCallDurationMinutes;
 
-        public long getTotal() {
-            return total;
+        // Required fields - Getters and Setters
+        public long getActivityTotalCount() {
+            return activityTotalCount;
         }
 
-        public void setTotal(long total) {
-            this.total = total;
+        public void setActivityTotalCount(long activityTotalCount) {
+            this.activityTotalCount = activityTotalCount;
         }
 
-        public long getPending() {
-            return pending;
+        public long getActivityPendingCount() {
+            return activityPendingCount;
         }
 
-        public void setPending(long pending) {
-            this.pending = pending;
+        public void setActivityPendingCount(long activityPendingCount) {
+            this.activityPendingCount = activityPendingCount;
         }
 
-        public long getCompleted() {
-            return completed;
+        public long getActivityCompletedCount() {
+            return activityCompletedCount;
         }
 
-        public void setCompleted(long completed) {
-            this.completed = completed;
+        public void setActivityCompletedCount(long activityCompletedCount) {
+            this.activityCompletedCount = activityCompletedCount;
         }
 
-        public long getAssignCall() {
-            return assignCall;
+        public long getCallAssignedCount() {
+            return callAssignedCount;
         }
 
-        public void setAssignCall(long assignCall) {
-            this.assignCall = assignCall;
+        public void setCallAssignedCount(long callAssignedCount) {
+            this.callAssignedCount = callAssignedCount;
         }
 
-        public long getMeetingScheduled() {
-            return meetingScheduled;
+        public long getMeetingAssignedCount() {
+            return meetingAssignedCount;
         }
 
-        public void setMeetingScheduled(long meetingScheduled) {
-            this.meetingScheduled = meetingScheduled;
+        public void setMeetingAssignedCount(long meetingAssignedCount) {
+            this.meetingAssignedCount = meetingAssignedCount;
+        }
+
+        // Optional fields - Getters and Setters
+        public Long getCallTakenCount() {
+            return callTakenCount;
+        }
+
+        public void setCallTakenCount(Long callTakenCount) {
+            this.callTakenCount = callTakenCount;
+        }
+
+        public Long getMeetingDoneCount() {
+            return meetingDoneCount;
+        }
+
+        public void setMeetingDoneCount(Long meetingDoneCount) {
+            this.meetingDoneCount = meetingDoneCount;
+        }
+
+        public Long getOverdueCount() {
+            return overdueCount;
+        }
+
+        public void setOverdueCount(Long overdueCount) {
+            this.overdueCount = overdueCount;
+        }
+
+        public Long getTotalCallDurationMinutes() {
+            return totalCallDurationMinutes;
+        }
+
+        public void setTotalCallDurationMinutes(Long totalCallDurationMinutes) {
+            this.totalCallDurationMinutes = totalCallDurationMinutes;
         }
     }
 
