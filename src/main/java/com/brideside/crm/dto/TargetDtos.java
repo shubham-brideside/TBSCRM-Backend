@@ -153,6 +153,7 @@ public class TargetDtos {
     public static class TargetRow {
         public Long userId;
         public String userName;
+        public String userRole; // SALES or PRESALES – helps frontend build separate tables
         public BigDecimal totalTarget;
         public BigDecimal achieved;
         public BigDecimal achievementPercent;
@@ -171,7 +172,8 @@ public class TargetDtos {
         public String personSource;
         public String phoneNumber;
         public String venue;
-        public String eventDate;
+        public String eventDate; // Wedding date
+        public String wonDate;   // Date when the deal was marked as WON
         public String organization;
         public String category;
         public Long userId;
@@ -182,11 +184,35 @@ public class TargetDtos {
         public List<FilterOption> categories;
         public List<FilterOption> presets;
         public int minYear;
+        // List of users that can be shown in the "Select Users" filter on the
+        // Target dashboard. This list is role-aware:
+        // - ADMIN: all active SALES + PRESALES users
+        // - CATEGORY_MANAGER: self + SALES/PRESALES under them
+        // - SALES: self + PRESALES under them
+        // - PRESALES: self only
+        public List<UserFilterOption> users;
+        // Convenience fields so the frontend can easily highlight the logged-in
+        // user (e.g. append " - me" in the dropdown) and set sensible defaults.
+        public Long currentUserId;
+        public String currentUserName;
+        public String currentUserRole;
+        // Optional default category for the current user, derived from the
+        // organizations they own. Frontend can use this to pre-select the
+        // Category dropdown instead of "All Categories".
+        public String defaultCategoryCode;
+        public String defaultCategoryLabel;
     }
 
     public static class FilterOption {
         public String code;
         public String label;
+    }
+
+    public static class UserFilterOption {
+        public Long id;
+        public String name;
+        public String role;
+        public boolean currentUser; // true when this option represents the logged-in user
     }
 
     public static class SalesUserWithOrganizations {
@@ -202,6 +228,13 @@ public class TargetDtos {
         public String email;
         public List<OrganizationSummary> organizations;
         public Map<String, List<OrganizationSummary>> organizationsByMonth; // Key: "YYYY-MM"
+        // Optional defaults that frontend can use to pre-select category and
+        // organizations for a SALES or PRESALES user when opening the detail view.
+        // For PRESALES users, these are derived from the linked SALES manager's
+        // organizations (the "sales team" context).
+        public String defaultCategoryCode;
+        public String defaultCategoryLabel;
+        public List<Long> defaultOrganizationIds;
     }
     
     public static class TargetUserMonthlyDetailResponse {
@@ -214,6 +247,19 @@ public class TargetDtos {
         public List<String> availableCategories; // Categories used in targets for this user/year
         public List<Long> availableOrganizationIds; // Organization IDs linked to targets
         public List<OrganizationSummary> availableOrganizations; // Organization details
+        // Optional defaults that capture the primary target context for this
+        // user/year. The frontend can use these to show specific Category and
+        // Organization values in the "Goal Details" card instead of falling
+        // back to "All Categories" / "All organizations under the linked Sales team".
+        public String defaultCategoryCode;
+        public String defaultCategoryLabel;
+        public List<Long> defaultOrganizationIds;
+        // Optional list of won deals attributed to this user for the selected
+        // year. For SALES users this is all won deals they own. For PRESALES
+        // users this is all won deals under their linked SALES manager that
+        // count towards their targets (both Direct and Divert sources, plus
+        // other sources like Instagram / Reference / Planner).
+        public List<DealSummary> deals;
         public List<UserMonthlyBreakdown> monthlyData;
     }
     
