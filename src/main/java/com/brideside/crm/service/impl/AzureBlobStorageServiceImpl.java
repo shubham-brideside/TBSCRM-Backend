@@ -25,64 +25,98 @@ public class AzureBlobStorageServiceImpl implements AzureBlobStorageService {
     private static final Logger log = LoggerFactory.getLogger(AzureBlobStorageServiceImpl.class);
     
     private final AzureBlobStorageProperties properties;
-    private final BlobServiceClient blobServiceClient;
-    private final BlobContainerClient containerClient;
+    private final String connectionString;
+    private volatile BlobServiceClient blobServiceClient;
+    private volatile BlobContainerClient containerClient;
+    private volatile boolean initialized = false;
+    private final Object initLock = new Object();
 
     @Autowired
     public AzureBlobStorageServiceImpl(AzureBlobStorageProperties properties) {
         this.properties = properties;
         
-        String connectionString = properties.getConnectionString();
+        String connString = properties.getConnectionString();
         
-        if (!StringUtils.hasText(connectionString)) {
-            throw new IllegalStateException("Azure Blob Storage connection string is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable.");
+        if (!StringUtils.hasText(connString)) {
+            log.warn("Azure Blob Storage connection string is not configured. Azure Blob Storage features will be unavailable. Set AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable.");
+            this.connectionString = null;
+            return;
         }
         
         // Trim and clean the connection string (remove any surrounding quotes)
-        connectionString = connectionString.trim();
-        if (connectionString.startsWith("\"") && connectionString.endsWith("\"")) {
-            connectionString = connectionString.substring(1, connectionString.length() - 1).trim();
+        connString = connString.trim();
+        if (connString.startsWith("\"") && connString.endsWith("\"")) {
+            connString = connString.substring(1, connString.length() - 1).trim();
         }
-        if (connectionString.startsWith("'") && connectionString.endsWith("'")) {
-            connectionString = connectionString.substring(1, connectionString.length() - 1).trim();
+        if (connString.startsWith("'") && connString.endsWith("'")) {
+            connString = connString.substring(1, connString.length() - 1).trim();
         }
         
         // Validate connection string format
-        if (!connectionString.startsWith("DefaultEndpointsProtocol=")) {
-            log.error("Invalid Azure Blob Storage connection string format. Connection string should start with 'DefaultEndpointsProtocol='. Received (first 50 chars): {}", 
-                      connectionString.length() > 50 ? connectionString.substring(0, 50) : connectionString);
-            throw new IllegalStateException("Invalid Azure Blob Storage connection string format. Connection string should start with 'DefaultEndpointsProtocol='. Please verify the AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable.");
+        if (!connString.startsWith("DefaultEndpointsProtocol=")) {
+            log.warn("Invalid Azure Blob Storage connection string format. Azure Blob Storage features will be unavailable. Connection string should start with 'DefaultEndpointsProtocol='. Received (first 50 chars): {}", 
+                      connString.length() > 50 ? connString.substring(0, 50) : connString);
+            this.connectionString = null;
+            return;
         }
         
-        log.info("Initializing Azure Blob Storage with connection string (first 50 chars): {}...", 
-                 connectionString.length() > 50 ? connectionString.substring(0, 50) : connectionString);
-        
-        try {
-            // Initialize Azure Blob Storage client
-            this.blobServiceClient = new BlobServiceClientBuilder()
-                    .connectionString(connectionString)
-                    .buildClient();
-        } catch (IllegalArgumentException e) {
-            log.error("Invalid Azure Blob Storage connection string. Please check the format. Error: {}", e.getMessage());
-            log.error("Connection string length: {}, starts with: {}", connectionString.length(), 
-                     connectionString.length() > 20 ? connectionString.substring(0, 20) : connectionString);
-            throw new IllegalStateException("Invalid Azure Blob Storage connection string. Please verify the AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable is set correctly. Error: " + e.getMessage(), e);
+        this.connectionString = connString;
+        log.info("Azure Blob Storage connection string configured. Connection will be established on first use.");
+    }
+    
+    private void ensureInitialized() {
+        if (initialized) {
+            return;
         }
         
-        // Get or create container
-        this.containerClient = blobServiceClient.getBlobContainerClient(properties.getContainerName());
-        
-        // Create container if it doesn't exist
-        if (!containerClient.exists()) {
-            log.info("Creating Azure Blob Storage container: {}", properties.getContainerName());
-            containerClient.create();
+        synchronized (initLock) {
+            if (initialized) {
+                return;
+            }
+            
+            if (connectionString == null) {
+                throw new IllegalStateException("Azure Blob Storage is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable.");
+            }
+            
+            log.info("Initializing Azure Blob Storage connection (lazy initialization)...");
+            
+            try {
+                // Initialize Azure Blob Storage client
+                this.blobServiceClient = new BlobServiceClientBuilder()
+                        .connectionString(connectionString)
+                        .buildClient();
+                
+                // Get or create container
+                this.containerClient = blobServiceClient.getBlobContainerClient(properties.getContainerName());
+                
+                // Create container if it doesn't exist (with retry for clock skew issues)
+                try {
+                    if (!containerClient.exists()) {
+                        log.info("Creating Azure Blob Storage container: {}", properties.getContainerName());
+                        containerClient.create();
+                    }
+                } catch (Exception e) {
+                    // If container check/creation fails, log warning but don't fail initialization
+                    // The container might already exist or there might be a temporary network issue
+                    log.warn("Could not verify/create Azure Blob Storage container '{}'. Will attempt to use it anyway. Error: {}", 
+                            properties.getContainerName(), e.getMessage());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Container initialization error details:", e);
+                    }
+                }
+                
+                initialized = true;
+                log.info("Azure Blob Storage service initialized. Container: {}", properties.getContainerName());
+            } catch (Exception e) {
+                log.error("Failed to initialize Azure Blob Storage. Error: {}", e.getMessage(), e);
+                throw new IllegalStateException("Failed to initialize Azure Blob Storage: " + e.getMessage(), e);
+            }
         }
-        
-        log.info("Azure Blob Storage service initialized. Container: {}", properties.getContainerName());
     }
 
     @Override
     public String uploadImage(InputStream fileInputStream, String fileName, String contentType) throws Exception {
+        ensureInitialized();
         try {
             // Generate unique blob name: {timestamp}-{uuid}-{originalFileName}
             String timestamp = String.valueOf(Instant.now().toEpochMilli());
@@ -117,6 +151,7 @@ public class AzureBlobStorageServiceImpl implements AzureBlobStorageService {
 
     @Override
     public void deleteFile(String blobUrl) throws Exception {
+        ensureInitialized();
         try {
             // Extract blob name from URL
             String blobName = extractBlobNameFromUrl(blobUrl);

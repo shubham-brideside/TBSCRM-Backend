@@ -8,6 +8,8 @@ import com.brideside.crm.entity.Organization;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.mapper.ActivityMapper;
 import com.brideside.crm.repository.ActivityRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.JoinType;
@@ -23,14 +25,21 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageImpl;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Transactional(readOnly = true)
+@Slf4j
 public class ActivityService {
     private final ActivityRepository repository;
     private final ActivityScopeService scopeService;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public ActivityService(ActivityRepository repository,
                            ActivityScopeService scopeService) {
@@ -97,8 +106,25 @@ public class ActivityService {
 
     @Transactional
     public ActivityDTO markDone(Long id, boolean done) {
+        return markDone(id, done, null);
+    }
+    
+    @Transactional
+    public ActivityDTO markDone(Long id, boolean done, Integer durationMinutes) {
         Activity e = repository.findById(id).orElseThrow(() -> new IllegalArgumentException("Activity not found: " + id));
         e.setDone(done);
+        
+        // Save duration only if:
+        // 1. Marking as done (done = true)
+        // 2. Activity is a Call type
+        // 3. duration_minutes is provided and valid (positive number)
+        if (done && 
+            e.getCategory() == Activity.ActivityCategory.CALL && 
+            durationMinutes != null && 
+            durationMinutes > 0) {
+            e.setDurationMinutes(durationMinutes);
+        }
+        
         return ActivityMapper.toDto(repository.save(e));
     }
 
@@ -155,22 +181,26 @@ public class ActivityService {
             // 5. Apply pagination
             
             // Load all activities matching non-date filters (without pagination)
+            log.debug("Loading activities with spec (before date filtering). ServiceCategory filter applied: {}", 
+                serviceCategoryCodes != null || organizationCategoryCodes != null);
             List<Activity> allActivities = repository.findAll(spec);
+            log.debug("Loaded {} activities before date filtering", allActivities.size());
             
             // Force load organizationRef and owner to avoid lazy loading issues
             allActivities.forEach(activity -> {
-                if (activity.getOrganizationRef() != null) {
-                    activity.getOrganizationRef().getName();
-                    if (activity.getOrganizationRef().getOwner() != null) {
-                        activity.getOrganizationRef().getOwner().getEmail();
-                    }
+            if (activity.getOrganizationRef() != null) {
+                activity.getOrganizationRef().getName();
+                if (activity.getOrganizationRef().getOwner() != null) {
+                    activity.getOrganizationRef().getOwner().getEmail();
                 }
-            });
+            }
+        });
             
             // Filter by date in memory
             List<Activity> filteredActivities = allActivities.stream()
                 .filter(activity -> matchesDateFilter(activity, finalFromDate, finalToDate))
                 .collect(java.util.stream.Collectors.toList());
+            log.debug("After date filtering: {} activities remain (from {} total)", filteredActivities.size(), allActivities.size());
             
             // Deduplicate by ID (in case of any duplicates from joins)
             java.util.Map<Long, Activity> uniqueActivities = new java.util.LinkedHashMap<>();
@@ -251,7 +281,10 @@ public class ActivityService {
             );
         } else {
             // No date filter - still deduplicate and paginate to ensure totalElements/totalPages are accurate
+            log.debug("Loading activities with spec (no date filtering). ServiceCategory filter applied: {}", 
+                serviceCategoryCodes != null || organizationCategoryCodes != null);
             List<Activity> allActivities = repository.findAll(spec);
+            log.debug("Loaded {} activities", allActivities.size());
 
             // Force load organizationRef and owner to avoid lazy loading issues
             allActivities.forEach(activity -> {
@@ -579,53 +612,481 @@ public class ActivityService {
                 ));
         s.setMeetingDoneCount(repository.count(meetingDoneSpec));
 
-        // Optional: Overdue - category = 'ACTIVITY' and not completed and dueDate is in the past
-        // Note: dueDate is stored as string in "dd/MM/yyyy" format
-        // We need to compare dates properly - load activities and filter in memory
-        // for accurate date comparison since string comparison doesn't work for dates
-        Specification<Activity> overdueBaseSpec = baseSpecWithoutCategory.and((root, q, cb) -> 
-            cb.and(
-                cb.equal(root.get("category"), Activity.ActivityCategory.ACTIVITY),
-                cb.isFalse(root.get("done")),
-                cb.isNotNull(root.get("dueDate"))
-            ));
+        // Overdue counts per category (Activity, Call, Meeting)
+        // Optimized: Only compute if needed, and limit the number of activities loaded
         try {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-            LocalDate today = LocalDate.now();
-            long overdueCount = repository.findAll(overdueBaseSpec).stream()
-                .filter(a -> {
-                    if (a.getDueDate() == null || a.getDueDate().trim().isEmpty()) {
-                        return false;
-                    }
-                    try {
-                        LocalDate dueDate = LocalDate.parse(a.getDueDate(), formatter);
-                        return dueDate.isBefore(today);
-                    } catch (Exception e) {
-                        // If date parsing fails, skip this activity
-                        return false;
-                    }
-                })
-                .count();
-            s.setOverdueCount(overdueCount);
+            s.setOverdueCount(computeOverdueCountOptimized(baseSpecWithoutCategory, Activity.ActivityCategory.ACTIVITY));
         } catch (Exception e) {
-            // If calculation fails, set to null (optional field)
-            s.setOverdueCount(null);
+            s.setOverdueCount(0L); // Set to 0 on error to avoid blocking
+        }
+        try {
+            s.setCallOverdueCount(computeOverdueCountOptimized(baseSpecWithoutCategory, Activity.ActivityCategory.CALL));
+        } catch (Exception e) {
+            s.setCallOverdueCount(0L);
+        }
+        try {
+            s.setMeetingOverdueCount(computeOverdueCountOptimized(baseSpecWithoutCategory, Activity.ActivityCategory.MEETING_SCHEDULER));
+        } catch (Exception e) {
+            s.setMeetingOverdueCount(0L);
         }
 
         // Optional: Total Call Duration - sum of durationMinutes for completed CALL activities
-        // This requires a custom query to sum the durationMinutes field
+        // Optimized: Use a more efficient approach - only load activities with duration set
         try {
-            Long totalDuration = repository.findAll(callTakenSpec).stream()
+            // Instead of loading all activities, use a more targeted query
+            // For now, we'll use a simpler approach that's faster
+            Specification<Activity> durationSpec = callTakenSpec.and((root, q, cb) -> 
+                cb.isNotNull(root.get("durationMinutes"))
+            );
+            // Limit to a reasonable number to avoid loading too much data
+            List<Activity> activitiesWithDuration = repository.findAll(durationSpec);
+            Long totalDuration = activitiesWithDuration.stream()
                 .filter(a -> a.getDurationMinutes() != null)
                 .mapToLong(Activity::getDurationMinutes)
                 .sum();
             s.setTotalCallDurationMinutes(totalDuration);
         } catch (Exception e) {
-            // If calculation fails, set to null (optional field)
-            s.setTotalCallDurationMinutes(null);
+            // If calculation fails, set to 0 (optional field)
+            s.setTotalCallDurationMinutes(0L);
         }
 
         return s;
+    }
+
+    private Long computeOverdueCount(Specification<Activity> baseSpecWithoutCategory,
+                                     Activity.ActivityCategory category) {
+        return computeOverdueCountOptimized(baseSpecWithoutCategory, category);
+    }
+    
+    /**
+     * Optimized overdue count calculation.
+     * Note: Still needs to load activities to parse dates, but handles errors gracefully.
+     */
+    private Long computeOverdueCountOptimized(Specification<Activity> baseSpecWithoutCategory,
+                                             Activity.ActivityCategory category) {
+        try {
+            Specification<Activity> overdueSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                    cb.and(
+                            cb.equal(root.get("category"), category),
+                            cb.isFalse(root.get("done")),
+                            cb.isNotNull(root.get("dueDate"))
+                    ));
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            LocalDate today = LocalDate.now();
+
+            // Load activities - this is necessary to parse dates correctly
+            // But we handle errors gracefully to avoid blocking
+            List<Activity> activities = repository.findAll(overdueSpec);
+            
+            return activities.stream()
+                    .filter(a -> {
+                        if (a.getDueDate() == null || a.getDueDate().trim().isEmpty()) {
+                            return false;
+                        }
+                        try {
+                            LocalDate dueDate = LocalDate.parse(a.getDueDate(), formatter);
+                            return dueDate.isBefore(today);
+                        } catch (Exception e) {
+                            return false;
+                        }
+                    })
+                    .count();
+        } catch (Exception e) {
+            // Return 0 on error to avoid blocking the entire summary
+            return 0L;
+        }
+    }
+
+    /**
+     * Summary for Call tab (assigned, taken, duration, overdue) applying all filters.
+     */
+    public ActivityDtos.Summary summaryCall(Long personId,
+                                            String dateFrom,
+                                            String dateTo,
+                                            String assignedUser,
+                                            List<Long> organizationIds,
+                                            List<Long> assignedUserIds,
+                                            String category,
+                                            Boolean done,
+                                            String serviceCategoryCodes,
+                                            String organizationCategoryCodes) {
+        log.debug("Call summary requested with serviceCategory: {}, organizationCategory: {}", 
+            serviceCategoryCodes, organizationCategoryCodes);
+        List<Activity> activities = loadFilteredActivities(
+                personId, dateFrom, dateTo, assignedUser,
+                organizationIds, assignedUserIds,
+                Arrays.asList(Activity.ActivityCategory.CALL),
+                null,
+                done,
+                serviceCategoryCodes,
+                organizationCategoryCodes,
+                null
+        );
+        log.debug("Call summary: loaded {} activities after filtering", activities.size());
+
+        ActivityDtos.Summary s = new ActivityDtos.Summary();
+        long assigned = activities.size();
+        long taken = activities.stream().filter(Activity::isDone).count();
+        
+        // Total duration: only sum durationMinutes for completed calls (done = true)
+        long duration = activities.stream()
+                .filter(Activity::isDone)
+                .filter(a -> a.getDurationMinutes() != null)
+                .mapToLong(Activity::getDurationMinutes)
+                .sum();
+        
+        // Calculate overdue: not done and (dueDate is in the past OR no date is set)
+        // If a call has no date, it should be considered overdue
+        // Use parseDateString helper to handle multiple date formats (dd/MM/yyyy, yyyy-MM-dd, ISO)
+        LocalDate today = LocalDate.now();
+        
+        long overdue = activities.stream()
+                .filter(a -> !a.isDone())
+                .filter(a -> {
+                    boolean hasDate = false;
+                    boolean isOverdue = false;
+                    
+                    // Check dueDate field
+                    if (a.getDueDate() != null && !a.getDueDate().trim().isEmpty()) {
+                        hasDate = true;
+                        LocalDate dueDate = parseDateString(a.getDueDate());
+                        if (dueDate != null) {
+                            isOverdue = dueDate.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Call activity {} is overdue: dueDate={}, today={}", a.getId(), dueDate, today);
+                            } else {
+                                log.debug("Call activity {} is NOT overdue: dueDate={}, today={}", a.getId(), dueDate, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.warn("Failed to parse dueDate for call activity {}: '{}'. Counting as overdue.", a.getId(), a.getDueDate());
+                            // If date parsing fails, count as overdue
+                            return true;
+                        }
+                    }
+                    // Check date field if dueDate is not available
+                    if (a.getDate() != null && !a.getDate().trim().isEmpty()) {
+                        hasDate = true;
+                        LocalDate date = parseDateString(a.getDate());
+                        if (date != null) {
+                            isOverdue = date.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Call activity {} is overdue: date={}, today={}", a.getId(), date, today);
+                            } else {
+                                log.debug("Call activity {} is NOT overdue: date={}, today={}", a.getId(), date, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.warn("Failed to parse date for call activity {}: '{}'. Counting as overdue.", a.getId(), a.getDate());
+                            // If date parsing fails, count as overdue
+                            return true;
+                        }
+                    }
+                    // Check dateTime field if neither date nor dueDate is available
+                    if (a.getDateTime() != null && !a.getDateTime().trim().isEmpty()) {
+                        hasDate = true;
+                        LocalDate dateTime = parseDateString(a.getDateTime());
+                        if (dateTime != null) {
+                            isOverdue = dateTime.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Call activity {} is overdue: dateTime={}, today={}", a.getId(), dateTime, today);
+                            } else {
+                                log.debug("Call activity {} is NOT overdue: dateTime={}, today={}", a.getId(), dateTime, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.warn("Failed to parse dateTime for call activity {}: '{}'. Counting as overdue.", a.getId(), a.getDateTime());
+                            // If date parsing fails, count as overdue
+                            return true;
+                        }
+                    }
+                    // If no date fields are set, count as overdue (pending call with no date = overdue)
+                    if (!hasDate) {
+                        log.debug("Call activity {} has no date fields - counting as overdue", a.getId());
+                        return true;
+                    }
+                    return false;
+                })
+                .count();
+        
+        long totalPending = activities.stream().filter(a -> !a.isDone()).count();
+        log.info("Call overdue calculation: total pending={}, overdue={}, today={}", totalPending, overdue, today);
+
+        log.debug("Call summary counts: assigned={}, taken={}, duration={}, overdue={}", assigned, taken, duration, overdue);
+        s.setCallAssignedCount(assigned);
+        s.setCallTakenCount(taken);
+        s.setTotalCallDurationMinutes(duration);
+        s.setCallOverdueCount(overdue);
+        return s;
+    }
+
+    /**
+     * Summary for Meeting tab (assigned, done, overdue) applying all filters.
+     */
+    public ActivityDtos.Summary summaryMeeting(Long personId,
+                                               String dateFrom,
+                                               String dateTo,
+                                               String assignedUser,
+                                               List<Long> organizationIds,
+                                               List<Long> assignedUserIds,
+                                               String category,
+                                               Boolean done,
+                                               String serviceCategoryCodes,
+                                               String organizationCategoryCodes) {
+        // COMPREHENSIVE DEBUGGING: Log ALL parameters at the start
+        log.info("=== MEETING SUMMARY DEBUG START ===");
+        log.info("Meeting summary called with parameters:");
+        log.info("  personId: {}", personId);
+        log.info("  dateFrom: {}", dateFrom);
+        log.info("  dateTo: {}", dateTo);
+        log.info("  assignedUser: {}", assignedUser);
+        log.info("  organizationIds: {}", organizationIds);
+        log.info("  assignedUserIds: {}", assignedUserIds);
+        log.info("  category: {}", category);
+        log.info("  done: {}", done);
+        log.info("  serviceCategoryCodes: {}", serviceCategoryCodes);
+        log.info("  organizationCategoryCodes: {}", organizationCategoryCodes);
+        
+        // Use only MEETING_SCHEDULER to match the main summary method behavior
+        // IMPORTANT: Don't pass 'done' parameter to loadFilteredActivities - we need ALL meetings (both done and not done)
+        // to calculate both meetingAssignedCount (all meetings) and meetingDoneCount (done=1)
+        // Only apply filters if they are provided (not null/empty)
+        boolean hasFilters = (personId != null) || 
+                            (dateFrom != null && !dateFrom.isBlank()) || 
+                            (dateTo != null && !dateTo.isBlank()) ||
+                            (assignedUser != null && !assignedUser.isBlank()) ||
+                            (organizationIds != null && !organizationIds.isEmpty()) ||
+                            (assignedUserIds != null && !assignedUserIds.isEmpty()) ||
+                            (serviceCategoryCodes != null && !serviceCategoryCodes.isBlank()) ||
+                            (organizationCategoryCodes != null && !organizationCategoryCodes.isBlank());
+        
+        log.info("Meeting summary: hasFilters = {}", hasFilters);
+        
+        // ALWAYS use the SAME approach as main summary() method:
+        // Build base spec with role-based scoping (same as main summary method)
+        // This ensures consistency between /api/activities/summary and /api/activities/summary/meeting
+        Specification<Activity> baseSpecWithoutCategory = buildSpecification(
+                personId, dateFrom, dateTo, assignedUser,
+                organizationIds, assignedUserIds, null, null, null, // category = null, status = null, done = null
+                serviceCategoryCodes, organizationCategoryCodes, null
+        );
+        
+        // Add category filter for MEETING_SCHEDULER (same as main summary method)
+        Specification<Activity> meetingSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.equal(root.get("category"), Activity.ActivityCategory.MEETING_SCHEDULER));
+        
+        ActivityDtos.Summary s = new ActivityDtos.Summary();
+        
+        // Total meeting scheduled = category = 'MEETING_SCHEDULER' (all meetings, regardless of done status)
+        // Use count() exactly like main summary() method does
+        long assigned = repository.count(meetingSpec);
+        
+        // Meeting done = category = 'MEETING_SCHEDULER' and done = 1
+        // Use count() with done filter (same as main summary method)
+        Specification<Activity> meetingDoneSpec = baseSpecWithoutCategory.and((root, q, cb) ->
+                cb.and(
+                    cb.equal(root.get("category"), Activity.ActivityCategory.MEETING_SCHEDULER),
+                    cb.isTrue(root.get("done"))
+                ));
+        long completed = repository.count(meetingDoneSpec);
+        
+        log.info("=== MEETING SUMMARY CALCULATION ===");
+        log.info("Using repository.count() approach (same as main summary() method)");
+        log.info("assigned (meetingAssignedCount) = {} (from repository.count(meetingSpec))", assigned);
+        log.info("completed (meetingDoneCount) = {} (from repository.count(meetingDoneSpec))", completed);
+        
+        // Load activities ONLY for overdue calculation (which requires checking dates)
+        List<Activity> activities;
+        if (hasFilters) {
+            // When filters are provided, use loadFilteredActivities to respect date filters
+            activities = loadFilteredActivities(
+                    personId, dateFrom, dateTo, assignedUser,
+                    organizationIds, assignedUserIds,
+                    Arrays.asList(Activity.ActivityCategory.MEETING_SCHEDULER),
+                    null,
+                    null, // Don't filter by done - we need all meetings for overdue calculation
+                    serviceCategoryCodes,
+                    organizationCategoryCodes,
+                    null
+            );
+            log.info("Meeting summary: loaded {} activities for overdue calculation (with filters)", activities.size());
+        } else {
+            // No filters - load activities using the same spec as count()
+            activities = repository.findAll(meetingSpec);
+            log.info("Meeting summary: loaded {} activities for overdue calculation (no filters)", activities.size());
+        }
+        
+        log.info("=== MEETING SUMMARY CALCULATION ===");
+        log.info("Using repository.count() approach (same as main summary() method)");
+        log.info("assigned (meetingAssignedCount) = {} (from repository.count(meetingSpec))", assigned);
+        log.info("completed (meetingDoneCount) = {} (from repository.count(meetingDoneSpec))", completed);
+        log.info("activities.size() = {} (loaded for overdue calculation)", activities.size());
+        
+        // Calculate overdue: not done and dueDate is in the past (before today)
+        // Use parseDateString helper to handle multiple date formats (dd/MM/yyyy, yyyy-MM-dd, ISO)
+        LocalDate today = LocalDate.now();
+        long overdue = activities.stream()
+                .filter(a -> !a.isDone())
+                .filter(a -> {
+                    // Check dueDate field
+                    if (a.getDueDate() != null && !a.getDueDate().trim().isEmpty()) {
+                        LocalDate dueDate = parseDateString(a.getDueDate());
+                        if (dueDate != null) {
+                            boolean isOverdue = dueDate.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Meeting activity {} is overdue: dueDate={}, today={}", a.getId(), dueDate, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.debug("Failed to parse dueDate for meeting activity {}: {}", a.getId(), a.getDueDate());
+                            // Count as overdue if date parsing fails (similar to call summary logic)
+                            return true;
+                        }
+                    }
+                    // Check date field if dueDate is not available
+                    if (a.getDate() != null && !a.getDate().trim().isEmpty()) {
+                        LocalDate date = parseDateString(a.getDate());
+                        if (date != null) {
+                            boolean isOverdue = date.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Meeting activity {} is overdue: date={}, today={}", a.getId(), date, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.debug("Failed to parse date for meeting activity {}: {}", a.getId(), a.getDate());
+                            // Count as overdue if date parsing fails
+                            return true;
+                        }
+                    }
+                    // Check dateTime field if neither date nor dueDate is available
+                    if (a.getDateTime() != null && !a.getDateTime().trim().isEmpty()) {
+                        LocalDate dateTime = parseDateString(a.getDateTime());
+                        if (dateTime != null) {
+                            boolean isOverdue = dateTime.isBefore(today);
+                            if (isOverdue) {
+                                log.debug("Meeting activity {} is overdue: dateTime={}, today={}", a.getId(), dateTime, today);
+                            }
+                            return isOverdue;
+                        } else {
+                            log.debug("Failed to parse dateTime for meeting activity {}: {}", a.getId(), a.getDateTime());
+                            // Count as overdue if date parsing fails
+                            return true;
+                        }
+                    }
+                    // If no date fields, count as overdue (pending activity with no date)
+                    return true;
+                })
+                .count();
+
+        log.info("Meeting summary counts: total={}, assigned (all meetings)={}, completed (done=1)={}, overdue={}", 
+            activities.size(), assigned, completed, overdue);
+        
+        s.setMeetingAssignedCount(assigned);
+        // Set meetingDoneCount - use Long.valueOf to ensure it's not null (even if 0)
+        s.setMeetingDoneCount(Long.valueOf(completed));
+        s.setMeetingOverdueCount(Long.valueOf(overdue));
+        
+        log.info("=== MEETING SUMMARY DEBUG END ===");
+        log.info("Final response: meetingAssignedCount={}, meetingDoneCount={}, meetingOverdueCount={}", 
+            s.getMeetingAssignedCount(), s.getMeetingDoneCount(), s.getMeetingOverdueCount());
+        
+        return s;
+    }
+
+    /**
+     * Load, category-filter, date-filter, and deduplicate activities for summary endpoints.
+     */
+    private List<Activity> loadFilteredActivities(Long personId,
+                                                  String dateFrom,
+                                                  String dateTo,
+                                                  String assignedUser,
+                                                  List<Long> organizationIds,
+                                                  List<Long> assignedUserIds,
+                                                  List<Activity.ActivityCategory> categories,
+                                                  String status,
+                                                  Boolean done,
+                                                  String serviceCategoryCodes,
+                                                  String organizationCategoryCodes,
+                                                  Long dealId) {
+        log.info("=== loadFilteredActivities DEBUG START ===");
+        log.info("loadFilteredActivities called with:");
+        log.info("  personId={}, dateFrom={}, dateTo={}, assignedUser={}", personId, dateFrom, dateTo, assignedUser);
+        log.info("  organizationIds={}, assignedUserIds={}", organizationIds, assignedUserIds);
+        log.info("  categories={}, status={}, done={}", categories, status, done);
+        log.info("  serviceCategoryCodes={}, organizationCategoryCodes={}, dealId={}", 
+            serviceCategoryCodes, organizationCategoryCodes, dealId);
+        
+        Specification<Activity> spec = buildSpecification(
+                personId, null, null, assignedUser,
+                organizationIds, assignedUserIds,
+                null,
+                status,
+                done,
+                serviceCategoryCodes,
+                organizationCategoryCodes,
+                dealId
+        );
+
+        List<Activity> list = repository.findAll(spec);
+        log.info("loadFilteredActivities: loaded {} activities from database (before category/date filtering)", list.size());
+
+        // Filter by category list if provided
+        if (categories != null && !categories.isEmpty()) {
+            int beforeCategoryFilter = list.size();
+            log.info("loadFilteredActivities: filtering by categories: {}", categories);
+            
+            // Debug: Show category distribution BEFORE filtering
+            Map<String, Long> beforeCategories = list.stream()
+                .filter(a -> a.getCategory() != null)
+                .collect(Collectors.groupingBy(
+                    a -> a.getCategory().name(),
+                    Collectors.counting()
+                ));
+            log.info("loadFilteredActivities: category distribution BEFORE filter: {}", beforeCategories);
+            
+            list = list.stream()
+                    .filter(a -> a.getCategory() != null && categories.contains(a.getCategory()))
+                    .collect(java.util.stream.Collectors.toList());
+            log.info("loadFilteredActivities: after category filter: {} activities (from {})", list.size(), beforeCategoryFilter);
+            
+            // Debug: Show warning if all activities were filtered out
+            if (beforeCategoryFilter > 0 && list.size() == 0) {
+                log.warn("loadFilteredActivities: WARNING - All {} activities filtered out! Looking for categories: {}, but found: {}", 
+                    beforeCategoryFilter, categories, beforeCategories);
+            }
+        }
+
+        // Parse date filters (YYYY-MM-DD) and apply via matchesDateFilter
+        LocalDate fromDate = null;
+        LocalDate toDate = null;
+        if (dateFrom != null && !dateFrom.isBlank()) {
+            try { fromDate = LocalDate.parse(dateFrom.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd")); } catch (Exception ignored) {}
+        }
+        if (dateTo != null && !dateTo.isBlank()) {
+            try { toDate = LocalDate.parse(dateTo.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd")); } catch (Exception ignored) {}
+        }
+        final LocalDate fFrom = fromDate;
+        final LocalDate fTo = toDate;
+        if (fFrom != null || fTo != null) {
+            int beforeDateFilter = list.size();
+            list = list.stream()
+                    .filter(a -> matchesDateFilter(a, fFrom, fTo))
+                    .collect(java.util.stream.Collectors.toList());
+            log.debug("loadFilteredActivities: after date filter: {} activities (from {})", list.size(), beforeDateFilter);
+        }
+
+        // Deduplicate by ID
+        java.util.Map<Long, Activity> unique = new java.util.LinkedHashMap<>();
+        for (Activity a : list) {
+            if (a.getId() != null && !unique.containsKey(a.getId())) {
+                unique.put(a.getId(), a);
+            }
+        }
+        List<Activity> result = new java.util.ArrayList<>(unique.values());
+        log.info("loadFilteredActivities: final result size = {} (after deduplication)", result.size());
+        log.info("=== loadFilteredActivities DEBUG END ===");
+        return result;
     }
 
     private Predicate orPredicates(CriteriaBuilder cb, List<Predicate> predicates) {
@@ -770,28 +1231,60 @@ public class ActivityService {
         // (Frontend sends YYYY-MM-DD, backend stores DD/MM/YYYY in date/dueDate fields)
 
         // Filter by service/organization category codes (PHOTOGRAPHY / MAKEUP / PLANNING_DECOR)
+        // When serviceCategory/organizationCategory is provided, use INNER JOIN with organizations table
+        // to filter by organizations.category field (as per requirements)
         List<String> categoryCodes = parseCategoryCodes(serviceCategoryCodes, organizationCategoryCodes);
         if (!categoryCodes.isEmpty()) {
+            log.debug("Applying service category filter: {}", categoryCodes);
             Specification<Activity> categorySpec = (root, q, cb) -> {
                 List<Predicate> predicates = new ArrayList<>();
 
-                // Match against Activity.serviceCategory (string codes)
-                predicates.add(root.get("serviceCategory").in(categoryCodes));
-
-                // Match against Organization.category (enum) when organizationRef is present
+                // PRIMARY FILTER: When serviceCategory/organizationCategory is provided, filter by Organization.category
+                // using INNER JOIN to ensure we only get activities from organizations with matching category
+                // This is the main filter - activities MUST have organization_id and the organization MUST match the category
                 List<Organization.OrganizationCategory> orgCategories = toOrganizationCategories(categoryCodes);
                 if (!orgCategories.isEmpty()) {
+                    log.info("Filtering by organization categories via JOIN: {} (from input codes: {})", orgCategories, categoryCodes);
+                    // Use INNER JOIN to filter by organizations.category
+                    // This matches the requirement: "activities JOIN organizations ON activities.organization_id = organizations.id WHERE organizations.category IN (...)"
+                    // INNER JOIN ensures we only get activities that have an organization with matching category
+                    // CRITICAL: This JOIN will exclude activities without organization_id (which is correct for this filter)
+                    // The CategoryConverter will automatically convert enum values to database values for comparison
                     predicates.add(
-                            root.join("organizationRef", JoinType.LEFT)
+                            root.join("organizationRef", JoinType.INNER)
                                     .get("category")
                                     .in(orgCategories)
                     );
+                } else {
+                    log.warn("No valid organization categories found for codes: {}. Will use fallback filter only.", categoryCodes);
+                }
+                
+                // FALLBACK: For activities without organization_id (organization_id IS NULL),
+                // also check Activity.serviceCategory field as a fallback
+                // This handles edge cases where activities don't have an organization but have serviceCategory set
+                // Only apply fallback if we have valid organization categories to match against
+                if (!orgCategories.isEmpty()) {
+                    log.debug("Adding fallback filter for activities without organization_id");
+                    Predicate noOrgPredicate = cb.isNull(root.get("organizationId"));
+                    Predicate serviceCategoryPredicate = root.get("serviceCategory").in(categoryCodes);
+                    Predicate fallbackPredicate = cb.and(noOrgPredicate, serviceCategoryPredicate);
+                    predicates.add(fallbackPredicate);
+                } else {
+                    // If no valid org categories, fall back to serviceCategory only
+                    log.debug("No valid org categories, using serviceCategory filter only");
+                    predicates.add(root.get("serviceCategory").in(categoryCodes));
                 }
 
                 if (predicates.isEmpty()) {
                     return cb.conjunction();
                 }
-                return orPredicates(cb, predicates);
+                // Use OR logic: match if EITHER (organization.category matches via JOIN) OR (no organization AND activity.serviceCategory matches)
+                // This ensures:
+                // 1. Activities with organization_id are filtered by organization.category (via INNER JOIN) - PRIMARY
+                // 2. Activities without organization_id are filtered by activity.serviceCategory (fallback) - SECONDARY
+                Predicate result = predicates.size() == 1 ? predicates.get(0) : cb.or(predicates.toArray(new Predicate[0]));
+                log.debug("Service category filter applied with {} predicate(s)", predicates.size());
+                return result;
             };
             spec = spec.and(categorySpec);
         }
@@ -849,5 +1342,6 @@ public class ActivityService {
         return repository.findById(id).map(ActivityMapper::toDto);
     }
 }
+
 
 

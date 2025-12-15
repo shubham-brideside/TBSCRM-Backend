@@ -163,6 +163,8 @@ public class ActivityDtos {
         private Long callTakenCount;
         private Long meetingDoneCount;
         private Long overdueCount;
+        private Long callOverdueCount;
+        private Long meetingOverdueCount;
         private Long totalCallDurationMinutes;
 
         // Required fields - Getters and Setters
@@ -233,6 +235,22 @@ public class ActivityDtos {
 
         public Long getTotalCallDurationMinutes() {
             return totalCallDurationMinutes;
+        }
+
+        public Long getCallOverdueCount() {
+            return callOverdueCount;
+        }
+
+        public void setCallOverdueCount(Long callOverdueCount) {
+            this.callOverdueCount = callOverdueCount;
+        }
+
+        public Long getMeetingOverdueCount() {
+            return meetingOverdueCount;
+        }
+
+        public void setMeetingOverdueCount(Long meetingOverdueCount) {
+            this.meetingOverdueCount = meetingOverdueCount;
         }
 
         public void setTotalCallDurationMinutes(Long totalCallDurationMinutes) {

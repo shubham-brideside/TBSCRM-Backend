@@ -44,6 +44,40 @@ public class ActivityController {
         this.scopeService = scopeService;
     }
 
+    @Operation(summary = "Call summary", description = "Get call counts respecting all filters.")
+    @GetMapping("/summary/call")
+    public ActivityDtos.Summary callSummary(
+            @RequestParam(name = "personId", required = false) Long personId,
+            @RequestParam(name = "dateFrom", required = false) String dateFrom,
+            @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "assignedUser", required = false) String assignedUser,
+            @RequestParam(name = "organizationId", required = false) List<Long> organizationIds,
+            @RequestParam(name = "assignedUserId", required = false) List<Long> assignedUserIds,
+            @RequestParam(name = "category", required = false) String category,
+            @RequestParam(name = "done", required = false) Boolean done,
+            @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
+            @RequestParam(name = "organizationCategory", required = false) String organizationCategory) {
+        return service.summaryCall(personId, dateFrom, dateTo, assignedUser,
+                organizationIds, assignedUserIds, category, done, serviceCategory, organizationCategory);
+    }
+
+    @Operation(summary = "Meeting summary", description = "Get meeting counts respecting all filters.")
+    @GetMapping("/summary/meeting")
+    public ActivityDtos.Summary meetingSummary(
+            @RequestParam(name = "personId", required = false) Long personId,
+            @RequestParam(name = "dateFrom", required = false) String dateFrom,
+            @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "assignedUser", required = false) String assignedUser,
+            @RequestParam(name = "organizationId", required = false) List<Long> organizationIds,
+            @RequestParam(name = "assignedUserId", required = false) List<Long> assignedUserIds,
+            @RequestParam(name = "category", required = false) String category,
+            @RequestParam(name = "done", required = false) Boolean done,
+            @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
+            @RequestParam(name = "organizationCategory", required = false) String organizationCategory) {
+        return service.summaryMeeting(personId, dateFrom, dateTo, assignedUser,
+                organizationIds, assignedUserIds, category, done, serviceCategory, organizationCategory);
+    }
+
     @Operation(summary = "List activities", description = "Get paginated list of activities with optional filters: personId, date range, assignedUser, category (Activity/Call/Meeting scheduler), status, done. " +
             "Also supports role-based scoping using organizationId and assignedUserId for SALES, PRESALES and CATEGORY_MANAGER users. " +
             "Supports infinite scroll with default size=20 and sort=dueDate,desc. Multiple organizationId and assignedUserId values can be provided as arrays.")
@@ -117,13 +151,15 @@ public class ActivityController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Toggle done state", description = "Toggle the done flag of an activity. Used by checkbox/toggle that marks an activity as completed or re-opens it.")
+    @Operation(summary = "Toggle done state", description = "Toggle the done flag of an activity. Used by checkbox/toggle that marks an activity as completed or re-opens it. " +
+            "For Call activities, optionally accepts duration_minutes parameter to save call duration when marking as done.")
     @PostMapping("/{id}/done")
     public ResponseEntity<ActivityDTO> markDone(
             @PathVariable("id") Long id,
-            @RequestParam("value") boolean value
+            @RequestParam("value") boolean value,
+            @RequestParam(name = "duration_minutes", required = false) Integer durationMinutes
     ) {
-        return ResponseEntity.ok(service.markDone(id, value));
+        return ResponseEntity.ok(service.markDone(id, value, durationMinutes));
     }
 
     @Operation(summary = "List activity categories", description = "Returns activity category options for filter dropdowns and Activity modal's 'Activity type' select. Each item includes only 'code' and 'label'.")
