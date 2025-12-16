@@ -180,6 +180,7 @@ public class DealController {
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();
+        r.eventDateDetails = buildEventDateDetails(d);
         return r;
     }
 
@@ -227,6 +228,44 @@ public class DealController {
             }
             return null;
         }
+    }
+
+    /**
+     * Builds a list of per-date event details (date + eventType) for the response.
+     * This uses the new eventDateTypes JSON mapping when available and falls back to
+     * the deal-level eventType for dates without a specific type.
+     */
+    private List<DealResponse.EventDateDetail> buildEventDateDetails(Deal deal) {
+        List<String> dates = parseEventDates(deal);
+        if (dates == null || dates.isEmpty()) {
+            return null;
+        }
+
+        Map<String, String> dateTypeMap = null;
+        if (deal.getEventDateTypes() != null && !deal.getEventDateTypes().isEmpty()) {
+            try {
+                dateTypeMap = objectMapper.readValue(
+                    deal.getEventDateTypes(),
+                    new TypeReference<Map<String, String>>() {}
+                );
+            } catch (Exception e) {
+                // Ignore parse errors and fall back to deal-level eventType
+            }
+        }
+
+        final Map<String, String> finalDateTypeMap = dateTypeMap;
+        final String fallbackType = deal.getEventType();
+
+        return dates.stream().map(dateStr -> {
+            DealResponse.EventDateDetail detail = new DealResponse.EventDateDetail();
+            detail.date = dateStr;
+            if (finalDateTypeMap != null && finalDateTypeMap.containsKey(dateStr)) {
+                detail.eventType = finalDateTypeMap.get(dateStr);
+            } else {
+                detail.eventType = fallbackType;
+            }
+            return detail;
+        }).collect(Collectors.toList());
     }
 
     @GetMapping("/sources")

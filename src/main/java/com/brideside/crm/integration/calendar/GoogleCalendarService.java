@@ -463,7 +463,7 @@ public class GoogleCalendarService {
         }
         ObjectNode root = objectMapper.createObjectNode();
         root.put("summary", buildSummary(deal, eventDate));
-        root.put("description", buildDescription(deal));
+        root.put("description", buildDescription(deal, eventDate));
         if (StringUtils.hasText(deal.getVenue())) {
             root.put("location", deal.getVenue());
         }
@@ -488,10 +488,11 @@ public class GoogleCalendarService {
     }
 
 
-    private String buildDescription(Deal deal) {
+    private String buildDescription(Deal deal, LocalDate eventDate) {
         StringBuilder description = new StringBuilder();
-        if (StringUtils.hasText(deal.getEventType())) {
-            description.append("Event Type: ").append(deal.getEventType()).append("\n");
+        String eventTypeForDate = getEventTypeForDate(deal, eventDate);
+        if (StringUtils.hasText(eventTypeForDate)) {
+            description.append("Event Type: ").append(eventTypeForDate).append("\n");
         }
         if (deal.getValue() != null) {
             description.append("Deal Value: ").append(deal.getValue()).append("\n");
@@ -507,6 +508,35 @@ public class GoogleCalendarService {
         }
         description.append("Deal ID: ").append(deal.getId());
         return description.toString();
+    }
+
+    /**
+     * Resolves the event type for a specific date.
+     * Prefers the per-date mapping from eventDateTypes JSON and falls back to deal-level eventType.
+     */
+    private String getEventTypeForDate(Deal deal, LocalDate eventDate) {
+        if (deal == null || eventDate == null) {
+            return null;
+        }
+
+        // Try per-date mapping first
+        if (deal.getEventDateTypes() != null && !deal.getEventDateTypes().isEmpty()) {
+            try {
+                Map<String, String> map = objectMapper.readValue(
+                    deal.getEventDateTypes(),
+                    new TypeReference<Map<String, String>>() {}
+                );
+                String byDate = map.get(eventDate.toString());
+                if (StringUtils.hasText(byDate)) {
+                    return byDate;
+                }
+            } catch (Exception e) {
+                // Ignore parse errors and fall back to deal-level eventType
+            }
+        }
+
+        // Fallback: deal-level eventType
+        return deal.getEventType();
     }
 
     private String encode(String value) {

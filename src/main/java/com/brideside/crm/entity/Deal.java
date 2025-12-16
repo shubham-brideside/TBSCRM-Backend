@@ -100,6 +100,9 @@ public class Deal {
     @Column(name = "event_dates", columnDefinition = "JSON")
     private String eventDates; // JSON array of dates: ["2024-01-01", "2024-01-02"]
 
+    @Column(name = "event_date_types", columnDefinition = "JSON")
+    private String eventDateTypes; // JSON object mapping dates to event types: {"2024-01-01": "Mehendi", "2024-01-02": "Wedding"}
+
     @Column(name = "google_calendar_event_id", length = 255)
     private String googleCalendarEventId; // Legacy field - kept for backward compatibility
 
@@ -214,6 +217,9 @@ public class Deal {
     
     public String getEventDates() { return eventDates; }
     public void setEventDates(String eventDates) { this.eventDates = eventDates; }
+
+    public String getEventDateTypes() { return eventDateTypes; }
+    public void setEventDateTypes(String eventDateTypes) { this.eventDateTypes = eventDateTypes; }
     public DealLabel getLabel() { return label; }
     public void setLabel(DealLabel label) { this.label = label; }
     public DealSource getDealSource() { return dealSource; }

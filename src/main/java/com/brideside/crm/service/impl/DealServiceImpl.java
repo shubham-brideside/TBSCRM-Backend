@@ -163,17 +163,54 @@ public class DealServiceImpl implements DealService {
         deal.setEventDateAsked(request.eventDateAsked);
         deal.setContactNumberAsked(request.contactNumberAsked);
         deal.setVenueAsked(request.venueAsked);
-        
-        // Handle multiple event dates (preferred)
-        if (request.eventDates != null && !request.eventDates.isEmpty()) {
-            deal.setEventDates(eventDatesToJson(request.eventDates));
-            // Also set legacy eventDate to first date for backward compatibility
-            if (!request.eventDates.isEmpty()) {
+
+        // Handle multiple event dates with optional per-date event types (preferred)
+        if (request.eventDateDetails != null && !request.eventDateDetails.isEmpty()) {
+            // Extract dates and date->type mapping from the details list
+            List<String> dateStrings = new ArrayList<>();
+            Map<String, String> dateTypeMap = new HashMap<>();
+
+            for (DealDtos.EventDateDetail detail : request.eventDateDetails) {
+                if (detail == null || detail.date == null || detail.date.trim().isEmpty()) {
+                    continue;
+                }
+                String trimmedDate = detail.date.trim();
+                dateStrings.add(trimmedDate);
+                if (detail.eventType != null && !detail.eventType.trim().isEmpty()) {
+                    dateTypeMap.put(trimmedDate, detail.eventType.trim());
+                }
+            }
+
+            if (!dateStrings.isEmpty()) {
+                deal.setEventDates(eventDatesToJson(dateStrings));
+                deal.setEventDateTypes(eventDateTypesToJson(dateTypeMap));
+
+                // Also set legacy eventDate to first date for backward compatibility
                 try {
-                    deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
+                    deal.setEventDate(java.time.LocalDate.parse(dateStrings.get(0)));
                 } catch (Exception e) {
                     // Ignore parse errors
                 }
+
+                // If not explicitly provided, default deal-level eventType to the first non-empty per-date type
+                if (deal.getEventType() == null || deal.getEventType().trim().isEmpty()) {
+                    for (DealDtos.EventDateDetail detail : request.eventDateDetails) {
+                        if (detail != null && detail.eventType != null && !detail.eventType.trim().isEmpty()) {
+                            deal.setEventType(detail.eventType.trim());
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (request.eventDates != null && !request.eventDates.isEmpty()) {
+            // Handle multiple event dates without per-date types
+            deal.setEventDates(eventDatesToJson(request.eventDates));
+            deal.setEventDateTypes(null); // No per-date types in this mode
+            // Also set legacy eventDate to first date for backward compatibility
+            try {
+                deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
+            } catch (Exception e) {
+                // Ignore parse errors
             }
         } else if (request.eventDate != null && !request.eventDate.isEmpty()) {
             // Legacy support: single date
@@ -181,6 +218,7 @@ public class DealServiceImpl implements DealService {
             // Convert to eventDates format
             List<String> singleDateList = List.of(request.eventDate);
             deal.setEventDates(eventDatesToJson(singleDateList));
+            deal.setEventDateTypes(null); // No per-date types for legacy path
         }
         // Handle label field with validation
         if (request.label != null && !request.label.trim().isEmpty()) {
@@ -420,17 +458,61 @@ public class DealServiceImpl implements DealService {
         if (request.venueAsked != null) {
             deal.setVenueAsked(request.venueAsked);
         }
-        
-        // Handle multiple event dates (preferred)
-        if (request.eventDates != null && !request.eventDates.isEmpty()) {
-            deal.setEventDates(eventDatesToJson(request.eventDates));
-            // Also set legacy eventDate to first date for backward compatibility
-            if (!request.eventDates.isEmpty()) {
-                try {
-                    deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
-                } catch (Exception e) {
-                    // Ignore parse errors
+
+        // Handle multiple event dates with optional per-date event types (preferred)
+        if (request.eventDateDetails != null) {
+            // If the list is provided (even if empty), we treat it as the source of truth
+            if (!request.eventDateDetails.isEmpty()) {
+                List<String> dateStrings = new ArrayList<>();
+                Map<String, String> dateTypeMap = new HashMap<>();
+
+                for (DealDtos.EventDateDetail detail : request.eventDateDetails) {
+                    if (detail == null || detail.date == null || detail.date.trim().isEmpty()) {
+                        continue;
+                    }
+                    String trimmedDate = detail.date.trim();
+                    dateStrings.add(trimmedDate);
+                    if (detail.eventType != null && !detail.eventType.trim().isEmpty()) {
+                        dateTypeMap.put(trimmedDate, detail.eventType.trim());
+                    }
                 }
+
+                if (!dateStrings.isEmpty()) {
+                    deal.setEventDates(eventDatesToJson(dateStrings));
+                    deal.setEventDateTypes(eventDateTypesToJson(dateTypeMap));
+
+                    // Also set legacy eventDate to first date for backward compatibility
+                    try {
+                        deal.setEventDate(java.time.LocalDate.parse(dateStrings.get(0)));
+                    } catch (Exception e) {
+                        // Ignore parse errors
+                    }
+
+                    // If eventType wasn't explicitly updated in this request, default to first non-empty per-date type
+                    if (request.eventType == null) {
+                        for (DealDtos.EventDateDetail detail : request.eventDateDetails) {
+                            if (detail != null && detail.eventType != null && !detail.eventType.trim().isEmpty()) {
+                                deal.setEventType(detail.eventType.trim());
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Explicitly clear event dates when empty list provided
+                deal.setEventDates(null);
+                deal.setEventDateTypes(null);
+                deal.setEventDate(null);
+            }
+        } else if (request.eventDates != null && !request.eventDates.isEmpty()) {
+            // Handle multiple event dates without per-date types
+            deal.setEventDates(eventDatesToJson(request.eventDates));
+            deal.setEventDateTypes(null);
+            // Also set legacy eventDate to first date for backward compatibility
+            try {
+                deal.setEventDate(java.time.LocalDate.parse(request.eventDates.get(0)));
+            } catch (Exception e) {
+                // Ignore parse errors
             }
         } else if (request.eventDate != null && !request.eventDate.isEmpty()) {
             // Legacy support: single date
@@ -438,6 +520,7 @@ public class DealServiceImpl implements DealService {
             // Convert to eventDates format
             List<String> singleDateList = List.of(request.eventDate);
             deal.setEventDates(eventDatesToJson(singleDateList));
+            deal.setEventDateTypes(null);
         }
         
         // Handle label field with validation
@@ -901,6 +984,20 @@ public class DealServiceImpl implements DealService {
         }
         try {
             return objectMapper.writeValueAsString(dateStrings);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Converts a mapping of date -> eventType to JSON string.
+     */
+    private String eventDateTypesToJson(Map<String, String> dateTypeMap) {
+        if (dateTypeMap == null || dateTypeMap.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(dateTypeMap);
         } catch (Exception e) {
             return null;
         }

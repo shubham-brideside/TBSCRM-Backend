@@ -19,6 +19,7 @@ public class DealResponse {
     public String organizationName; // Organization name for display/tooltip
     public Long categoryId;
     public String eventType;
+    public List<EventDateDetail> eventDateDetails; // List of per-date event details (date + eventType). Optional, may be null for legacy deals.
     public DealStatus status;
     public BigDecimal commissionAmount;
     public LocalDateTime createdAt;
@@ -43,6 +44,14 @@ public class DealResponse {
     public CreatedByType createdBy; // USER or BOT - who created the deal
     public Long createdByUserId; // User ID if created by USER
     public String createdByName; // User name if created by USER
+
+    /**
+     * Single event occurrence with its own date and type in the response.
+     */
+    public static class EventDateDetail {
+        public String date;      // ISO-8601 date string (yyyy-MM-dd)
+        public String eventType; // Event type for this specific date
+    }
 }
 
 
