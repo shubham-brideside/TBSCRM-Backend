@@ -42,14 +42,27 @@ public class DealController {
     }
 
     @GetMapping
-    @Operation(summary = "List deals", description = "List all deals with optional sorting. Use 'sort' query parameter in format 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'")
+    @Operation(summary = "List deals", description = "List deals with optional filters and sorting. " +
+            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue). " +
+            "Sort: 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'")
     public ResponseEntity<List<DealResponse>> list(
+            @RequestParam(required = false) Long pipelineId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long managerId,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "nextActivity,asc") String sort) {
         String[] sortParts = sort.split(",");
         String sortField = sortParts.length > 0 ? sortParts[0].trim() : "nextActivity";
         String sortDirection = sortParts.length > 1 ? sortParts[1].trim() : "asc";
         
-        List<DealResponse> res = dealService.list(sortField, sortDirection).stream()
+        List<DealResponse> res = dealService.list(
+                pipelineId, status, organizationId, categoryId, managerId,
+                dateFrom, dateTo, search, sortField, sortDirection
+        ).stream()
             .map(this::toResponse)
             .collect(Collectors.toList());
         return ResponseEntity.ok(res);

@@ -8,13 +8,14 @@ import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-public interface DealRepository extends JpaRepository<Deal, Long> {
+public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificationExecutor<Deal> {
     List<Deal> findByPipeline(Pipeline pipeline);
     List<Deal> findByStage(Stage stage);
     List<Deal> findByStatus(DealStatus status);

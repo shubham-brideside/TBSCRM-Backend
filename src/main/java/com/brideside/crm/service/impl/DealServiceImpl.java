@@ -24,12 +24,14 @@ import com.brideside.crm.integration.calendar.GoogleCalendarService;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
+import com.brideside.crm.repository.DealSpecifications;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.repository.UserRepository;
+import org.springframework.data.jpa.domain.Specification;
 import com.brideside.crm.service.DealService;
 import com.brideside.crm.service.DealStageHistoryService;
 import org.slf4j.Logger;
@@ -533,8 +535,74 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public List<Deal> list(String sortField, String sortDirection) {
-        // Use JOIN FETCH to eagerly load Person and Organization for tooltip display
-        List<Deal> deals = dealRepository.findByIsDeletedFalseWithPersonAndOrganization();
+        // Call the new filtered list method with all filters as null
+        return list(null, null, null, null, null, null, null, null, sortField, sortDirection);
+    }
+
+    @Override
+    public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
+                           Long managerId, String dateFrom, String dateTo, String search,
+                           String sortField, String sortDirection) {
+        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, sort={},{}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, sortField, sortDirection);
+        
+        // Build specification with all filters
+        Specification<Deal> spec = Specification.where(DealSpecifications.notDeleted())
+                .and(DealSpecifications.hasPipeline(pipelineId))
+                .and(DealSpecifications.hasStatus(status))
+                .and(DealSpecifications.hasOrganization(organizationId))
+                .and(DealSpecifications.hasCategory(categoryId))
+                .and(DealSpecifications.hasManager(managerId))
+                .and(DealSpecifications.search(search));
+
+        // Parse date filters
+        LocalDate fromDate = null;
+        LocalDate toDate = null;
+        if (dateFrom != null && !dateFrom.trim().isEmpty()) {
+            try {
+                fromDate = LocalDate.parse(dateFrom.trim());
+            } catch (Exception e) {
+                log.warn("Invalid dateFrom format: {}. Expected YYYY-MM-DD", dateFrom);
+            }
+        }
+        if (dateTo != null && !dateTo.trim().isEmpty()) {
+            try {
+                toDate = LocalDate.parse(dateTo.trim());
+            } catch (Exception e) {
+                log.warn("Invalid dateTo format: {}. Expected YYYY-MM-DD", dateTo);
+            }
+        }
+        spec = spec.and(DealSpecifications.createdBetween(fromDate, toDate));
+        
+        log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}", 
+            pipelineId, status, organizationId, categoryId, managerId, fromDate, toDate, search);
+
+        // Load deals with specification
+        // Note: We can't use JOIN FETCH directly with Specifications in a simple way,
+        // so we'll load the deals and then eagerly access the relationships
+        List<Deal> deals = dealRepository.findAll(spec);
+        log.debug("Deal list: Found {} deals after applying filters", deals.size());
+        
+        // Eagerly load Person, Organization, Pipeline, and related entities to avoid lazy loading issues
+        // This ensures all data is loaded in a single transaction
+        deals.forEach(deal -> {
+            if (deal.getPerson() != null) {
+                deal.getPerson().getName();
+                if (deal.getPerson().getOwner() != null) {
+                    deal.getPerson().getOwner().getFirstName();
+                    deal.getPerson().getOwner().getLastName();
+                }
+            }
+            if (deal.getOrganization() != null) {
+                deal.getOrganization().getName();
+            }
+            if (deal.getPipeline() != null) {
+                deal.getPipeline().getName();
+            }
+            if (deal.getDealCategory() != null) {
+                deal.getDealCategory().getName();
+            }
+        });
         
         // Normalize sort field and direction
         String normalizedField = normalizeSortField(sortField);
@@ -558,6 +626,7 @@ public class DealServiceImpl implements DealService {
         Comparator<Deal> comparator = getComparator(normalizedField, ascending, activitiesByDealId);
         deals.sort(comparator);
         
+        log.debug("Deal list: Returning {} deals after sorting by {} {}", deals.size(), normalizedField, sortDirection);
         return deals;
     }
     

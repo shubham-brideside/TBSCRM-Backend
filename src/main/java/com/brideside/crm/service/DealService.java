@@ -12,6 +12,9 @@ public interface DealService {
     Deal get(Long id);
     List<Deal> list();
     List<Deal> list(String sortField, String sortDirection);
+    List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId, 
+                    Long managerId, String dateFrom, String dateTo, String search,
+                    String sortField, String sortDirection);
     List<Deal> listWon();
     List<Deal> listByStatus(DealStatus status);
     List<Deal> listByPerson(Long personId);

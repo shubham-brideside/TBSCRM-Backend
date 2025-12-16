@@ -371,7 +371,7 @@ public class PipelineServiceImpl implements PipelineService {
                 "Contact Made",
                 "Follow Up",
                 "Meeting Scheduled",
-                "Meeting Done",
+                "Contract Shared",
                 "Diversion"
         };
         List<Stage> stages = new ArrayList<>();
