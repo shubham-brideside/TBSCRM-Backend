@@ -10,6 +10,7 @@ import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.mapper.PersonMapper;
 import com.brideside.crm.repository.CategoryRepository;
+import com.brideside.crm.repository.LabelRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PersonSpecifications;
@@ -38,15 +39,18 @@ public class PersonService {
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
+    private final LabelRepository labelRepository;
 
     public PersonService(PersonRepository repository,
                          OrganizationRepository organizationRepository,
                          UserRepository userRepository,
-                         CategoryRepository categoryRepository) {
+                         CategoryRepository categoryRepository,
+                         LabelRepository labelRepository) {
         this.repository = repository;
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
+        this.labelRepository = labelRepository;
     }
 
     public Page<PersonDTO> list(String q,
@@ -101,6 +105,19 @@ public class PersonService {
     public PersonDTO create(PersonDTO dto) {
         Person entity = new Person();
         apply(dto, entity);
+        // Handle custom label (single label from labels table)
+        if (dto.getLabelId() != null) {
+            // Use repository directly to get a managed entity in the same transaction
+            com.brideside.crm.entity.Label label = labelRepository.findById(dto.getLabelId())
+                    .orElseThrow(() -> new BadRequestException("Label not found with id: " + dto.getLabelId()));
+            
+            // Verify label is not deleted
+            if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                throw new BadRequestException("Label with id " + dto.getLabelId() + " has been deleted");
+            }
+            
+            entity.setLabel(label);
+        }
         Person saved = repository.save(entity);
         return PersonMapper.toDto(saved);
     }
@@ -115,6 +132,19 @@ public class PersonService {
         }
         
         apply(dto, entity);
+        // Handle custom label (single label from labels table)
+        if (dto.getLabelId() != null) {
+            // Use repository directly to get a managed entity in the same transaction
+            com.brideside.crm.entity.Label label = labelRepository.findById(dto.getLabelId())
+                    .orElseThrow(() -> new BadRequestException("Label not found with id: " + dto.getLabelId()));
+            
+            // Verify label is not deleted
+            if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                throw new BadRequestException("Label with id " + dto.getLabelId() + " has been deleted");
+            }
+            
+            entity.setLabel(label);
+        }
         Person saved = repository.save(entity);
         return PersonMapper.toDto(saved);
     }

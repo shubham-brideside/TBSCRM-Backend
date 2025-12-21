@@ -25,6 +25,7 @@ import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.DealSpecifications;
+import com.brideside.crm.repository.LabelRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PipelineRepository;
@@ -34,6 +35,7 @@ import com.brideside.crm.repository.UserRepository;
 import org.springframework.data.jpa.domain.Specification;
 import com.brideside.crm.service.DealService;
 import com.brideside.crm.service.DealStageHistoryService;
+import com.brideside.crm.service.LabelService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,6 +80,10 @@ public class DealServiceImpl implements DealService {
     private GoogleCalendarService googleCalendarService;
     @Autowired
     private DealStageHistoryService dealStageHistoryService;
+    @Autowired
+    private LabelService labelService;
+    @Autowired
+    private LabelRepository labelRepository;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -182,23 +188,37 @@ public class DealServiceImpl implements DealService {
             List<String> singleDateList = List.of(request.eventDate);
             deal.setEventDates(eventDatesToJson(singleDateList));
         }
-        // Handle label field with validation
+        // Handle label field with validation (legacy enum - read-only, kept for backward compatibility)
         if (request.label != null && !request.label.trim().isEmpty()) {
-            DealLabel label = DealLabel.fromString(request.label);
-            if (label == null) {
+            DealLabel labelEnum = DealLabel.fromString(request.label);
+            if (labelEnum == null) {
                 throw new BadRequestException("Invalid label value: " + request.label + 
                     ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
             }
-            deal.setLabel(label);
+            deal.setLabelEnum(labelEnum);
             
             // If label is DIVERT, set is_diverted to true
-            if (label == DealLabel.DIVERT) {
+            if (labelEnum == DealLabel.DIVERT) {
                 deal.setIsDiverted(Boolean.TRUE);
                 // Validate that referencedDealId is provided when diverting
                 if (request.referencedDealId == null) {
                     throw new BadRequestException("referencedDealId is required when label is DIVERT");
                 }
             }
+        }
+
+        // Handle custom label (single label from labels table)
+        if (request.labelId != null) {
+            // Use repository directly to get a managed entity in the same transaction
+            com.brideside.crm.entity.Label label = labelRepository.findById(request.labelId)
+                    .orElseThrow(() -> new BadRequestException("Label not found with id: " + request.labelId));
+            
+            // Verify label is not deleted
+            if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                throw new BadRequestException("Label with id " + request.labelId + " has been deleted");
+            }
+            
+            deal.setLabel(label);
         }
         
         // Handle referenced deal (for diversion)
@@ -440,21 +460,35 @@ public class DealServiceImpl implements DealService {
             deal.setEventDates(eventDatesToJson(singleDateList));
         }
         
-        // Handle label field with validation
+        // Handle label field with validation (legacy enum - read-only, kept for backward compatibility)
         if (request.label != null && !request.label.trim().isEmpty()) {
-            DealLabel label = DealLabel.fromString(request.label);
-            if (label == null) {
+            DealLabel labelEnum = DealLabel.fromString(request.label);
+            if (labelEnum == null) {
                 throw new BadRequestException("Invalid label value: " + request.label + 
                     ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
             }
-            deal.setLabel(label);
+            deal.setLabelEnum(labelEnum);
             
             // If label is DIVERT, set is_diverted to true
-            if (label == DealLabel.DIVERT) {
+            if (labelEnum == DealLabel.DIVERT) {
                 deal.setIsDiverted(Boolean.TRUE);
             } else {
                 deal.setIsDiverted(Boolean.FALSE);
             }
+        }
+
+        // Handle custom label (single label from labels table)
+        if (request.labelId != null) {
+            // Use repository directly to get a managed entity in the same transaction
+            com.brideside.crm.entity.Label label = labelRepository.findById(request.labelId)
+                    .orElseThrow(() -> new BadRequestException("Label not found with id: " + request.labelId));
+            
+            // Verify label is not deleted
+            if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                throw new BadRequestException("Label with id " + request.labelId + " has been deleted");
+            }
+            
+            deal.setLabel(label);
         }
         
         // Handle source field with validation
@@ -519,7 +553,8 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public Deal get(Long id) {
-        Deal deal = dealRepository.findById(id)
+        // Use findByIdWithLabel to eagerly fetch the label relationship
+        Deal deal = dealRepository.findByIdWithLabel(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Deal not found"));
         // Check if deal is deleted
         if (deal.getIsDeleted() != null && deal.getIsDeleted()) {

@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Schema(description = "Person data transfer object")
@@ -57,8 +58,14 @@ public class PersonDTO {
     @Schema(description = "Category name", accessMode = Schema.AccessMode.READ_ONLY)
     private String categoryName;
 
-    @Schema(description = "Lead label / category")
-    private Person.PersonLabel label;
+    @Schema(description = "Lead label / category (legacy enum)")
+    private Person.PersonLabel labelEnum;
+
+    @Schema(description = "Custom label ID from labels table")
+    private Long labelId;
+
+    @Schema(description = "Custom label", accessMode = Schema.AccessMode.READ_ONLY)
+    private LabelDtos.Response label;
 
     @Schema(description = "Lead source")
     private com.brideside.crm.entity.DealSource source;
@@ -176,11 +183,27 @@ public class PersonDTO {
         this.categoryName = categoryName;
     }
 
-    public Person.PersonLabel getLabel() {
+    public Person.PersonLabel getLabelEnum() {
+        return labelEnum;
+    }
+
+    public void setLabelEnum(Person.PersonLabel labelEnum) {
+        this.labelEnum = labelEnum;
+    }
+
+    public Long getLabelId() {
+        return labelId;
+    }
+
+    public void setLabelId(Long labelId) {
+        this.labelId = labelId;
+    }
+
+    public LabelDtos.Response getLabel() {
         return label;
     }
 
-    public void setLabel(Person.PersonLabel label) {
+    public void setLabel(LabelDtos.Response label) {
         this.label = label;
     }
 

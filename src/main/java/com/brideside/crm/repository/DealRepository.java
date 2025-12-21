@@ -7,10 +7,13 @@ import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Category;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import java.util.Optional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -51,6 +54,11 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findByOrganizationAndIsDeletedFalse(Organization organization);
     List<Deal> findByDealCategoryAndIsDeletedFalse(Category category);
     List<Deal> findByReferencedDealAndIsDeletedFalse(Deal referencedDeal);
+    
+    // Fetch deal with label for API responses
+    @EntityGraph(attributePaths = {"label"})
+    @Query("SELECT d FROM Deal d WHERE d.id = :id AND (d.isDeleted = false OR d.isDeleted IS NULL)")
+    Optional<Deal> findByIdWithLabel(@Param("id") Long id);
 }
 
 

@@ -9,6 +9,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "deals")
@@ -107,8 +109,12 @@ public class Deal {
     private String googleCalendarEventIds; // JSON object mapping dates to event IDs: {"2024-01-01": "event_id_1", "2024-01-02": "event_id_2"}
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "label", length = 50, nullable = true)
-    private DealLabel label;
+    @Column(name = "label_enum", length = 50, nullable = true, insertable = false, updatable = false)
+    private DealLabel labelEnum; // Legacy enum field - kept for backward compatibility (read-only)
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "label_id", nullable = true)
+    private Label label; // Custom label from labels table
 
     @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
     @Column(name = "deal_source", length = 50, nullable = true)
@@ -214,8 +220,10 @@ public class Deal {
     
     public String getEventDates() { return eventDates; }
     public void setEventDates(String eventDates) { this.eventDates = eventDates; }
-    public DealLabel getLabel() { return label; }
-    public void setLabel(DealLabel label) { this.label = label; }
+    public DealLabel getLabelEnum() { return labelEnum; }
+    public void setLabelEnum(DealLabel labelEnum) { this.labelEnum = labelEnum; }
+    public Label getLabel() { return label; }
+    public void setLabel(Label label) { this.label = label; }
     public DealSource getDealSource() { return dealSource; }
     public void setDealSource(DealSource dealSource) { this.dealSource = dealSource; }
     public DealSubSource getDealSubSource() { return dealSubSource; }

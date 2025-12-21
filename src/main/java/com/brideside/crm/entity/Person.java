@@ -3,6 +3,8 @@ package com.brideside.crm.entity;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "persons")
@@ -40,8 +42,12 @@ public class Person {
     private Category category;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "label", length = 50)
-    private PersonLabel label;
+    @Column(name = "label_enum", length = 50, nullable = true, insertable = false, updatable = false)
+    private PersonLabel labelEnum; // Legacy enum field - kept for backward compatibility (read-only)
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "label_id", nullable = true)
+    private Label label; // Custom label from labels table
 
     @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
     @Column(name = "source", length = 50)
@@ -147,11 +153,19 @@ public class Person {
         this.category = category;
     }
 
-    public PersonLabel getLabel() {
+    public PersonLabel getLabelEnum() {
+        return labelEnum;
+    }
+
+    public void setLabelEnum(PersonLabel labelEnum) {
+        this.labelEnum = labelEnum;
+    }
+
+    public Label getLabel() {
         return label;
     }
 
-    public void setLabel(PersonLabel label) {
+    public void setLabel(Label label) {
         this.label = label;
     }
 

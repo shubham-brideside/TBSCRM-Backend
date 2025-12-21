@@ -1,10 +1,13 @@
 package com.brideside.crm.mapper;
 
+import com.brideside.crm.dto.LabelDtos;
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.entity.Category;
+import com.brideside.crm.entity.Label;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.User;
+
 
 public final class PersonMapper {
 
@@ -19,7 +22,7 @@ public final class PersonMapper {
         dto.setPhone(person.getPhone());
         dto.setEmail(person.getEmail());
         dto.setLeadDate(person.getLeadDate());
-        dto.setLabel(person.getLabel());
+        dto.setLabelEnum(person.getLabelEnum());
         dto.setSource(person.getSource());
         dto.setSubSource(person.getSubSource());
         dto.setCreatedAt(person.getCreatedAt());
@@ -54,6 +57,18 @@ public final class PersonMapper {
             dto.setCategoryName(category.getName());
         }
 
+        // Map custom label (single label)
+        Label label = person.getLabel();
+        if (label != null) {
+            dto.setLabel(new LabelDtos.Response(
+                    label.getId(),
+                    label.getName(),
+                    label.getColor(),
+                    label.getCreatedAt(),
+                    label.getUpdatedAt()));
+            dto.setLabelId(label.getId());
+        }
+
         return dto;
     }
 
@@ -73,8 +88,8 @@ public final class PersonMapper {
         if (dto.getLeadDate() != null) {
             entity.setLeadDate(dto.getLeadDate());
         }
-        if (dto.getLabel() != null) {
-            entity.setLabel(dto.getLabel());
+        if (dto.getLabelEnum() != null) {
+            entity.setLabelEnum(dto.getLabelEnum());
         }
         if (dto.getSource() != null) {
             entity.setSource(dto.getSource());

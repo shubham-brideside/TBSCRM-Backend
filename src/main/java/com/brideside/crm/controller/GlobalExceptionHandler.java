@@ -84,11 +84,14 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolationException(DataIntegrityViolationException ex) {
         String message = ex.getMessage();
         if (message != null) {
+            String lowerMessage = message.toLowerCase();
+            
             // Check for foreign key constraint violations
-            if (message.contains("foreign key constraint")) {
+            if (message.contains("foreign key constraint") || message.contains("FOREIGN KEY")) {
                 // Check if it's a deletion constraint (cannot delete because of references)
-                if (message.contains("Cannot delete") || message.contains("cannot delete") || 
-                    message.contains("DELETE") || message.contains("delete")) {
+                // Only trigger delete error if the message explicitly mentions delete operation
+                if ((lowerMessage.contains("cannot delete") || lowerMessage.contains("delete on")) && 
+                    (lowerMessage.contains("restrict") || lowerMessage.contains("no action"))) {
                     // Try to extract the constraint name or table name for better error message
                     if (message.contains("deal_id") || message.contains("deals")) {
                         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -101,11 +104,16 @@ public class GlobalExceptionHandler {
                                 .body(ApiResponse.error("Cannot delete record. It is referenced by other records. Please remove all references before deleting."));
                     }
                 }
+                // Check for label_id constraint violation
+                else if (message.contains("label_id") || message.contains("labels")) {
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(ApiResponse.error("Label ID does not exist. Please provide a valid label ID from the labels table."));
+                }
                 // Check if it's an insertion/update constraint (referenced ID doesn't exist)
-                else if (message.contains("deal_id")) {
+                else if (message.contains("deal_id") && !lowerMessage.contains("delete")) {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                             .body(ApiResponse.error("Deal ID does not exist. Please provide a valid deal ID that exists in the deals table."));
-                } else if (message.contains("person_id")) {
+                } else if (message.contains("person_id") && !lowerMessage.contains("delete")) {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                             .body(ApiResponse.error("Person ID does not exist. Please provide a valid person ID that exists in the persons table."));
                 } else {

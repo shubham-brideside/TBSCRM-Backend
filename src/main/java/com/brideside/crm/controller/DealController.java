@@ -3,6 +3,7 @@ package com.brideside.crm.controller;
 import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.DealDtos;
 import com.brideside.crm.dto.DealResponse;
+import com.brideside.crm.dto.LabelDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.service.DealService;
@@ -167,7 +168,32 @@ public class DealController {
         r.venueAsked = d.getVenueAsked();
         r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null; // Legacy field
         r.eventDates = parseEventDates(d); // New field for multiple dates
-        r.label = d.getLabel() != null ? d.getLabel().toDisplayString() : null;
+        
+        // Handle label: include both labelId and full label object
+        // Frontend expects: label (object) and labelId (number)
+        com.brideside.crm.entity.Label dealLabel = d.getLabel();
+        if (dealLabel != null) {
+            // Custom label from labels table - trigger lazy load by accessing properties
+            dealLabel.getId(); // Trigger lazy load
+            r.labelId = dealLabel.getId();
+            r.label = new LabelDtos.Response(
+                dealLabel.getId(),
+                dealLabel.getName(),
+                dealLabel.getColor(),
+                dealLabel.getCreatedAt(),
+                dealLabel.getUpdatedAt()
+            );
+            r.labelString = null; // Set legacy string to null when using custom label
+        } else if (d.getLabelEnum() != null) {
+            // Legacy enum label - set as string for backward compatibility
+            r.labelString = d.getLabelEnum().toDisplayString();
+            r.labelId = null;
+            r.label = null;
+        } else {
+            r.labelString = null;
+            r.labelId = null;
+            r.label = null;
+        }
         r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
         r.subSource = d.getDealSubSource() != null ? d.getDealSubSource().toDisplayString() : null;
         r.isDiverted = d.getIsDiverted();
