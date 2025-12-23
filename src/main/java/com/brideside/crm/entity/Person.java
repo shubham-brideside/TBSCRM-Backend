@@ -3,8 +3,6 @@ package com.brideside.crm.entity;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.Set;
 
 @Entity
 @Table(name = "persons")
@@ -28,6 +26,13 @@ public class Person {
 
     @Column(name = "lead_date")
     private LocalDate leadDate;
+
+    @Column(name = "venue")
+    private String venue;
+
+    // Maps to legacy wedding_date column in DB, represents event date for the person
+    @Column(name = "wedding_date")
+    private LocalDate eventDate;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "organization_id")
@@ -127,6 +132,22 @@ public class Person {
 
     public void setLeadDate(LocalDate leadDate) {
         this.leadDate = leadDate;
+    }
+
+    public String getVenue() {
+        return venue;
+    }
+
+    public void setVenue(String venue) {
+        this.venue = venue;
+    }
+
+    public LocalDate getEventDate() {
+        return eventDate;
+    }
+
+    public void setEventDate(LocalDate eventDate) {
+        this.eventDate = eventDate;
     }
 
     public Organization getOrganization() {

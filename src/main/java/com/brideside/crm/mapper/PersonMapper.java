@@ -22,6 +22,8 @@ public final class PersonMapper {
         dto.setPhone(person.getPhone());
         dto.setEmail(person.getEmail());
         dto.setLeadDate(person.getLeadDate());
+        dto.setVenue(person.getVenue());
+        dto.setEventDate(person.getEventDate());
         dto.setLabelEnum(person.getLabelEnum());
         dto.setSource(person.getSource());
         dto.setSubSource(person.getSubSource());
@@ -87,6 +89,12 @@ public final class PersonMapper {
         }
         if (dto.getLeadDate() != null) {
             entity.setLeadDate(dto.getLeadDate());
+        }
+        if (dto.getVenue() != null) {
+            entity.setVenue(dto.getVenue());
+        }
+        if (dto.getEventDate() != null) {
+            entity.setEventDate(dto.getEventDate());
         }
         if (dto.getLabelEnum() != null) {
             entity.setLabelEnum(dto.getLabelEnum());

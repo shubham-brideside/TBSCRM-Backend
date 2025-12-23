@@ -208,6 +208,12 @@ public class PersonService {
             if (target.getLeadDate() == null && source.getLeadDate() != null) {
                 target.setLeadDate(source.getLeadDate());
             }
+            if (!StringUtils.hasText(target.getVenue()) && StringUtils.hasText(source.getVenue())) {
+                target.setVenue(source.getVenue());
+            }
+            if (target.getEventDate() == null && source.getEventDate() != null) {
+                target.setEventDate(source.getEventDate());
+            }
             if (target.getOrganization() == null && source.getOrganization() != null) {
                 target.setOrganization(source.getOrganization());
             }
