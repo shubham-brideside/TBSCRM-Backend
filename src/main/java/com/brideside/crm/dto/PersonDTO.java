@@ -37,6 +37,13 @@ public class PersonDTO {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate leadDate;
 
+    @Schema(description = "Venue for the person (e.g., wedding venue)")
+    private String venue;
+
+    @Schema(description = "Event date associated with the person (yyyy-MM-dd)")
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate eventDate;
+
     @Schema(description = "Organization identifier")
     private Long organizationId;
 
@@ -125,6 +132,22 @@ public class PersonDTO {
 
     public void setLeadDate(LocalDate leadDate) {
         this.leadDate = leadDate;
+    }
+
+    public String getVenue() {
+        return venue;
+    }
+
+    public void setVenue(String venue) {
+        this.venue = venue;
+    }
+
+    public LocalDate getEventDate() {
+        return eventDate;
+    }
+
+    public void setEventDate(LocalDate eventDate) {
+        this.eventDate = eventDate;
     }
 
     public Long getOrganizationId() {
