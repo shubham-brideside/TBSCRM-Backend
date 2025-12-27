@@ -31,8 +31,9 @@ public class Person {
     private String venue;
 
     // Maps to legacy wedding_date column in DB, represents event date for the person
-    @Column(name = "wedding_date")
-    private LocalDate eventDate;
+    // Note: wedding_date is VARCHAR(255) in DB, so using String type
+    @Column(name = "wedding_date", length = 255)
+    private String eventDate;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "organization_id")
@@ -142,11 +143,11 @@ public class Person {
         this.venue = venue;
     }
 
-    public LocalDate getEventDate() {
+    public String getEventDate() {
         return eventDate;
     }
 
-    public void setEventDate(LocalDate eventDate) {
+    public void setEventDate(String eventDate) {
         this.eventDate = eventDate;
     }
 

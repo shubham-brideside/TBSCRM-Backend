@@ -8,6 +8,8 @@ import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.User;
 
+import java.time.LocalDate;
+
 
 public final class PersonMapper {
 
@@ -23,7 +25,17 @@ public final class PersonMapper {
         dto.setEmail(person.getEmail());
         dto.setLeadDate(person.getLeadDate());
         dto.setVenue(person.getVenue());
-        dto.setEventDate(person.getEventDate());
+        // Convert String eventDate from entity to LocalDate for DTO
+        if (person.getEventDate() != null && !person.getEventDate().isEmpty()) {
+            try {
+                dto.setEventDate(LocalDate.parse(person.getEventDate()));
+            } catch (Exception e) {
+                // If parsing fails, set to null
+                dto.setEventDate(null);
+            }
+        } else {
+            dto.setEventDate(null);
+        }
         dto.setLabelEnum(person.getLabelEnum());
         dto.setSource(person.getSource());
         dto.setSubSource(person.getSubSource());
@@ -93,8 +105,9 @@ public final class PersonMapper {
         if (dto.getVenue() != null) {
             entity.setVenue(dto.getVenue());
         }
+        // Convert LocalDate eventDate from DTO to String for entity
         if (dto.getEventDate() != null) {
-            entity.setEventDate(dto.getEventDate());
+            entity.setEventDate(dto.getEventDate().toString());
         }
         if (dto.getLabelEnum() != null) {
             entity.setLabelEnum(dto.getLabelEnum());
