@@ -66,6 +66,15 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
   - `includeStages` (default `false`): set `true` to embed stage arrays.
 - **Response (200 OK):** array of `PipelineResponse` objects sorted by name.
 
+#### List archived pipelines
+- **Method / URL:** `GET /api/pipelines/archived?includeStages={boolean}`
+- **Query params:**
+  - `includeStages` (default `false`): set `true` to embed stage arrays.
+- **Response (200 OK):** array of archived `PipelineResponse` objects (where `isDeleted=true`) sorted by name.
+- **Frontend notes:**
+  - Use this endpoint to display archived pipelines in a separate view or section.
+  - Archived pipelines can be restored using the `/api/pipelines/{pipelineId}/unarchive` endpoint.
+
 #### Get single pipeline
 - **Method / URL:** `GET /api/pipelines/{pipelineId}?includeStages={boolean}`
 - **Response:** single `PipelineResponse`. `includeStages` defaults to `true`.
@@ -88,6 +97,21 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
 - **Method / URL:** `DELETE /api/pipelines/{pipelineId}?hard={boolean}`
 - **Behavior:** `hard=true` removes the pipeline and its stages. Without `hard=true`, the pipeline is marked as deleted (`isDeleted=true`) and excluded from list results.
 - **Response:** `{ "success": true, "message": "Pipeline deleted" }`
+
+#### Archive pipeline
+- **Method / URL:** `PATCH /api/pipelines/{pipelineId}/archive`
+- **Behavior:** Soft deletes a pipeline by marking `isDeleted=true`. The pipeline will be excluded from regular list results but can be retrieved via `/api/pipelines/archived`.
+- **Response:** updated `PipelineResponse` with `isDeleted: true`.
+
+#### Unarchive pipeline
+- **Method / URL:** `PATCH /api/pipelines/{pipelineId}/unarchive?includeStages={boolean}`
+- **Query params:**
+  - `includeStages` (default `true`): set `false` to exclude stage arrays from response.
+- **Behavior:** Restores an archived pipeline by marking `isDeleted=false`. The pipeline will appear in regular list results again.
+- **Response:** updated `PipelineResponse` with `isDeleted: false`.
+- **Frontend notes:**
+  - Use this endpoint to restore archived pipelines from the archived pipelines view.
+  - Returns error if the pipeline is not archived.
 
 ---
 
@@ -220,10 +244,11 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
 1. **Authentication:** Include whatever auth headers your app already uses for other API calls.
 2. **Default stages:** New pipelines ship with the default sequence (Lead In → Qualified → Contact Made → Follow Up → Meeting Scheduled → Meeting Done → Diversion). Update or reorder as needed via the stages endpoints.
 3. **Soft delete:** Pipelines set `isDeleted=true` when deleted without `hard=true`; listings automatically exclude them.
-4. **Error handling:** read `success` flag and message. For validation errors the message includes the field issue.
-5. **Reordering:** after drag-and-drop, post the list of stage IDs in the new order; the backend persists the new `stage_order`.
-6. **Hard delete:** Pass `hard=true` only when you intend to permanently remove a pipeline and its stages.
-7. **Teams dropdown:** Fetch `/api/teams` once when opening the create/edit form and populate the team selector; send the selected `teamId` in requests.
+4. **Archived pipelines:** Use `/api/pipelines/archived` to fetch archived pipelines. Use `/api/pipelines/{pipelineId}/unarchive` to restore an archived pipeline.
+5. **Error handling:** read `success` flag and message. For validation errors the message includes the field issue.
+6. **Reordering:** after drag-and-drop, post the list of stage IDs in the new order; the backend persists the new `stage_order`.
+7. **Hard delete:** Pass `hard=true` only when you intend to permanently remove a pipeline and its stages.
+8. **Teams dropdown:** Fetch `/api/teams` once when opening the create/edit form and populate the team selector; send the selected `teamId` in requests.
 
 This sheet should be enough to wire up the pipelines UI. Let me know if you want sample fetch/axios calls as well.
 

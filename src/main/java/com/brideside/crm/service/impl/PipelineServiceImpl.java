@@ -87,6 +87,24 @@ public class PipelineServiceImpl implements PipelineService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PipelineDtos.PipelineResponse> listArchivedPipelines(boolean includeStages) {
+        List<Pipeline> pipelines = pipelineRepository.findByDeletedTrueOrderByNameAsc();
+
+        Map<Long, List<Stage>> stagesByPipeline = includeStages
+                ? loadStagesForPipelines(pipelines, false)
+                : Collections.emptyMap();
+
+        return pipelines.stream()
+                .map(p -> PipelineMapper.toPipelineResponse(
+                        p,
+                        stagesByPipeline.getOrDefault(p.getId(), Collections.emptyList()),
+                        includeStages
+                ))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PipelineDtos.PipelineResponse getPipeline(Long pipelineId, boolean includeStages) {
         Pipeline pipeline = requireActivePipeline(pipelineId);
         List<Stage> stages = includeStages
@@ -111,6 +129,23 @@ public class PipelineServiceImpl implements PipelineService {
         Pipeline saved = pipelineRepository.save(pipeline);
         List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(saved);
         return PipelineMapper.toPipelineResponse(saved, stages, true);
+    }
+
+    @Override
+    public PipelineDtos.PipelineResponse unarchivePipeline(Long pipelineId, boolean includeStages) {
+        Pipeline pipeline = requirePipeline(pipelineId);
+        
+        if (!Boolean.TRUE.equals(pipeline.getDeleted())) {
+            throw new BadRequestException("Pipeline is not archived");
+        }
+        
+        pipeline.setDeleted(false);
+        Pipeline saved = pipelineRepository.save(pipeline);
+        
+        List<Stage> stages = includeStages
+                ? stageRepository.findByPipelineOrderByOrderIndexAsc(saved)
+                : Collections.emptyList();
+        return PipelineMapper.toPipelineResponse(saved, stages, includeStages);
     }
 
     @Override
@@ -346,6 +381,11 @@ public class PipelineServiceImpl implements PipelineService {
             throw new ResourceNotFoundException("Pipeline not found");
         }
         return pipeline;
+    }
+
+    private Pipeline requirePipeline(Long pipelineId) {
+        return pipelineRepository.findById(pipelineId)
+                .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found"));
     }
 
     private String trimToNull(String value) {
