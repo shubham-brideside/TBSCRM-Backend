@@ -40,6 +40,14 @@ public class PipelineController {
         return ResponseEntity.ok(ApiResponse.success("Pipelines fetched", pipelines));
     }
 
+    @GetMapping("/archived")
+    @Operation(summary = "List archived pipelines", description = "Returns archived (deleted) pipelines sorted alphabetically. Optionally include stages.")
+    public ResponseEntity<ApiResponse<List<PipelineDtos.PipelineResponse>>> listArchived(
+            @RequestParam(value = "includeStages", defaultValue = "false") boolean includeStages) {
+        List<PipelineDtos.PipelineResponse> pipelines = pipelineService.listArchivedPipelines(includeStages);
+        return ResponseEntity.ok(ApiResponse.success("Archived pipelines fetched", pipelines));
+    }
+
     @GetMapping("/categories")
     @Operation(summary = "List pipeline categories")
     public ResponseEntity<ApiResponse<List<PipelineDtos.CategoryOption>>> categories() {
@@ -80,6 +88,15 @@ public class PipelineController {
         request.setDeleted(true);
         PipelineDtos.PipelineResponse response = pipelineService.updatePipeline(pipelineId, request);
         return ResponseEntity.ok(ApiResponse.success("Pipeline archived", response));
+    }
+
+    @PatchMapping("/{pipelineId}/unarchive")
+    @Operation(summary = "Unarchive pipeline", description = "Restore an archived pipeline by marking isDeleted=false.")
+    public ResponseEntity<ApiResponse<PipelineDtos.PipelineResponse>> unarchive(
+            @PathVariable Long pipelineId,
+            @RequestParam(value = "includeStages", defaultValue = "true") boolean includeStages) {
+        PipelineDtos.PipelineResponse response = pipelineService.unarchivePipeline(pipelineId, includeStages);
+        return ResponseEntity.ok(ApiResponse.success("Pipeline unarchived", response));
     }
 
     @GetMapping("/{pipelineId}/stages")

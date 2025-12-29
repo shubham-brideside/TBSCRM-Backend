@@ -7,8 +7,10 @@ import java.util.List;
 public interface PipelineService {
     PipelineDtos.PipelineResponse createPipeline(PipelineDtos.PipelineRequest request);
     List<PipelineDtos.PipelineResponse> listPipelines(boolean includeStages);
+    List<PipelineDtos.PipelineResponse> listArchivedPipelines(boolean includeStages);
     PipelineDtos.PipelineResponse getPipeline(Long pipelineId, boolean includeStages);
     PipelineDtos.PipelineResponse updatePipeline(Long pipelineId, PipelineDtos.PipelineUpdateRequest request);
+    PipelineDtos.PipelineResponse unarchivePipeline(Long pipelineId, boolean includeStages);
     void deletePipeline(Long pipelineId, boolean hardDelete);
 
     PipelineDtos.StageResponse createStage(Long pipelineId, PipelineDtos.StageRequest request);

@@ -13,6 +13,7 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
     boolean existsByNameIgnoreCase(String name);
     boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
     List<Pipeline> findByDeletedFalseOrderByNameAsc();
+    List<Pipeline> findByDeletedTrueOrderByNameAsc();
     boolean existsByTeam(Team team);
     
     @Query("SELECT p FROM Pipeline p INNER JOIN FETCH p.team WHERE p.id = :id")
