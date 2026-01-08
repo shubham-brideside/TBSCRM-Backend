@@ -55,8 +55,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -207,18 +209,26 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        // Handle custom label (single label from labels table)
-        if (request.labelId != null) {
-            // Use repository directly to get a managed entity in the same transaction
-            com.brideside.crm.entity.Label label = labelRepository.findById(request.labelId)
-                    .orElseThrow(() -> new BadRequestException("Label not found with id: " + request.labelId));
-            
-            // Verify label is not deleted
-            if (label.getIsDeleted() != null && label.getIsDeleted()) {
-                throw new BadRequestException("Label with id " + request.labelId + " has been deleted");
+        // Handle custom labels (multiple labels from labels table)
+        // Support both labelIds (new) and labelId (deprecated, for backward compatibility)
+        List<Long> labelIdsToProcess = request.labelIds != null && !request.labelIds.isEmpty() 
+            ? request.labelIds 
+            : (request.labelId != null ? List.of(request.labelId) : null);
+        
+        if (labelIdsToProcess != null && !labelIdsToProcess.isEmpty()) {
+            Set<com.brideside.crm.entity.Label> labels = new HashSet<>();
+            for (Long labelId : labelIdsToProcess) {
+                com.brideside.crm.entity.Label label = labelRepository.findById(labelId)
+                        .orElseThrow(() -> new BadRequestException("Label not found with id: " + labelId));
+                
+                // Verify label is not deleted
+                if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                    throw new BadRequestException("Label with id " + labelId + " has been deleted");
+                }
+                
+                labels.add(label);
             }
-            
-            deal.setLabel(label);
+            deal.setLabels(labels);
         }
         
         // Handle referenced deal (for diversion)
@@ -477,9 +487,30 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        // Handle custom label (single label from labels table)
-        if (request.labelId != null) {
-            // Use repository directly to get a managed entity in the same transaction
+        // Handle custom labels (multiple labels from labels table)
+        // Support both labelIds (new) and labelId (deprecated, for backward compatibility)
+        // If labelIds is provided (even if empty), update the labels
+        // If only labelId is provided, use it for backward compatibility
+        // If neither is provided, don't change existing labels
+        if (request.labelIds != null) {
+            // labelIds was explicitly provided (could be empty list to clear labels)
+            Set<com.brideside.crm.entity.Label> labels = new HashSet<>();
+            if (!request.labelIds.isEmpty()) {
+                for (Long labelId : request.labelIds) {
+                    com.brideside.crm.entity.Label label = labelRepository.findById(labelId)
+                            .orElseThrow(() -> new BadRequestException("Label not found with id: " + labelId));
+                    
+                    // Verify label is not deleted
+                    if (label.getIsDeleted() != null && label.getIsDeleted()) {
+                        throw new BadRequestException("Label with id " + labelId + " has been deleted");
+                    }
+                    
+                    labels.add(label);
+                }
+            }
+            deal.setLabels(labels);
+        } else if (request.labelId != null) {
+            // Backward compatibility: single labelId
             com.brideside.crm.entity.Label label = labelRepository.findById(request.labelId)
                     .orElseThrow(() -> new BadRequestException("Label not found with id: " + request.labelId));
             
@@ -488,8 +519,11 @@ public class DealServiceImpl implements DealService {
                 throw new BadRequestException("Label with id " + request.labelId + " has been deleted");
             }
             
-            deal.setLabel(label);
+            Set<com.brideside.crm.entity.Label> labels = new HashSet<>();
+            labels.add(label);
+            deal.setLabels(labels);
         }
+        // If neither labelIds nor labelId is provided, keep existing labels unchanged
         
         // Handle source field with validation
         if (request.source != null && !request.source.trim().isEmpty()) {
@@ -618,7 +652,7 @@ public class DealServiceImpl implements DealService {
         List<Deal> deals = dealRepository.findAll(spec);
         log.debug("Deal list: Found {} deals after applying filters", deals.size());
         
-        // Eagerly load Person, Organization, Pipeline, and related entities to avoid lazy loading issues
+        // Eagerly load Person, Organization, Pipeline, Labels, and related entities to avoid lazy loading issues
         // This ensures all data is loaded in a single transaction
         deals.forEach(deal -> {
             if (deal.getPerson() != null) {
@@ -636,6 +670,10 @@ public class DealServiceImpl implements DealService {
             }
             if (deal.getDealCategory() != null) {
                 deal.getDealCategory().getName();
+            }
+            // Eagerly load labels to avoid N+1 queries
+            if (deal.getLabels() != null) {
+                deal.getLabels().forEach(label -> label.getId());
             }
         });
         

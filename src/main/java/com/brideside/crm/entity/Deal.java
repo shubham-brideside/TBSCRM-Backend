@@ -112,9 +112,13 @@ public class Deal {
     @Column(name = "label_enum", length = 50, nullable = true, insertable = false, updatable = false)
     private DealLabel labelEnum; // Legacy enum field - kept for backward compatibility (read-only)
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "label_id", nullable = true)
-    private Label label; // Custom label from labels table
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "deal_labels",
+        joinColumns = @JoinColumn(name = "deal_id"),
+        inverseJoinColumns = @JoinColumn(name = "label_id")
+    )
+    private Set<Label> labels = new HashSet<>(); // Multiple labels from labels table
 
     @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)
     @Column(name = "deal_source", length = 50, nullable = true)
@@ -222,8 +226,8 @@ public class Deal {
     public void setEventDates(String eventDates) { this.eventDates = eventDates; }
     public DealLabel getLabelEnum() { return labelEnum; }
     public void setLabelEnum(DealLabel labelEnum) { this.labelEnum = labelEnum; }
-    public Label getLabel() { return label; }
-    public void setLabel(Label label) { this.label = label; }
+    public Set<Label> getLabels() { return labels; }
+    public void setLabels(Set<Label> labels) { this.labels = labels != null ? labels : new HashSet<>(); }
     public DealSource getDealSource() { return dealSource; }
     public void setDealSource(DealSource dealSource) { this.dealSource = dealSource; }
     public DealSubSource getDealSubSource() { return dealSubSource; }

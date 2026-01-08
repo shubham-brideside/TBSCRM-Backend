@@ -15,9 +15,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -169,30 +171,48 @@ public class DealController {
         r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null; // Legacy field
         r.eventDates = parseEventDates(d); // New field for multiple dates
         
-        // Handle label: include both labelId and full label object
-        // Frontend expects: label (object) and labelId (number)
-        com.brideside.crm.entity.Label dealLabel = d.getLabel();
-        if (dealLabel != null) {
-            // Custom label from labels table - trigger lazy load by accessing properties
-            dealLabel.getId(); // Trigger lazy load
-            r.labelId = dealLabel.getId();
-            r.label = new LabelDtos.Response(
-                dealLabel.getId(),
-                dealLabel.getName(),
-                dealLabel.getColor(),
-                dealLabel.getCreatedAt(),
-                dealLabel.getUpdatedAt()
-            );
-            r.labelString = null; // Set legacy string to null when using custom label
+        // Handle labels: support multiple labels from labels table
+        // Also maintain backward compatibility with single label and legacy enum
+        Set<com.brideside.crm.entity.Label> dealLabels = d.getLabels();
+        if (dealLabels != null && !dealLabels.isEmpty()) {
+            // Multiple custom labels from labels table - trigger lazy load by accessing properties
+            List<Long> labelIdList = new ArrayList<>();
+            List<LabelDtos.Response> labelList = new ArrayList<>();
+            for (com.brideside.crm.entity.Label dealLabel : dealLabels) {
+                dealLabel.getId(); // Trigger lazy load
+                labelIdList.add(dealLabel.getId());
+                labelList.add(new LabelDtos.Response(
+                    dealLabel.getId(),
+                    dealLabel.getName(),
+                    dealLabel.getColor(),
+                    dealLabel.getCreatedAt(),
+                    dealLabel.getUpdatedAt()
+                ));
+            }
+            r.labelIds = labelIdList;
+            r.labels = labelList;
+            // Backward compatibility: set first label as single label
+            if (!labelIdList.isEmpty()) {
+                r.labelId = labelIdList.get(0);
+                r.label = labelList.get(0);
+            } else {
+                r.labelId = null;
+                r.label = null;
+            }
+            r.labelString = null; // Set legacy string to null when using custom labels
         } else if (d.getLabelEnum() != null) {
             // Legacy enum label - set as string for backward compatibility
             r.labelString = d.getLabelEnum().toDisplayString();
             r.labelId = null;
             r.label = null;
+            r.labelIds = null;
+            r.labels = null;
         } else {
             r.labelString = null;
             r.labelId = null;
             r.label = null;
+            r.labelIds = null;
+            r.labels = null;
         }
         r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
         r.subSource = d.getDealSubSource() != null ? d.getDealSubSource().toDisplayString() : null;

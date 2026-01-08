@@ -55,8 +55,8 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findByDealCategoryAndIsDeletedFalse(Category category);
     List<Deal> findByReferencedDealAndIsDeletedFalse(Deal referencedDeal);
     
-    // Fetch deal with label for API responses
-    @EntityGraph(attributePaths = {"label"})
+    // Fetch deal with labels for API responses
+    @EntityGraph(attributePaths = {"labels"})
     @Query("SELECT d FROM Deal d WHERE d.id = :id AND (d.isDeleted = false OR d.isDeleted IS NULL)")
     Optional<Deal> findByIdWithLabel(@Param("id") Long id);
 }
