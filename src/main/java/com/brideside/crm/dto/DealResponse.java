@@ -31,8 +31,10 @@ public class DealResponse {
     public String eventDate; // ISO-8601 date - legacy, use eventDates instead
     public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
     public String labelString; // Legacy enum string (DIRECT, DIVERT, etc.) - kept for backward compatibility
-    public Long labelId; // ID of custom label from labels table
-    public LabelDtos.Response label; // Full label object from labels table (frontend expects this field name)
+    public Long labelId; // ID of custom label from labels table (deprecated, use labelIds and labels instead)
+    public LabelDtos.Response label; // Full label object from labels table (deprecated, use labels instead)
+    public List<Long> labelIds; // List of label IDs from labels table
+    public List<LabelDtos.Response> labels; // List of full label objects from labels table
     public String source; // Direct, Divert, Reference, Planner
     public String subSource; // Instagram, Whatsapp, Landing Page, Email (only present when source is "Direct")
     public Boolean isDiverted; // true if this deal was diverted from another deal

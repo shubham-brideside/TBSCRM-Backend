@@ -31,7 +31,8 @@ public class DealDtos {
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
         public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING (legacy enum)
-        public Long labelId; // optional: ID of custom label from labels table
+        public Long labelId; // optional: ID of custom label from labels table (deprecated, use labelIds instead)
+        public List<Long> labelIds; // optional: List of label IDs from labels table
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
         public Long referencedDealId; // optional: ID of the original deal when diverting (required when label is DIVERT)
@@ -75,7 +76,8 @@ public class DealDtos {
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
         public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
         public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING (legacy enum)
-        public Long labelId; // optional: ID of custom label from labels table
+        public Long labelId; // optional: ID of custom label from labels table (deprecated, use labelIds instead)
+        public List<Long> labelIds; // optional: List of label IDs from labels table
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
     }
