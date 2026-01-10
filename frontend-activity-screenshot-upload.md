@@ -16,10 +16,11 @@ This guide explains how to integrate the Azure Blob Storage screenshot upload fe
 - `activityId` (required): The ID of the activity to attach the screenshot to
 
 ### Form Data
-- `file` (required): The image file to upload
+- `file` (optional): The image file to upload
   - **Accepted formats:** PNG, JPEG, GIF, WebP, etc. (any image format)
   - **Maximum size:** 10MB
   - **Content-Type:** Must be an image (e.g., `image/png`, `image/jpeg`)
+  - **Note:** The image attachment is optional. If no file is provided, the endpoint will return success without uploading anything.
 
 ## Response Format
 
@@ -52,11 +53,11 @@ This guide explains how to integrate the Azure Blob Storage screenshot upload fe
 }
 ```
 
-#### 400 Bad Request - File Required
+#### 200 OK - No File Provided (Optional)
 ```json
 {
-  "success": false,
-  "message": "File is required",
+  "success": true,
+  "message": "No image provided - attachment is optional",
   "data": null
 }
 ```

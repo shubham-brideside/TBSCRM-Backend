@@ -171,12 +171,12 @@ public class ActivityController {
     @Operation(
         summary = "Upload activity screenshot", 
         description = "Upload a screenshot image for an activity. The image will be stored in Azure Blob Storage and the URL will be automatically saved to the activity's attachmentUrl field. " +
-                     "Only image files (PNG, JPEG, etc.) are accepted. Maximum file size is 10MB."
+                     "Only image files (PNG, JPEG, etc.) are accepted. Maximum file size is 10MB. The file parameter is optional - if not provided, the endpoint will return success without uploading anything."
     )
     @ApiResponses(value = {
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200", 
-            description = "Screenshot uploaded successfully",
+            description = "Screenshot uploaded successfully or no file provided (optional field)",
             content = @Content(schema = @Schema(implementation = ApiResponse.class))
         ),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -204,18 +204,17 @@ public class ActivityController {
     public ResponseEntity<ApiResponse<String>> uploadScreenshot(
             @Parameter(description = "ID of the activity to attach the screenshot to", required = true, example = "1")
             @PathVariable("activityId") Long activityId,
-            @Parameter(description = "Image file to upload (PNG, JPEG, etc.). Maximum size: 10MB", required = true)
-            @RequestParam("file") MultipartFile file) {
+            @Parameter(description = "Image file to upload (PNG, JPEG, etc.). Maximum size: 10MB. Optional - if not provided, the endpoint will return success without uploading.", required = false)
+            @RequestParam(value = "file", required = false) MultipartFile file) {
         
         if (azureBlobStorageService == null) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(ApiResponse.error("Azure Blob Storage is not configured. Please set AZURE_STORAGE_BLOB_CONNECTION_STRING environment variable."));
         }
         
-        // Validate file
+        // If no file is provided, return success (image attachment is optional)
         if (file == null || file.isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("File is required"));
+            return ResponseEntity.ok(ApiResponse.success("No image provided - attachment is optional", null));
         }
         
         // Validate file type (only images)
