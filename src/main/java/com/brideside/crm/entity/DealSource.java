@@ -6,7 +6,8 @@ public enum DealSource {
     DIRECT,
     DIVERT,
     REFERENCE,
-    PLANNER;
+    PLANNER,
+    TBS;
 
     /**
      * Converts a string value to DealSource enum, handling case variations.
@@ -38,6 +39,8 @@ public enum DealSource {
                 return "Reference";
             case PLANNER:
                 return "Planner";
+            case TBS:
+                return "TBS";
             default:
                 return this.name();
         }

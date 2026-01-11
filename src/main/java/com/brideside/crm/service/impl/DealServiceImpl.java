@@ -280,7 +280,7 @@ public class DealServiceImpl implements DealService {
             DealSource dealSource = DealSource.fromString(request.source);
             if (dealSource == null) {
                 throw new BadRequestException("Invalid source value: " + request.source + 
-                    ". Allowed values: Direct, Divert, Reference, Planner");
+                    ". Allowed values: Direct, Divert, Reference, Planner, TBS");
             }
             deal.setDealSource(dealSource);
             
@@ -533,7 +533,7 @@ public class DealServiceImpl implements DealService {
             DealSource dealSource = DealSource.fromString(request.source);
             if (dealSource == null) {
                 throw new BadRequestException("Invalid source value: " + request.source + 
-                    ". Allowed values: Direct, Divert, Reference, Planner");
+                    ". Allowed values: Direct, Divert, Reference, Planner, TBS");
             }
             deal.setDealSource(dealSource);
             

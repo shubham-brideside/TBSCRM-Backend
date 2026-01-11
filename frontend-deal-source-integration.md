@@ -5,7 +5,7 @@ This guide provides step-by-step instructions for integrating the deal source an
 ## Overview
 
 Deals now have two related fields:
-- **`source`**: Main source category (Direct, Divert, Reference, Planner)
+- **`source`**: Main source category (Direct, Divert, Reference, Planner, TBS)
 - **`subSource`**: Sub-category for Direct deals only (Instagram, Whatsapp, Landing Page, Email)
 
 **Important:** `subSource` is only valid when `source` is `"Direct"`. If `source` is anything else, `subSource` will be ignored or cleared.
@@ -18,6 +18,7 @@ Deals now have two related fields:
 | `Divert` | Divert | Diverted deals |
 | `Reference` | Reference | Referred by someone |
 | `Planner` | Planner | From event planners |
+| `TBS` | TBS | TBS source |
 
 ## Sub-Source Options (Only for Direct)
 
@@ -326,7 +327,7 @@ export const DealRow: React.FC<{ deal: Deal }> = ({ deal }) => {
 ```typescript
 const validateDealSource = (source: string, subSource: string | null): string | null => {
   // Source is optional, but if provided, must be valid
-  if (source && !['Direct', 'Divert', 'Reference', 'Planner'].includes(source)) {
+  if (source && !['Direct', 'Divert', 'Reference', 'Planner', 'TBS'].includes(source)) {
     return 'Invalid source value';
   }
 
@@ -353,7 +354,7 @@ The backend will return the following errors:
    ```json
    {
      "success": false,
-     "message": "Invalid source value: InvalidValue. Allowed values: Direct, Divert, Reference, Planner",
+     "message": "Invalid source value: InvalidValue. Allowed values: Direct, Divert, Reference, Planner, TBS",
      "data": null
    }
    ```
@@ -401,7 +402,7 @@ const CreateDealForm: React.FC = () => {
   const validate = () => {
     const newErrors: Record<string, string> = {};
     
-    if (source && !['Direct', 'Divert', 'Reference', 'Planner'].includes(source)) {
+    if (source && !['Direct', 'Divert', 'Reference', 'Planner', 'TBS'].includes(source)) {
       newErrors.source = 'Invalid source value';
     }
     

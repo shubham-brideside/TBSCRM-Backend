@@ -284,7 +284,8 @@ public class DealController {
             new SourceOption("Direct", "Direct"),
             new SourceOption("Divert", "Divert"),
             new SourceOption("Reference", "Reference"),
-            new SourceOption("Planner", "Planner")
+            new SourceOption("Planner", "Planner"),
+            new SourceOption("TBS", "TBS")
         );
         return ResponseEntity.ok(ApiResponse.success("Sources retrieved successfully", sources));
     }

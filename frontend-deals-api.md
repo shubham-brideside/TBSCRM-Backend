@@ -487,7 +487,7 @@ To create a diverted deal:
 - `phoneNumber` is separate from the linked person's phone—when a person is attached, the backend copies their current phone into `contactNumber`.  
 - `finalThankYouSent`, `eventDateAsked`, `contactNumberAsked`, `venueAsked` are booleans; `null` means "not captured yet".
 - `label`: enum with values `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both space-separated and underscore formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP"). Returns display format with spaces.
-- `source`: enum with values `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive input (e.g., "direct", "Direct", "DIRECT" all accepted). Returns properly capitalized display format.
+- `source`: enum with values `Direct`, `Divert`, `Reference`, `Planner`, `TBS`. Case-insensitive input (e.g., "direct", "Direct", "DIRECT" all accepted). Returns properly capitalized display format.
 - `subSource`: enum with values `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive input. Returns properly capitalized display format. Automatically cleared when `source` is not `"Direct"`.
 - `lostReason`: string indicating why a deal was marked as LOST. Only present when `status` is `LOST`. Values: `"Slot not opened"`, `"Not Interested"`, `"Date postponed"`, `"Not Available"`, `"Ghosted"`, `"Budget"`, `"Booked Someone else"`. Automatically cleared when status changes to `IN_PROGRESS` or `WON`.
 - `isDiverted`: boolean indicating if this deal was diverted from another deal. Automatically set to `true` when `label` is `DIVERT`.
@@ -512,6 +512,7 @@ The following source values are available for the deal source dropdown:
 - `Divert` - Diverted deals
 - `Reference` - Referred by someone
 - `Planner` - From event planners
+- `TBS` - TBS source
 
 ### Sub-Source Options (Only for Direct)
 When `source` is set to `"Direct"`, you can optionally specify a sub-source:
@@ -545,7 +546,7 @@ The following lost reason values are available when marking a deal as LOST:
 - Referencing non-existent related IDs → `404 Not Found`.  
 - Invalid `status` or malformed date strings → `400 Bad Request`.
 - Invalid `label` value → `400 Bad Request` with message: "Invalid label value: {value}. Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING".
-- Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Direct, Divert, Reference, Planner".
+- Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Direct, Divert, Reference, Planner, TBS".
 - Invalid `subSource` value → `400 Bad Request` with message: "Invalid subSource value: {value}. Allowed values: Instagram, Whatsapp, Landing Page, Email".
 - `subSource` provided when `source` is not `"Direct"` → `400 Bad Request` with message: "subSource can only be provided when source is 'Direct'".
 - Marking deal as LOST without `lostReason` → `400 Bad Request` with message: "lostReason is required when marking deal as LOST. Please select a reason from the list."

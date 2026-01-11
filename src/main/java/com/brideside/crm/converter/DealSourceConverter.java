@@ -43,6 +43,7 @@ public class DealSourceConverter implements AttributeConverter<DealSource, Strin
             case "DIVERT":
             case "REFERENCE":
             case "PLANNER":
+            case "TBS":
                 // New DealSource values - use as is
                 try {
                     return DealSource.valueOf(normalized);
