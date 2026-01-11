@@ -59,6 +59,7 @@ public class PersonService {
                                 List<Long> ownerIds,
                                 List<Long> categoryIds,
                                 com.brideside.crm.entity.DealSource source,
+                                com.brideside.crm.entity.DealSource dealSource,
                                 LocalDate leadDateFrom,
                                 LocalDate leadDateTo,
                                 Pageable pageable) {
@@ -70,6 +71,7 @@ public class PersonService {
                 .and(PersonSpecifications.hasOwners(ownerIds))
                 .and(PersonSpecifications.hasCategories(categoryIds))
                 .and(PersonSpecifications.hasSource(source))
+                .and(PersonSpecifications.hasDealSource(dealSource))
                 .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo));
 
         return repository.findAll(spec, pageable).map(PersonMapper::toDto);

@@ -145,5 +145,15 @@ public final class DealSpecifications {
             cb.like(cb.lower(root.get("venue")), likePattern)
         );
     }
+
+    /**
+     * Filter by deal source
+     */
+    public static Specification<Deal> hasSource(com.brideside.crm.entity.DealSource source) {
+        if (source == null) {
+            return null;
+        }
+        return (root, query, cb) -> cb.equal(root.get("dealSource"), source);
+    }
 }
 

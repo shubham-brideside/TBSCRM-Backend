@@ -139,5 +139,29 @@ public final class PersonSpecifications {
             }
         };
     }
+
+    /**
+     * Filter persons who have at least one deal with the specified source
+     */
+    public static Specification<Person> hasDealSource(com.brideside.crm.entity.DealSource dealSource) {
+        if (dealSource == null) {
+            return null;
+        }
+        return (root, query, cb) -> {
+            // Use subquery to find persons who have deals with the specified source
+            jakarta.persistence.criteria.Subquery<Long> dealSubquery = query.subquery(Long.class);
+            jakarta.persistence.criteria.Root<com.brideside.crm.entity.Deal> dealRoot = dealSubquery.from(com.brideside.crm.entity.Deal.class);
+            dealSubquery.select(cb.literal(1L))
+                    .where(cb.and(
+                            cb.equal(dealRoot.get("dealSource"), dealSource),
+                            cb.or(
+                                    cb.isNull(dealRoot.get("isDeleted")),
+                                    cb.equal(dealRoot.get("isDeleted"), false)
+                            ),
+                            cb.equal(dealRoot.get("person").get("id"), root.get("id"))
+                    ));
+            return cb.exists(dealSubquery);
+        };
+    }
 }
 

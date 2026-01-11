@@ -37,12 +37,13 @@ public class PersonController {
         this.service = service;
     }
 
-    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING).")
+    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING).")
     @GetMapping
     public Page<PersonDTO> list(
             @RequestParam(name = "q", required = false) String query,
             @RequestParam(name = "label", required = false) String labelCode,
             @RequestParam(name = "source", required = false) String sourceCode,
+            @RequestParam(name = "dealSource", required = false) String dealSourceCode,
             @RequestParam(name = "organizationId", required = false) String organizationId,
             @RequestParam(name = "ownerId", required = false) String ownerId,
             @RequestParam(name = "categoryId", required = false) String categoryId,
@@ -52,10 +53,11 @@ public class PersonController {
     ) {
         List<Person.PersonLabel> labels = parseCommaSeparatedLabels(labelCode);
         com.brideside.crm.entity.DealSource source = parseSource(sourceCode);
+        com.brideside.crm.entity.DealSource dealSource = parseDealSource(dealSourceCode);
         List<Long> organizationIds = parseCommaSeparatedIds(organizationId);
         List<Long> ownerIds = parseCommaSeparatedIds(ownerId);
         List<Long> categoryIds = parseCommaSeparatedIds(categoryId);
-        return service.list(query, labels, organizationIds, ownerIds, categoryIds, source, leadFrom, leadTo, pageable);
+        return service.list(query, labels, organizationIds, ownerIds, categoryIds, source, dealSource, leadFrom, leadTo, pageable);
     }
 
     @Operation(summary = "List label options")
@@ -77,7 +79,8 @@ public class PersonController {
             new SourceOption("Direct", "Direct"),
             new SourceOption("Divert", "Divert"),
             new SourceOption("Reference", "Reference"),
-            new SourceOption("Planner", "Planner")
+            new SourceOption("Planner", "Planner"),
+            new SourceOption("TBS", "TBS")
         );
         return ResponseEntity.ok(ApiResponse.success("Sources retrieved successfully", sources));
     }
@@ -189,6 +192,18 @@ public class PersonController {
             return null;
         }
         return com.brideside.crm.entity.DealSource.fromString(value);
+    }
+
+    private com.brideside.crm.entity.DealSource parseDealSource(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        com.brideside.crm.entity.DealSource dealSource = com.brideside.crm.entity.DealSource.fromString(value);
+        if (dealSource == null) {
+            throw new BadRequestException("Invalid dealSource value: " + value + 
+                ". Allowed values: Direct, Divert, Reference, Planner, TBS");
+        }
+        return dealSource;
     }
 
     /**

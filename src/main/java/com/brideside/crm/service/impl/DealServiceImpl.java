@@ -608,15 +608,25 @@ public class DealServiceImpl implements DealService {
     @Override
     public List<Deal> list(String sortField, String sortDirection) {
         // Call the new filtered list method with all filters as null
-        return list(null, null, null, null, null, null, null, null, sortField, sortDirection);
+        return list(null, null, null, null, null, null, null, null, null, sortField, sortDirection);
     }
 
     @Override
     public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
-                           Long managerId, String dateFrom, String dateTo, String search,
+                           Long managerId, String dateFrom, String dateTo, String search, String source,
                            String sortField, String sortDirection) {
-        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, sort={},{}", 
-            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, sortField, sortDirection);
+        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, sort={},{}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, sortField, sortDirection);
+        
+        // Parse and validate source if provided
+        com.brideside.crm.entity.DealSource dealSource = null;
+        if (source != null && !source.trim().isEmpty()) {
+            dealSource = com.brideside.crm.entity.DealSource.fromString(source);
+            if (dealSource == null) {
+                throw new com.brideside.crm.exception.BadRequestException("Invalid source value: " + source + 
+                    ". Allowed values: Direct, Divert, Reference, Planner, TBS");
+            }
+        }
         
         // Build specification with all filters
         Specification<Deal> spec = Specification.where(DealSpecifications.notDeleted())
@@ -625,7 +635,8 @@ public class DealServiceImpl implements DealService {
                 .and(DealSpecifications.hasOrganization(organizationId))
                 .and(DealSpecifications.hasCategory(categoryId))
                 .and(DealSpecifications.hasManager(managerId))
-                .and(DealSpecifications.search(search));
+                .and(DealSpecifications.search(search))
+                .and(DealSpecifications.hasSource(dealSource));
 
         // Parse date filters
         LocalDate fromDate = null;
@@ -646,8 +657,8 @@ public class DealServiceImpl implements DealService {
         }
         spec = spec.and(DealSpecifications.createdBetween(fromDate, toDate));
         
-        log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}", 
-            pipelineId, status, organizationId, categoryId, managerId, fromDate, toDate, search);
+        log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}", 
+            pipelineId, status, organizationId, categoryId, managerId, fromDate, toDate, search, dealSource);
 
         // Load deals with specification
         // Note: We can't use JOIN FETCH directly with Specifications in a simple way,
