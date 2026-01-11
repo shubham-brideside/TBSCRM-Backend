@@ -49,6 +49,7 @@ public class DealDtos {
         public String lostReason; // optional: Required when status is LOST. Values: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
         public BigDecimal value; // optional: Required when status is WON and deal doesn't have a value. Can be edited if deal already has a value.
         public BigDecimal commissionAmount; // optional: Commission amount. Default: 10% of value for Direct/Reference/Planner, 15% for Divert. Can be edited.
+        public BigDecimal clientBudget; // optional: Required when lostReason is "Budget". Client's budget amount.
     }
 
     public static class UpdateRequest {
@@ -80,6 +81,7 @@ public class DealDtos {
         public List<Long> labelIds; // optional: List of label IDs from labels table
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
+        public BigDecimal clientBudget; // optional: Client's budget amount (typically set when lost reason is "Budget")
     }
 }
 

@@ -450,6 +450,9 @@ public class DealServiceImpl implements DealService {
         if (request.venueAsked != null) {
             deal.setVenueAsked(request.venueAsked);
         }
+        if (request.clientBudget != null) {
+            deal.setClientBudget(request.clientBudget);
+        }
         
         // Handle multiple event dates (preferred)
         if (request.eventDates != null && !request.eventDates.isEmpty()) {
@@ -1074,9 +1077,26 @@ public class DealServiceImpl implements DealService {
                     ". Allowed values: Slot not opened, Not Interested, Date postponed, Not Available, Ghosted, Budget, Booked Someone else");
             }
             deal.setLostReason(lostReason);
+            
+            // If lost reason is Budget, require clientBudget
+            if (lostReason == DealLostReason.BUDGET) {
+                if (request.clientBudget == null || request.clientBudget.compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new BadRequestException("clientBudget is required and must be greater than 0 when lost reason is Budget. Please provide the client's budget amount.");
+                }
+                deal.setClientBudget(request.clientBudget);
+            } else {
+                // Clear clientBudget when lost reason is not Budget
+                deal.setClientBudget(null);
+            }
+            
+            // Optionally update value if provided
+            if (request.value != null && request.value.compareTo(BigDecimal.ZERO) > 0) {
+                deal.setValue(request.value);
+            }
         } else {
-            // Clear lost reason when status is not LOST
+            // Clear lost reason and clientBudget when status is not LOST
             deal.setLostReason(null);
+            deal.setClientBudget(null);
         }
         
         // Handle WON status - require value and calculate commission

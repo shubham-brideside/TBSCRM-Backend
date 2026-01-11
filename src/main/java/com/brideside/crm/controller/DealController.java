@@ -162,6 +162,7 @@ public class DealController {
         r.status = d.getStatus();
         r.commissionAmount = d.getCommissionAmount();
         r.createdAt = d.getCreatedAt();
+        r.updatedAt = d.getUpdatedAt();
         r.venue = d.getVenue();
         r.phoneNumber = d.getPhoneNumber();
         r.finalThankYouSent = d.getFinalThankYouSent();
@@ -223,6 +224,7 @@ public class DealController {
         r.pipelineHistory = d.getPipelineHistory();
         r.isDeleted = d.getIsDeleted();
         r.lostReason = d.getLostReason() != null ? d.getLostReason().toDisplayString() : null;
+        r.clientBudget = d.getClientBudget();
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();
