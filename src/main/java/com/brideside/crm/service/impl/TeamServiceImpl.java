@@ -10,6 +10,8 @@ import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.TeamService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,9 @@ public class TeamServiceImpl implements TeamService {
     private final TeamRepository teamRepository;
     private final UserRepository userRepository;
     private final PipelineRepository pipelineRepository;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public TeamServiceImpl(TeamRepository teamRepository,
                            UserRepository userRepository,
@@ -66,7 +71,10 @@ public class TeamServiceImpl implements TeamService {
 
     @Override
     public TeamDtos.TeamResponse update(Long id, TeamDtos.TeamRequest request) {
-        Team team = getOrThrow(id);
+        // Fetch team with members loaded to ensure proper collection management
+        Team team = request.getMemberIds() != null 
+                ? getOrThrowWithMembers(id) 
+                : getOrThrow(id);
         // Track effective manager id during this update so we can exclude it from member validation
         Long effectiveManagerId = team.getManager() != null ? team.getManager().getId() : null;
 
@@ -81,8 +89,25 @@ public class TeamServiceImpl implements TeamService {
             effectiveManagerId = null;
         }
         if (request.getMemberIds() != null) {
-            team.setMembers(resolveMembers(request.getMemberIds(), effectiveManagerId));
+            // Replace members with exactly the provided memberIds
+            // This handles:
+            // - Empty arrays []: removes all members (manager will be re-added by ensureManagerAsMember)
+            // - Arrays with fewer IDs: removes members not in the list
+            // - Arrays with different IDs: replaces all members with the new list
+            // Get the new members to add (excluding manager, which is handled separately)
+            Set<User> newMembers = resolveMembers(request.getMemberIds(), effectiveManagerId);
+            
+            // Force initialization of the collection by accessing it
+            // This ensures we're working with the actual Hibernate-managed collection
+            team.getMembers().size();
+            
+            // Create a completely new HashSet to replace the collection
+            // This forces Hibernate to recognize it as a complete replacement
+            // and properly delete old join table entries and insert new ones
+            Set<User> replacementMembers = new HashSet<>(newMembers);
+            team.setMembers(replacementMembers);
         }
+        // Business rule: manager must always be a member (added if not already present)
         ensureManagerAsMember(team);
         return TeamDtos.toResponse(teamRepository.save(team));
     }
@@ -100,13 +125,23 @@ public class TeamServiceImpl implements TeamService {
     @Transactional(readOnly = true)
     public List<TeamDtos.UserSummary> listManagersForRole(Role.RoleName roleName) {
         if (roleName == null) {
-            roleName = Role.RoleName.SALES;
+            // If no role specified, return all eligible managers (ADMIN, CATEGORY_MANAGER, SALES)
+            List<User> allManagers = new java.util.ArrayList<>();
+            allManagers.addAll(userRepository.findByRole_NameAndActiveTrue(Role.RoleName.ADMIN));
+            allManagers.addAll(userRepository.findByRole_NameAndActiveTrue(Role.RoleName.CATEGORY_MANAGER));
+            allManagers.addAll(userRepository.findByRole_NameAndActiveTrue(Role.RoleName.SALES));
+            return allManagers.stream()
+                    .map(TeamDtos::toSummary)
+                    .collect(Collectors.toList());
         }
         List<User> users;
         switch (roleName) {
             case ADMIN:
+                users = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.ADMIN);
+                break;
             case CATEGORY_MANAGER:
-                return List.of();
+                users = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.CATEGORY_MANAGER);
+                break;
             case SALES:
             case PRESALES:
                 users = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.SALES);
@@ -134,6 +169,11 @@ public class TeamServiceImpl implements TeamService {
                 .orElseThrow(() -> new ResourceNotFoundException("Team not found with id " + id));
     }
 
+    private Team getOrThrowWithMembers(Long id) {
+        return teamRepository.findByIdWithMembers(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Team not found with id " + id));
+    }
+
     private User resolveManager(Long managerId) {
         if (managerId == null) return null;
         User manager = userRepository.findById(managerId)
@@ -145,8 +185,9 @@ public class TeamServiceImpl implements TeamService {
             throw new BadRequestException("Manager must have a role");
         }
         Role.RoleName role = manager.getRole().getName();
-        if (role != Role.RoleName.SALES) {
-            throw new BadRequestException("Manager must have SALES role");
+        // Allow ADMIN, CATEGORY_MANAGER, or SALES roles for team managers
+        if (role != Role.RoleName.ADMIN && role != Role.RoleName.CATEGORY_MANAGER && role != Role.RoleName.SALES) {
+            throw new BadRequestException("Manager must have ADMIN, CATEGORY_MANAGER, or SALES role");
         }
         return manager;
     }
@@ -156,7 +197,7 @@ public class TeamServiceImpl implements TeamService {
      * <p>
      * Business rules:
      * - Only PRESALES users can be team members.
-     * - The team manager (SALES) is always added separately via {@link #ensureManagerAsMember(Team)}
+     * - The team manager (ADMIN, CATEGORY_MANAGER, or SALES) is always added separately via {@link #ensureManagerAsMember(Team)}
      *   and should be ignored during member validation to avoid false validation errors when the
      *   frontend sends the full member list including the manager.
      *
