@@ -148,7 +148,7 @@ public class TargetController {
     }
 
     @GetMapping("/sales-users")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','CATEGORY_MANAGER')")
     @Operation(summary = "Get sales users with organizations", description = "Returns list of all SALES users with their associated organizations.")
     public ApiResponse<List<TargetDtos.SalesUserWithOrganizations>> getSalesUsersWithOrganizations() {
         return ApiResponse.success("Sales users with organizations fetched", 

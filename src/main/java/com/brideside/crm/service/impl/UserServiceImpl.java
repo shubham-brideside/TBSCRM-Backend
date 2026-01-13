@@ -13,8 +13,10 @@ import com.brideside.crm.entity.Team;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
+import com.brideside.crm.constants.PageName;
 import com.brideside.crm.repository.InvitationTokenRepository;
 import com.brideside.crm.repository.OrganizationRepository;
+import com.brideside.crm.repository.PageAccessRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.RoleRepository;
 import com.brideside.crm.repository.TeamRepository;
@@ -61,6 +63,9 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private com.brideside.crm.repository.PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Autowired
+    private PageAccessRepository pageAccessRepository;
 
     @Value("${app.invitation-token-validity:604800000}")
     private long invitationTokenValidity;
@@ -179,6 +184,18 @@ public class UserServiceImpl implements UserService {
             }
 
             return scopedUsers.stream()
+                    .map(this::convertToResponse)
+                    .collect(Collectors.toList());
+        }
+
+        // Check if user has access to "users" page
+        // If CATEGORY_MANAGER or other roles have "users" page access, they can see all users like ADMIN
+        boolean hasUsersPageAccess = hasPageAccess(currentUser, PageName.USERS);
+        
+        // Admin always has access, or if user has "users" page access enabled
+        if (currentUser.getRole().getName() == Role.RoleName.ADMIN || hasUsersPageAccess) {
+            // Return all users without filtering
+            return userRepository.findAll().stream()
                     .map(this::convertToResponse)
                     .collect(Collectors.toList());
         }
@@ -391,10 +408,10 @@ public class UserServiceImpl implements UserService {
             return true;
         }
         
-        // Category Manager can see Sales and Presales under them
+        // Category Manager can see all Sales and Presales users
         if (currentRole == Role.RoleName.CATEGORY_MANAGER) {
             if (targetRole == Role.RoleName.SALES || targetRole == Role.RoleName.PRESALES) {
-                return isUnderUser(currentUser, targetUser);
+                return true;  // Category Manager can see all SALES and PRESALES users
             }
             return false;
         }
@@ -442,6 +459,36 @@ public class UserServiceImpl implements UserService {
     private User getCurrentUser(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("Current user not found"));
+    }
+
+    /**
+     * Check if user has access to a specific page
+     * Returns true if:
+     * 1. User is ADMIN (always has access)
+     * 2. There's a page_access record with has_access = true
+     * 3. No record exists but role-based default grants access
+     */
+    private boolean hasPageAccess(User user, String pageName) {
+        // Admin always has access
+        if (user.getRole().getName() == Role.RoleName.ADMIN) {
+            return true;
+        }
+
+        // Check if there's an explicit page access record
+        return pageAccessRepository.findByUserIdAndPageName(user.getId(), pageName)
+                .map(pageAccess -> pageAccess.getHasAccess())
+                .orElseGet(() -> {
+                    // No record exists, check role-based defaults
+                    // For "users" page, default is false for all roles except ADMIN
+                    // But we can check if role-based default would grant access
+                    Role.RoleName roleName = user.getRole().getName();
+                    if (pageName.equals(PageName.USERS)) {
+                        // Only ADMIN has default access to users page
+                        return false;
+                    }
+                    // For other pages, you could add role-based default logic here if needed
+                    return false;
+                });
     }
 
     private User resolveManagerForRole(Role.RoleName roleName, Long managerId, User existingManager) {
