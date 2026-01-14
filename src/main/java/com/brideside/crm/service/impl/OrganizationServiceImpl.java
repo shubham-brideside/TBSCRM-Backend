@@ -2,11 +2,16 @@ package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.OrganizationDtos;
 import com.brideside.crm.entity.Organization;
+import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.OrganizationRepository;
+import com.brideside.crm.repository.PersonRepository;
+import com.brideside.crm.repository.DealRepository;
+import com.brideside.crm.repository.ActivityRepository;
+import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.OrganizationService;
 import org.springframework.stereotype.Service;
@@ -23,13 +28,25 @@ public class OrganizationServiceImpl implements OrganizationService {
 
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final PersonRepository personRepository;
+    private final DealRepository dealRepository;
+    private final ActivityRepository activityRepository;
+    private final PipelineRepository pipelineRepository;
     private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES =
             EnumSet.of(Role.RoleName.SALES, Role.RoleName.CATEGORY_MANAGER);
 
     public OrganizationServiceImpl(OrganizationRepository organizationRepository,
-                                   UserRepository userRepository) {
+                                   UserRepository userRepository,
+                                   PersonRepository personRepository,
+                                   DealRepository dealRepository,
+                                   ActivityRepository activityRepository,
+                                   PipelineRepository pipelineRepository) {
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
+        this.personRepository = personRepository;
+        this.dealRepository = dealRepository;
+        this.activityRepository = activityRepository;
+        this.pipelineRepository = pipelineRepository;
     }
 
     @Override
@@ -71,6 +88,26 @@ public class OrganizationServiceImpl implements OrganizationService {
     @Override
     public void delete(Long id) {
         Organization organization = getOrThrow(id);
+        // Detach persons linked to this organization (set organization_id = null, keep persons)
+        personRepository.clearOrganizationByOrganizationId(id);
+
+        // Soft-delete deals linked to this organization (set isDeleted = true and clear organization)
+        dealRepository.softDeleteDealsByOrganizationId(id);
+
+        // Hard-delete activities linked to this organization
+        activityRepository.deleteActivitiesByOrganizationId(id);
+
+        // Soft-delete pipelines linked to this organization and detach them
+        List<Pipeline> pipelines = pipelineRepository.findByOrganization(organization);
+        if (!pipelines.isEmpty()) {
+            for (Pipeline pipeline : pipelines) {
+                pipeline.setDeleted(Boolean.TRUE);
+                pipeline.setOrganization(null);
+            }
+            pipelineRepository.saveAll(pipelines);
+        }
+
+        // Now it's safe to delete the organization
         organizationRepository.delete(organization);
     }
 

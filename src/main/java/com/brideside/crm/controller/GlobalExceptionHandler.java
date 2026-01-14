@@ -118,7 +118,7 @@ public class GlobalExceptionHandler {
                             .body(ApiResponse.error("Person ID does not exist. Please provide a valid person ID that exists in the persons table."));
                 } else {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                            .body(ApiResponse.error("Referenced record does not exist. Please check that all foreign key references are valid."));
+                            .body(ApiResponse.error("Referenced record does not exist. Please check that all foreign key references are valid. Raw error: " + message));
                 }
             }
         }

@@ -1174,6 +1174,9 @@ public class ActivityService {
                         userPredicates.add(
                                 cb.lower(root.get("assignedUser")).in(scope.assignedUserNames()));
                     }
+                    // New behavior: always include unassigned activities (assigned_user_id IS NULL)
+                    // so they remain visible to all scoped users (Sales, Presales, Category Managers, etc.)
+                    userPredicates.add(cb.isNull(root.get("assignedUserId")));
                     if (!userPredicates.isEmpty()) {
                         disjuncts.add(orPredicates(cb, userPredicates));
                     }
