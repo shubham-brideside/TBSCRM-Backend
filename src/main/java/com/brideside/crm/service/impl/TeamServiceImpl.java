@@ -1,6 +1,7 @@
 package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.TeamDtos;
+import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Team;
 import com.brideside.crm.entity.User;
@@ -115,8 +116,13 @@ public class TeamServiceImpl implements TeamService {
     @Override
     public void delete(Long id) {
         Team team = getOrThrow(id);
-        if (pipelineRepository.existsByTeam(team)) {
-            throw new BadRequestException("Cannot delete team assigned to pipelines");
+        // Detach this team from any pipelines that currently reference it
+        List<Pipeline> pipelines = pipelineRepository.findByTeam(team);
+        if (!pipelines.isEmpty()) {
+            for (Pipeline pipeline : pipelines) {
+                pipeline.setTeam(null);
+            }
+            pipelineRepository.saveAll(pipelines);
         }
         teamRepository.delete(team);
     }

@@ -14,15 +14,20 @@ import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.constants.PageName;
+import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.InvitationTokenRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PageAccessRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.RoleRepository;
+import com.brideside.crm.repository.SalesTargetRepository;
 import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.service.EmailService;
 import com.brideside.crm.service.UserService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -66,6 +71,18 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     private PageAccessRepository pageAccessRepository;
+
+    @Autowired
+    private ActivityRepository activityRepository;
+
+    @Autowired
+    private SalesTargetRepository salesTargetRepository;
+
+    @Autowired
+    private DealRepository dealRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Value("${app.invitation-token-validity:604800000}")
     private long invitationTokenValidity;
@@ -310,13 +327,10 @@ public class UserServiceImpl implements UserService {
 
         List<User> subordinates = userRepository.findByManagerId(id);
         if (!subordinates.isEmpty()) {
-            if (newManager == null) {
-                throw new BadRequestException("Cannot delete user. This user has " + subordinates.size()
-                        + " subordinate(s). Please provide a manager ID to reassign them to, or delete the subordinates first.");
-            }
-
+            // If a new manager is provided, reassign subordinates to that manager.
+            // If not provided, clear their manager (they become unassigned).
             for (User subordinate : subordinates) {
-                subordinate.setManager(newManager);
+                subordinate.setManager(newManager); // may be null
                 userRepository.save(subordinate);
             }
         }
@@ -378,6 +392,30 @@ public class UserServiceImpl implements UserService {
 
         // Delete related password reset tokens
         passwordResetTokenRepository.deleteByUserId(id);
+
+        // Delete page access records for this user (page_access.user_id FK)
+        pageAccessRepository.deleteByUserId(id);
+
+        // Clear activities assigned to this user (set assigned_user_id to NULL)
+        // This prevents foreign key constraint violations when deleting the user
+        activityRepository.clearAssignedUserIdByUserId(id);
+
+        // Delete sales targets for this user
+        // Sales targets have a foreign key constraint to users(id) without ON DELETE clause
+        List<com.brideside.crm.entity.SalesTarget> salesTargets = salesTargetRepository.findByUser_Id(id);
+        if (!salesTargets.isEmpty()) {
+            salesTargetRepository.deleteAll(salesTargets);
+        }
+
+        // Clear createdByUser references from deals created by this user (created_by_user_id FK)
+        dealRepository.findByCreatedByUserId(id).forEach(deal -> {
+            deal.setCreatedByUserId(null);
+            deal.setCreatedByUser(null);
+            dealRepository.save(deal);
+        });
+
+        // Explicitly flush to ensure all updates and deletes are persisted before user deletion
+        entityManager.flush();
 
         // Delete the user
         userRepository.delete(user);

@@ -578,8 +578,15 @@
                         deleteUserRole = userToDelete.role;
                     }
                     
-                    const subordinates = data.data.filter(u => u.managerId === userId);
+                    // Check for subordinates - handle both number and string comparisons
+                    const subordinates = data.data.filter(u => {
+                        // Convert both to numbers for comparison
+                        const userManagerId = u.managerId != null ? Number(u.managerId) : null;
+                        const targetUserId = Number(userId);
+                        return userManagerId === targetUserId;
+                    });
                     console.log('Found subordinates:', subordinates.length);
+                    console.log('Subordinates details:', subordinates);
                     console.log('User role:', deleteUserRole);
                     
                     // PRESALES cannot have subordinates, so never show manager dropdown for them
@@ -863,15 +870,40 @@
                     // Reload users list
                     await loadUsers();
                 } else {
-                    if (messageDiv) {
-                        messageDiv.className = 'message error';
-                        messageDiv.textContent = data.message || 'Failed to delete user';
+                    // Check if error is about subordinates requiring reassignment
+                    const errorMessage = data.message || 'Failed to delete user';
+                    if (errorMessage.includes('subordinate') && errorMessage.includes('reassign')) {
+                        // User has subordinates - show modal with reassign option
+                        const modalMessage = document.getElementById('deleteModalMessage');
+                        const reassignSection = document.getElementById('reassignSection');
+                        const deleteModal = document.getElementById('deleteModal');
                         
-                        // Auto-hide error message after 5 seconds
-                        setTimeout(() => {
-                            messageDiv.className = 'message';
-                            messageDiv.textContent = '';
-                        }, 5000);
+                        if (modalMessage) {
+                            modalMessage.textContent = errorMessage;
+                        }
+                        
+                        if (reassignSection) {
+                            reassignSection.style.display = 'block';
+                        }
+                        
+                        // Load available managers
+                        await loadManagersForReassign();
+                        
+                        if (deleteModal) {
+                            deleteModal.style.display = 'block';
+                        }
+                    } else {
+                        // Other error - show in message div
+                        if (messageDiv) {
+                            messageDiv.className = 'message error';
+                            messageDiv.textContent = errorMessage;
+                            
+                            // Auto-hide error message after 5 seconds
+                            setTimeout(() => {
+                                messageDiv.className = 'message';
+                                messageDiv.textContent = '';
+                            }, 5000);
+                        }
                     }
                 }
             } catch (error) {

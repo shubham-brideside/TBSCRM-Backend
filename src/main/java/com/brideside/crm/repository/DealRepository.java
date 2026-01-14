@@ -10,6 +10,7 @@ import com.brideside.crm.entity.Category;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -25,6 +26,7 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findByPerson(Person person);
     List<Deal> findByOrganization(Organization organization);
     List<Deal> findByDealCategory(Category category);
+    List<Deal> findByCreatedByUserId(Long createdByUserId);
 
     @Query("select distinct d from Deal d " +
             "left join fetch d.person p " +
@@ -59,6 +61,16 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     @EntityGraph(attributePaths = {"labels"})
     @Query("SELECT d FROM Deal d WHERE d.id = :id AND (d.isDeleted = false OR d.isDeleted IS NULL)")
     Optional<Deal> findByIdWithLabel(@Param("id") Long id);
+
+    // Bulk detach organization from deals (including soft-deleted ones)
+    @Modifying
+    @Query("UPDATE Deal d SET d.organization = null WHERE d.organization.id = :organizationId")
+    int clearOrganizationByOrganizationId(@Param("organizationId") Long organizationId);
+
+    // Bulk soft-delete deals by organization (set isDeleted = true and clear organization)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Deal d SET d.isDeleted = true, d.organization = null WHERE d.organization.id = :organizationId")
+    int softDeleteDealsByOrganizationId(@Param("organizationId") Long organizationId);
 }
 
 
