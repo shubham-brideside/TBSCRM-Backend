@@ -25,6 +25,15 @@ public interface ActivityRepository extends JpaRepository<Activity, Long>, JpaSp
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "DELETE FROM activities WHERE organization_id = :organizationId", nativeQuery = true)
     void deleteActivitiesByOrganizationId(@Param("organizationId") Long organizationId);
+
+    // Find all activities for a given person ID
+    @Query("SELECT a FROM Activity a WHERE a.personId = :personId")
+    List<Activity> findByPersonId(@Param("personId") Long personId);
+
+    // Bulk update person ID for activities
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE activities SET person_id = :targetPersonId WHERE person_id = :sourcePersonId", nativeQuery = true)
+    int updatePersonId(@Param("sourcePersonId") Long sourcePersonId, @Param("targetPersonId") Long targetPersonId);
 }
 
 

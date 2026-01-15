@@ -163,5 +163,59 @@ public final class PersonSpecifications {
             return cb.exists(dealSubquery);
         };
     }
+
+    /**
+     * Filter persons by phone number (case-insensitive, trimmed comparison)
+     * Note: Trimming is done in Java before query for database compatibility
+     */
+    public static Specification<Person> hasPhone(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            return null;
+        }
+        String trimmedPhone = phone.trim().toLowerCase();
+        return (root, query, cb) -> {
+            // Case-insensitive comparison using LOWER function
+            // Handle null values in database by checking for null first
+            return cb.and(
+                cb.isNotNull(root.get("phone")),
+                cb.equal(
+                    cb.lower(root.get("phone")),
+                    trimmedPhone
+                )
+            );
+        };
+    }
+
+    /**
+     * Filter persons by Instagram ID (case-insensitive, trimmed comparison)
+     * Note: Trimming is done in Java before query for database compatibility
+     */
+    public static Specification<Person> hasInstagramId(String instagramId) {
+        if (instagramId == null || instagramId.trim().isEmpty()) {
+            return null;
+        }
+        String trimmedInstagramId = instagramId.trim().toLowerCase();
+        return (root, query, cb) -> {
+            // Case-insensitive comparison using LOWER function
+            // Handle null values in database by checking for null first
+            return cb.and(
+                cb.isNotNull(root.get("instagramId")),
+                cb.equal(
+                    cb.lower(root.get("instagramId")),
+                    trimmedInstagramId
+                )
+            );
+        };
+    }
+
+    /**
+     * Exclude a specific person ID (useful for edit scenarios)
+     */
+    public static Specification<Person> excludeId(Long excludeId) {
+        if (excludeId == null) {
+            return null;
+        }
+        return (root, query, cb) -> cb.notEqual(root.get("id"), excludeId);
+    }
 }
 
