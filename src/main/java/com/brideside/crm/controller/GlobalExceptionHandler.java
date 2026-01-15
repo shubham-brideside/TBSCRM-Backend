@@ -11,6 +11,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -78,6 +79,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleNoSuchElementException(NoSuchElementException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiResponse.error(ex.getMessage() != null ? ex.getMessage() : "Resource not found"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Object>> handleHttpRequestMethodNotSupportedException(
+            HttpRequestMethodNotSupportedException ex) {
+        String message = String.format(
+            "HTTP method '%s' is not supported for this endpoint. Supported methods: %s. " +
+            "For custom filters, use POST /api/custom-filters/{entityType} where entityType is 'persons', 'deals', or 'activities'.",
+            ex.getMethod(),
+            ex.getSupportedHttpMethods() != null ? ex.getSupportedHttpMethods().toString() : "unknown"
+        );
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiResponse.error(message));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
