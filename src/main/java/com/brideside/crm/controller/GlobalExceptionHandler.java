@@ -1,7 +1,9 @@
 package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
+import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.exception.BadRequestException;
+import com.brideside.crm.exception.DuplicatePersonException;
 import com.brideside.crm.exception.ForbiddenException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.exception.UnauthorizedException;
@@ -27,6 +29,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleResourceNotFoundException(ResourceNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(DuplicatePersonException.class)
+    public ResponseEntity<ApiResponse<PersonDTO>> handleDuplicatePersonException(DuplicatePersonException ex) {
+        // Return structured error with duplicate person information
+        ApiResponse<PersonDTO> response = new ApiResponse<>();
+        response.setSuccess(false);
+        response.setMessage(ex.getMessage());
+        response.setData(ex.getDuplicatePerson());
+        
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(BadRequestException.class)

@@ -50,7 +50,7 @@ public class PersonController {
         this.userRepository = userRepository;
     }
 
-    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING).")
+    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING). Also supports duplicate checking with phone, instagramId, and excludeId parameters.")
     @GetMapping
     public Page<PersonDTO> list(
             @RequestParam(name = "q", required = false) String query,
@@ -62,8 +62,23 @@ public class PersonController {
             @RequestParam(name = "categoryId", required = false) String categoryId,
             @RequestParam(name = "leadFrom", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadFrom,
             @RequestParam(name = "leadTo", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadTo,
+            @RequestParam(name = "phone", required = false) String phone,
+            @RequestParam(name = "instagramId", required = false) String instagramId,
+            @RequestParam(name = "excludeId", required = false) Long excludeId,
             @ParameterObject @PageableDefault(size = 25, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
+        // If phone or instagramId is provided, this is a duplicate check request
+        // Return paginated results with duplicates
+        if ((phone != null && !phone.trim().isEmpty()) || (instagramId != null && !instagramId.trim().isEmpty())) {
+            List<PersonDTO> duplicates = service.checkDuplicates(phone, instagramId, excludeId);
+            // Convert to Page for consistency with API format
+            int start = (int) pageable.getOffset();
+            int end = Math.min((start + pageable.getPageSize()), duplicates.size());
+            List<PersonDTO> pageContent = start < duplicates.size() ? duplicates.subList(start, end) : List.of();
+            return new org.springframework.data.domain.PageImpl<>(pageContent, pageable, duplicates.size());
+        }
+        
+        // Otherwise, return normal paginated list
         List<Person.PersonLabel> labels = parseCommaSeparatedLabels(labelCode);
         com.brideside.crm.entity.DealSource source = parseSource(sourceCode);
         com.brideside.crm.entity.DealSource dealSource = parseDealSource(dealSourceCode);
@@ -130,17 +145,33 @@ public class PersonController {
         return service.getSummary(id);
     }
 
-    @Operation(summary = "Create person")
+    @Operation(
+        summary = "Create person",
+        description = "Creates a new person. By default, checks for duplicates by phone/Instagram ID. " +
+                      "Use skipDuplicateCheck=true query parameter when you plan to merge immediately after creation."
+    )
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Person created successfully")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Duplicate person found (when skipDuplicateCheck=false)")
     @PostMapping
-    public ResponseEntity<PersonDTO> create(@Valid @RequestBody PersonDTO dto) {
-        return ResponseEntity.status(201).body(service.create(dto));
+    public ResponseEntity<PersonDTO> create(
+            @Valid @RequestBody PersonDTO dto,
+            @RequestParam(name = "skipDuplicateCheck", required = false, defaultValue = "false") boolean skipDuplicateCheck) {
+        return ResponseEntity.status(201).body(service.create(dto, skipDuplicateCheck));
     }
 
-    @Operation(summary = "Update person")
+    @Operation(
+        summary = "Update person",
+        description = "Updates an existing person. By default, checks for duplicates when phone/Instagram ID changes. " +
+                      "Use skipDuplicateCheck=true query parameter when you plan to merge immediately after update."
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Person updated successfully")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Duplicate person found (when skipDuplicateCheck=false)")
     @PutMapping("/{id}")
-    public PersonDTO update(@PathVariable Long id, @Valid @RequestBody PersonDTO dto) {
-        return service.update(id, dto);
+    public PersonDTO update(
+            @Parameter(description = "Person ID") @PathVariable Long id,
+            @Valid @RequestBody PersonDTO dto,
+            @RequestParam(name = "skipDuplicateCheck", required = false, defaultValue = "false") boolean skipDuplicateCheck) {
+        return service.update(id, dto, skipDuplicateCheck);
     }
 
     @Operation(summary = "Delete person")
@@ -157,9 +188,26 @@ public class PersonController {
         return ResponseEntity.ok(service.bulkDelete(ids));
     }
 
-    @Operation(summary = "Merge duplicate persons")
+    @Operation(
+        summary = "Merge duplicate persons",
+        description = "Merges one or more duplicate persons into the target person. " +
+                      "All data from duplicate persons is merged into the target person using intelligent conflict resolution. " +
+                      "All associated deals and activities are reassigned to the target person. " +
+                      "Duplicate persons are soft-deleted after successful merge. " +
+                      "The operation is atomic - if any step fails, all changes are rolled back."
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "200",
+        description = "Persons merged successfully"
+    )
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        responseCode = "400",
+        description = "Bad request - target person not found, duplicate person not found, self-merge attempt, or merge conflict"
+    )
     @PostMapping("/{id}/merge")
-    public PersonDTO merge(@PathVariable Long id, @RequestBody MergeRequest request) {
+    public PersonDTO merge(
+            @Parameter(description = "Target person ID (the person to keep as primary)") @PathVariable Long id,
+            @RequestBody MergeRequest request) {
         return service.merge(id, request != null ? request.getDuplicateIds() : List.of());
     }
 
