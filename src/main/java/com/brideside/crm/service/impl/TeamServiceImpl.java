@@ -202,7 +202,7 @@ public class TeamServiceImpl implements TeamService {
      * Resolve team members from ids.
      * <p>
      * Business rules:
-     * - Only PRESALES users can be team members.
+     * - Team members can have any role.
      * - The team manager (ADMIN, CATEGORY_MANAGER, or SALES) is always added separately via {@link #ensureManagerAsMember(Team)}
      *   and should be ignored during member validation to avoid false validation errors when the
      *   frontend sends the full member list including the manager.
@@ -214,7 +214,7 @@ public class TeamServiceImpl implements TeamService {
         if (memberIds == null || memberIds.isEmpty()) return new HashSet<>();
         Set<Long> uniqueIds = new HashSet<>(memberIds);
 
-        // The manager is handled separately and may not have PRESALES role.
+        // The manager is handled separately.
         // If the incoming list includes the manager id (common during updates),
         // remove it before validating members to avoid spurious errors.
         if (managerIdToExclude != null) {
@@ -233,8 +233,8 @@ public class TeamServiceImpl implements TeamService {
             if (Boolean.FALSE.equals(user.getActive())) {
                 throw new BadRequestException("Team members must be active users");
             }
-            if (user.getRole() == null || user.getRole().getName() != Role.RoleName.PRESALES) {
-                throw new BadRequestException("Team members must have PRESALES role");
+            if (user.getRole() == null) {
+                throw new BadRequestException("Team members must have a role");
             }
         });
         return new HashSet<>(users);
