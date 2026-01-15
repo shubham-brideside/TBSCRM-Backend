@@ -74,6 +74,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/test-email").permitAll() // Added for email testing
                         .requestMatchers("/api/persons/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/api/activities/**").permitAll() // Temporarily open for testing
+                        .requestMatchers("/api/custom-filters/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/frontend/**").permitAll()
                         .anyRequest().authenticated()

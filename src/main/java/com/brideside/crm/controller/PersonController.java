@@ -1,11 +1,16 @@
 package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
+import com.brideside.crm.dto.CustomFilterDtos;
 import com.brideside.crm.dto.MergeRequest;
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.dto.PersonSummaryDTO;
 import com.brideside.crm.entity.Person;
+import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
+import com.brideside.crm.exception.UnauthorizedException;
+import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.service.CustomFilterService;
 import com.brideside.crm.service.PersonService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,7 +22,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -32,9 +41,13 @@ import java.util.stream.Collectors;
 public class PersonController {
 
     private final PersonService service;
+    private final CustomFilterService customFilterService;
+    private final UserRepository userRepository;
 
-    public PersonController(PersonService service) {
+    public PersonController(PersonService service, CustomFilterService customFilterService, UserRepository userRepository) {
         this.service = service;
+        this.customFilterService = customFilterService;
+        this.userRepository = userRepository;
     }
 
     @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING).")
@@ -148,6 +161,75 @@ public class PersonController {
     @PostMapping("/{id}/merge")
     public PersonDTO merge(@PathVariable Long id, @RequestBody MergeRequest request) {
         return service.merge(id, request != null ? request.getDuplicateIds() : List.of());
+    }
+
+    // DEPRECATED: Use /api/custom-filters/persons instead
+    // This endpoint is kept for backward compatibility during frontend migration
+    @PostMapping("/custom-filters")
+    @Deprecated
+    public ResponseEntity<ApiResponse<CustomFilterDtos.FilterResponse>> deprecatedCustomFiltersPost(
+            @Valid @RequestBody CustomFilterDtos.SaveFilterRequest request) {
+        // Forward to new endpoint
+        Long userId = getCurrentUserId();
+        try {
+            CustomFilterDtos.FilterResponse response = customFilterService.saveFilter(userId, "persons", request);
+            return ResponseEntity.ok(ApiResponse.success("Filter saved successfully", response));
+        } catch (com.brideside.crm.exception.BadRequestException e) {
+            if (e.getMessage() != null && e.getMessage().contains("already exists")) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(ApiResponse.error("Filter with this name already exists"));
+            }
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // DEPRECATED: Use /api/custom-filters/persons instead
+    @GetMapping("/custom-filters")
+    @Deprecated
+    public ResponseEntity<java.util.Map<String, java.util.List<CustomFilterDtos.FilterCondition>>> deprecatedCustomFiltersGet() {
+        // Forward to new endpoint
+        Long userId = getCurrentUserId();
+        java.util.Map<String, java.util.List<CustomFilterDtos.FilterCondition>> filters = customFilterService.getAllFilters(userId, "persons");
+        return ResponseEntity.ok(filters);
+    }
+
+    // DEPRECATED: Use /api/custom-filters/persons/{name} instead
+    @DeleteMapping("/custom-filters/{name}")
+    @Deprecated
+    public ResponseEntity<ApiResponse<Void>> deprecatedCustomFiltersDelete(
+            @PathVariable String name) {
+        // Forward to new endpoint
+        Long userId = getCurrentUserId();
+        try {
+            String decodedName = java.net.URLDecoder.decode(name, java.nio.charset.StandardCharsets.UTF_8);
+            customFilterService.deleteFilter(userId, "persons", decodedName);
+            return ResponseEntity.ok(ApiResponse.success("Filter deleted successfully", null));
+        } catch (com.brideside.crm.exception.ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("Filter not found"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Invalid filter name encoding"));
+        }
+    }
+
+    /**
+     * Gets the current authenticated user's ID from the security context
+     */
+    private Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetails)) {
+            throw new UnauthorizedException("User not authenticated");
+        }
+        
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        String email = userDetails.getUsername();
+        
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        
+        return user.getId();
     }
 
     private Person.PersonLabel parseLabel(String value) {
