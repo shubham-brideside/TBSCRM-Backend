@@ -23,17 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class PersonService {
-
-    private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES = EnumSet.of(Role.RoleName.SALES);
 
     private final PersonRepository repository;
     private final OrganizationRepository organizationRepository;
@@ -244,7 +240,7 @@ public class PersonService {
     }
 
     public List<PersonDTO.OwnerOption> listOwnerOptions() {
-        return userRepository.findByRole_NameInAndActiveTrue(ALLOWED_OWNER_ROLES).stream()
+        return userRepository.findByActiveTrue().stream()
                 .map(this::toOwnerOption)
                 .collect(Collectors.toList());
     }
@@ -336,8 +332,8 @@ public class PersonService {
     private User resolveOwner(Long ownerId) {
         User user = userRepository.findById(ownerId)
                 .orElseThrow(() -> new BadRequestException("Owner not found with id " + ownerId));
-        if (user.getRole() == null || !ALLOWED_OWNER_ROLES.contains(user.getRole().getName())) {
-            throw new BadRequestException("Owner must have SALES role");
+        if (user.getRole() == null) {
+            throw new BadRequestException("Owner must have a role");
         }
         if (Boolean.FALSE.equals(user.getActive())) {
             throw new BadRequestException("Owner must be active");
