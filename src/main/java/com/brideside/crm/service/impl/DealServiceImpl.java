@@ -201,7 +201,7 @@ public class DealServiceImpl implements DealService {
             DealLabel labelEnum = DealLabel.fromString(request.label);
             if (labelEnum == null) {
                 throw new BadRequestException("Invalid label value: " + request.label + 
-                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
+                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING, BRIDAL MAKEUP");
             }
             deal.setLabelEnum(labelEnum);
             
@@ -494,7 +494,7 @@ public class DealServiceImpl implements DealService {
             DealLabel labelEnum = DealLabel.fromString(request.label);
             if (labelEnum == null) {
                 throw new BadRequestException("Invalid label value: " + request.label + 
-                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING");
+                    ". Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING, BRIDAL MAKEUP");
             }
             deal.setLabelEnum(labelEnum);
             
