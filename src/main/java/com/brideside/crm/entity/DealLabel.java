@@ -5,7 +5,8 @@ public enum DealLabel {
     DIVERT,
     DESTINATION,
     PARTY_MAKEUP,
-    PRE_WEDDING;
+    PRE_WEDDING,
+    BRIDAL_MAKEUP;
 
     /**
      * Converts a string value to DealLabel enum, handling spaces and case variations.

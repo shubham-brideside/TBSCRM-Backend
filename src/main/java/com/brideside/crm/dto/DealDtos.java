@@ -30,7 +30,7 @@ public class DealDtos {
         public Boolean venueAsked; // optional
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
         public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
-        public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING (legacy enum)
+        public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING, BRIDAL MAKEUP (legacy enum)
         public Long labelId; // optional: ID of custom label from labels table (deprecated, use labelIds instead)
         public List<Long> labelIds; // optional: List of label IDs from labels table
         public String source; // optional: Direct, Divert, Reference, Planner
@@ -76,7 +76,7 @@ public class DealDtos {
         public Boolean venueAsked;
         public String eventDate; // ISO-8601 date string (yyyy-MM-dd) - legacy, use eventDates instead
         public List<String> eventDates; // List of ISO-8601 date strings (yyyy-MM-dd)
-        public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING (legacy enum)
+        public String label; // optional: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING, BRIDAL MAKEUP (legacy enum)
         public Long labelId; // optional: ID of custom label from labels table (deprecated, use labelIds instead)
         public List<Long> labelIds; // optional: List of label IDs from labels table
         public String source; // optional: Direct, Divert, Reference, Planner

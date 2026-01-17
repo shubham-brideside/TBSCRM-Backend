@@ -40,7 +40,7 @@ All deal endpoints sit under `POST /api/deals` etc. Use these notes to wire the 
   - `status` (optional) — enum `IN_PROGRESS | WON | LOST`; default is `IN_PROGRESS`.  
   - `commissionAmount` (optional) — overrides auto commission calculation (otherwise derived from selected source).  
   - `eventDate` expects ISO `yyyy-MM-dd`. Boolean flags default to null when omitted.
-  - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP").
+  - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`, `BRIDAL MAKEUP`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP", "Bridal Makeup" or "BRIDAL_MAKEUP").
   - `source` (optional) — enum: `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive (e.g., "direct", "Direct", "DIRECT" all work).
   - `subSource` (optional) — enum: `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive. If `source` is not `"Direct"`, `subSource` will be ignored or cleared.
   - `referencedDealId` (optional) — ID of the original deal when creating a diverted deal. **Required when `label` is `DIVERT`**.
@@ -233,7 +233,7 @@ GET /api/deals?sort=linkedPerson,asc
   - `status` (optional) — enum `IN_PROGRESS | WON | LOST`
   - `commissionAmount` (optional) — overrides auto commission calculation
   - `eventDate` expects ISO `yyyy-MM-dd` format
-  - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP")
+  - `label` (optional) — enum: `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`, `BRIDAL MAKEUP`. Accepts both formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP", "Bridal Makeup" or "BRIDAL_MAKEUP")
   - `source` (optional) — enum: `Direct`, `Divert`, `Reference`, `Planner`. Case-insensitive
   - `subSource` (optional) — enum: `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive. If `source` is not `"Direct"`, `subSource` will be ignored or cleared.
   - **Note:** When updating `label` to `DIVERT`, you cannot set it via the update endpoint. Diverted deals should be created using the create endpoint with `label: "DIVERT"` and `referencedDealId`
@@ -486,7 +486,7 @@ To create a diverted deal:
 - `eventDate`: persisted as `LocalDate`; send `yyyy-MM-dd`.  
 - `phoneNumber` is separate from the linked person's phone—when a person is attached, the backend copies their current phone into `contactNumber`.  
 - `finalThankYouSent`, `eventDateAsked`, `contactNumberAsked`, `venueAsked` are booleans; `null` means "not captured yet".
-- `label`: enum with values `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`. Accepts both space-separated and underscore formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP"). Returns display format with spaces.
+- `label`: enum with values `DIRECT`, `DIVERT`, `DESTINATION`, `PARTY MAKEUP`, `PRE WEDDING`, `BRIDAL MAKEUP`. Accepts both space-separated and underscore formats (e.g., "PARTY MAKEUP" or "PARTY_MAKEUP", "Bridal Makeup" or "BRIDAL_MAKEUP"). Returns display format with spaces.
 - `source`: enum with values `Direct`, `Divert`, `Reference`, `Planner`, `TBS`. Case-insensitive input (e.g., "direct", "Direct", "DIRECT" all accepted). Returns properly capitalized display format.
 - `subSource`: enum with values `Instagram`, `Whatsapp`, `Landing Page`, `Email`. **Only valid when `source` is `"Direct"`**. Case-insensitive input. Returns properly capitalized display format. Automatically cleared when `source` is not `"Direct"`.
 - `lostReason`: string indicating why a deal was marked as LOST. Only present when `status` is `LOST`. Values: `"Slot not opened"`, `"Not Interested"`, `"Date postponed"`, `"Not Available"`, `"Ghosted"`, `"Budget"`, `"Booked Someone else"`. Automatically cleared when status changes to `IN_PROGRESS` or `WON`.
@@ -505,6 +505,7 @@ The following label values are available for the deal label dropdown:
 - `DESTINATION`
 - `PARTY MAKEUP` (can also be sent as "PARTY_MAKEUP")
 - `PRE WEDDING` (can also be sent as "PRE_WEDDING")
+- `BRIDAL MAKEUP` (can also be sent as "BRIDAL_MAKEUP" or "Bridal Makeup")
 
 ### Source Options
 The following source values are available for the deal source dropdown:
@@ -545,7 +546,7 @@ The following lost reason values are available when marking a deal as LOST:
 - Missing required fields → `400 Bad Request`.  
 - Referencing non-existent related IDs → `404 Not Found`.  
 - Invalid `status` or malformed date strings → `400 Bad Request`.
-- Invalid `label` value → `400 Bad Request` with message: "Invalid label value: {value}. Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING".
+- Invalid `label` value → `400 Bad Request` with message: "Invalid label value: {value}. Allowed values: DIRECT, DIVERT, DESTINATION, PARTY MAKEUP, PRE WEDDING, BRIDAL MAKEUP".
 - Invalid `source` value → `400 Bad Request` with message: "Invalid source value: {value}. Allowed values: Direct, Divert, Reference, Planner, TBS".
 - Invalid `subSource` value → `400 Bad Request` with message: "Invalid subSource value: {value}. Allowed values: Instagram, Whatsapp, Landing Page, Email".
 - `subSource` provided when `source` is not `"Direct"` → `400 Bad Request` with message: "subSource can only be provided when source is 'Direct'".
