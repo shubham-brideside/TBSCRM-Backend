@@ -166,6 +166,12 @@ public class DealServiceImpl implements DealService {
         }
         // Optional new fields
         deal.setVenue(request.venue);
+        // Update the linked person's venue if the deal has a person and venue is provided
+        if (request.venue != null && deal.getPerson() != null) {
+            Person person = deal.getPerson();
+            person.setVenue(request.venue);
+            personRepository.save(person);
+        }
         deal.setPhoneNumber(request.phoneNumber);
         deal.setFinalThankYouSent(request.finalThankYouSent);
         deal.setEventDateAsked(request.eventDateAsked);
@@ -398,6 +404,10 @@ public class DealServiceImpl implements DealService {
             Stage stage = stageRepository.findById(request.stageId)
                 .orElseThrow(() -> new ResourceNotFoundException("Stage not found"));
             deal.setStage(stage);
+            // If stage is changed to "Contact Made", set venueAsked to true
+            if ("Contact Made".equalsIgnoreCase(stage.getName())) {
+                deal.setVenueAsked(true);
+            }
         }
         if (request.sourceId != null) {
             Source source = sourceRepository.findById(request.sourceId)
@@ -434,6 +444,12 @@ public class DealServiceImpl implements DealService {
         }
         if (request.venue != null) {
             deal.setVenue(request.venue);
+            // Update the linked person's venue if the deal has a person
+            if (deal.getPerson() != null) {
+                Person person = deal.getPerson();
+                person.setVenue(request.venue);
+                personRepository.save(person);
+            }
         }
         if (request.phoneNumber != null) {
             deal.setPhoneNumber(request.phoneNumber);
@@ -1043,6 +1059,10 @@ public class DealServiceImpl implements DealService {
         log.info("Moving deal {} to stage: {} (ID: {})", id, stage.getName(), stage.getId());
         
         deal.setStage(stage);
+        // If stage is changed to "Contact Made", set venueAsked to true
+        if ("Contact Made".equalsIgnoreCase(stage.getName())) {
+            deal.setVenueAsked(true);
+        }
         Deal saved = dealRepository.save(deal);
         
         log.info("Deal {} createdBy: {}", saved.getId(), saved.getCreatedBy());
