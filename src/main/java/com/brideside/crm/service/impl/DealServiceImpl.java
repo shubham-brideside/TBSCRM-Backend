@@ -623,17 +623,16 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public List<Deal> list(String sortField, String sortDirection) {
-        // Call the new filtered list method with all filters as null
-        return list(null, null, null, null, null, null, null, null, null, sortField, sortDirection);
+        // Call the new filtered list method with all filters as null, and no pagination (null limit/offset)
+        return list(null, null, null, null, null, null, null, null, null, sortField, sortDirection, null, null);
     }
 
-    @Override
-    public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
-                           Long managerId, String dateFrom, String dateTo, String search, String source,
-                           String sortField, String sortDirection) {
-        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, sort={},{}", 
-            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, sortField, sortDirection);
-        
+    /**
+     * Builds a specification with all the provided filters
+     */
+    private Specification<Deal> buildSpecification(Long pipelineId, String status, Long organizationId, 
+                                                    Long categoryId, Long managerId, String dateFrom, 
+                                                    String dateTo, String search, String source) {
         // Parse and validate source if provided
         com.brideside.crm.entity.DealSource dealSource = null;
         if (source != null && !source.trim().isEmpty()) {
@@ -673,8 +672,22 @@ public class DealServiceImpl implements DealService {
         }
         spec = spec.and(DealSpecifications.createdBetween(fromDate, toDate));
         
+        return spec;
+    }
+
+    @Override
+    public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
+                           Long managerId, String dateFrom, String dateTo, String search, String source,
+                           String sortField, String sortDirection, Integer limit, Integer offset) {
+        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, sort={},{}, limit={}, offset={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset);
+        
+        // Build specification with all filters
+        Specification<Deal> spec = buildSpecification(pipelineId, status, organizationId, categoryId, 
+                                                       managerId, dateFrom, dateTo, search, source);
+        
         log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}", 
-            pipelineId, status, organizationId, categoryId, managerId, fromDate, toDate, search, dealSource);
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source);
 
         // Load deals with specification
         // Note: We can't use JOIN FETCH directly with Specifications in a simple way,
@@ -729,8 +742,39 @@ public class DealServiceImpl implements DealService {
         Comparator<Deal> comparator = getComparator(normalizedField, ascending, activitiesByDealId);
         deals.sort(comparator);
         
-        log.debug("Deal list: Returning {} deals after sorting by {} {}", deals.size(), normalizedField, sortDirection);
-        return deals;
+        // Apply pagination after sorting
+        int totalSize = deals.size();
+        int limitValue = (limit != null && limit > 0) ? limit : 100; // Default limit: 100
+        int offsetValue = (offset != null && offset >= 0) ? offset : 0; // Default offset: 0
+        
+        // Calculate pagination bounds
+        int fromIndex = Math.min(offsetValue, totalSize);
+        int toIndex = Math.min(offsetValue + limitValue, totalSize);
+        
+        // Apply pagination
+        List<Deal> paginatedDeals = (fromIndex < toIndex) 
+            ? deals.subList(fromIndex, toIndex) 
+            : new ArrayList<>();
+        
+        log.debug("Deal list: Returning {} deals (page: offset={}, limit={}) out of {} total deals after sorting by {} {}", 
+            paginatedDeals.size(), offsetValue, limitValue, totalSize, normalizedField, sortDirection);
+        return paginatedDeals;
+    }
+
+    @Override
+    public long count(Long pipelineId, String status, Long organizationId, Long categoryId,
+                      Long managerId, String dateFrom, String dateTo, String search, String source) {
+        log.debug("Deal count requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source);
+        
+        // Build specification with all filters (same as list method)
+        Specification<Deal> spec = buildSpecification(pipelineId, status, organizationId, categoryId, 
+                                                       managerId, dateFrom, dateTo, search, source);
+        
+        // Count deals matching the specification
+        long count = dealRepository.count(spec);
+        log.debug("Deal count: Found {} deals matching filters", count);
+        return count;
     }
     
     private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId() {

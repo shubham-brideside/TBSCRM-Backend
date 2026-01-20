@@ -45,10 +45,12 @@ public class DealController {
     }
 
     @GetMapping
-    @Operation(summary = "List deals", description = "List deals with optional filters and sorting. " +
-            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue), source (Direct/Divert/Reference/Planner/TBS). " +
-            "Sort: 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'")
-    public ResponseEntity<List<DealResponse>> list(
+    @Operation(summary = "List deals", description = "List deals with optional filters, sorting, and pagination. " +
+            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue/person/organization), source (Direct/Divert/Reference/Planner/TBS). " +
+            "Sort: 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'. " +
+            "Pagination: limit (default: 100), offset (default: 0). " +
+            "Returns paginated deals list and totalCount based on applied filters.")
+    public ResponseEntity<DealDtos.ListResponse> list(
             @RequestParam(required = false) Long pipelineId,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long organizationId,
@@ -58,18 +60,74 @@ public class DealController {
             @RequestParam(required = false) String dateTo,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String source,
-            @RequestParam(required = false, defaultValue = "nextActivity,asc") String sort) {
+            @RequestParam(required = false, defaultValue = "nextActivity,asc") String sort,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) Integer offset) {
+        
+        // Validate numeric parameters
+        if (pipelineId != null && pipelineId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (organizationId != null && organizationId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (categoryId != null && categoryId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (managerId != null && managerId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        // Validate pagination parameters
+        if (limit != null && limit <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (offset != null && offset < 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        // Validate date formats
+        if (dateFrom != null && !dateFrom.trim().isEmpty()) {
+            try {
+                java.time.LocalDate.parse(dateFrom.trim());
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        if (dateTo != null && !dateTo.trim().isEmpty()) {
+            try {
+                java.time.LocalDate.parse(dateTo.trim());
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        
+        // Parse sort parameter
         String[] sortParts = sort.split(",");
         String sortField = sortParts.length > 0 ? sortParts[0].trim() : "nextActivity";
         String sortDirection = sortParts.length > 1 ? sortParts[1].trim() : "asc";
         
-        List<DealResponse> res = dealService.list(
+        // Validate sort direction
+        if (!sortDirection.equalsIgnoreCase("asc") && !sortDirection.equalsIgnoreCase("desc")) {
+            sortDirection = "asc"; // Default to asc if invalid
+        }
+        
+        // Get deals list with pagination
+        List<DealResponse> deals = dealService.list(
                 pipelineId, status, organizationId, categoryId, managerId,
-                dateFrom, dateTo, search, source, sortField, sortDirection
+                dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset
         ).stream()
             .map(this::toResponse)
             .collect(Collectors.toList());
-        return ResponseEntity.ok(res);
+        
+        // Get total count with same filters (before pagination)
+        long totalCount = dealService.count(
+                pipelineId, status, organizationId, categoryId, managerId,
+                dateFrom, dateTo, search, source
+        );
+        
+        DealDtos.ListResponse response = new DealDtos.ListResponse(deals, totalCount);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/won")

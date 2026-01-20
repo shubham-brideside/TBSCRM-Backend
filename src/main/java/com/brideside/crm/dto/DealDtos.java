@@ -83,6 +83,16 @@ public class DealDtos {
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
         public BigDecimal clientBudget; // optional: Client's budget amount (typically set when lost reason is "Budget")
     }
+
+    public static class ListResponse {
+        public List<DealResponse> deals;
+        public Long totalCount;
+
+        public ListResponse(List<DealResponse> deals, Long totalCount) {
+            this.deals = deals;
+            this.totalCount = totalCount;
+        }
+    }
 }
 
 

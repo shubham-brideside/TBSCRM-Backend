@@ -496,7 +496,7 @@ public class PersonService {
     }
 
     public List<CategoryOption> listCategoryOptions() {
-        return categoryRepository.findAll().stream()
+        return categoryRepository.findAll(). stream()
                 .map(cat -> new CategoryOption(cat.getId(), cat.getName()))
                 .collect(Collectors.toList());
     }

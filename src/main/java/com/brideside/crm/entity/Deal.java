@@ -36,6 +36,10 @@ public class Deal {
     @JoinColumn(name = "pipeline_id", nullable = true)
     private Pipeline pipeline;
 
+    // Direct foreign key field to avoid JOINs when filtering by pipeline_id
+    @Column(name = "pipeline_id", insertable = false, updatable = false)
+    private Long pipelineId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "stage_id", nullable = true)
     private Stage stage;
@@ -48,9 +52,17 @@ public class Deal {
     @JoinColumn(name = "organization_id", nullable = true)
     private Organization organization;
 
+    // Direct foreign key field to avoid JOINs when filtering by organization_id
+    @Column(name = "organization_id", insertable = false, updatable = false)
+    private Long organizationId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = true)
     private Category dealCategory;
+
+    // Direct foreign key field to avoid JOINs when filtering by category_id
+    @Column(name = "category_id", insertable = false, updatable = false)
+    private Long categoryId;
 
     private String eventType; // free text per ER
 
@@ -188,14 +200,17 @@ public class Deal {
     public void setPerson(Person person) { this.person = person; }
     public Pipeline getPipeline() { return pipeline; }
     public void setPipeline(Pipeline pipeline) { this.pipeline = pipeline; }
+    public Long getPipelineId() { return pipelineId; }
     public Stage getStage() { return stage; }
     public void setStage(Stage stage) { this.stage = stage; }
     public Source getSource() { return source; }
     public void setSource(Source source) { this.source = source; }
     public Organization getOrganization() { return organization; }
     public void setOrganization(Organization organization) { this.organization = organization; }
+    public Long getOrganizationId() { return organizationId; }
     public Category getDealCategory() { return dealCategory; }
     public void setDealCategory(Category dealCategory) { this.dealCategory = dealCategory; }
+    public Long getCategoryId() { return categoryId; }
     public String getEventType() { return eventType; }
     public void setEventType(String eventType) { this.eventType = eventType; }
     public DealStatus getStatus() { return status; }

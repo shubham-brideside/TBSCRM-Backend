@@ -14,7 +14,9 @@ public interface DealService {
     List<Deal> list(String sortField, String sortDirection);
     List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId, 
                     Long managerId, String dateFrom, String dateTo, String search, String source,
-                    String sortField, String sortDirection);
+                    String sortField, String sortDirection, Integer limit, Integer offset);
+    long count(Long pipelineId, String status, Long organizationId, Long categoryId, 
+               Long managerId, String dateFrom, String dateTo, String search, String source);
     List<Deal> listWon();
     List<Deal> listByStatus(DealStatus status);
     List<Deal> listByPerson(Long personId);
