@@ -17,6 +17,8 @@ public interface DealService {
                     String sortField, String sortDirection, Integer limit, Integer offset);
     long count(Long pipelineId, String status, Long organizationId, Long categoryId, 
                Long managerId, String dateFrom, String dateTo, String search, String source);
+    List<com.brideside.crm.dto.PersonDTO> getPersonsByDealIds(List<Long> dealIds);
+    List<com.brideside.crm.dto.ActivityDTO> getActivitiesByDealIds(List<Long> dealIds);
     List<Deal> listWon();
     List<Deal> listByStatus(DealStatus status);
     List<Deal> listByPerson(Long personId);

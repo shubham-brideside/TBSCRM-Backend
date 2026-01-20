@@ -87,10 +87,15 @@ public class DealDtos {
     public static class ListResponse {
         public List<DealResponse> deals;
         public Long totalCount;
+        public List<PersonDTO> persons; // All persons linked to the returned deals
+        public List<ActivityDTO> activities; // All activities linked to the returned deals
 
-        public ListResponse(List<DealResponse> deals, Long totalCount) {
+        public ListResponse(List<DealResponse> deals, Long totalCount, 
+                           List<PersonDTO> persons, List<ActivityDTO> activities) {
             this.deals = deals;
             this.totalCount = totalCount;
+            this.persons = persons;
+            this.activities = activities;
         }
     }
 }

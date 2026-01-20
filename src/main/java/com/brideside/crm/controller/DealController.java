@@ -1,9 +1,11 @@
 package com.brideside.crm.controller;
 
+import com.brideside.crm.dto.ActivityDTO;
 import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.DealDtos;
 import com.brideside.crm.dto.DealResponse;
 import com.brideside.crm.dto.LabelDtos;
+import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.service.DealService;
@@ -113,10 +115,12 @@ public class DealController {
         }
         
         // Get deals list with pagination
-        List<DealResponse> deals = dealService.list(
+        List<Deal> dealEntities = dealService.list(
                 pipelineId, status, organizationId, categoryId, managerId,
                 dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset
-        ).stream()
+        );
+        
+        List<DealResponse> deals = dealEntities.stream()
             .map(this::toResponse)
             .collect(Collectors.toList());
         
@@ -126,7 +130,16 @@ public class DealController {
                 dateFrom, dateTo, search, source
         );
         
-        DealDtos.ListResponse response = new DealDtos.ListResponse(deals, totalCount);
+        // Extract deal IDs from loaded deals
+        List<Long> dealIds = dealEntities.stream()
+            .map(Deal::getId)
+            .collect(Collectors.toList());
+        
+        // Fetch persons and activities for these deals using JOINs
+        List<PersonDTO> persons = dealService.getPersonsByDealIds(dealIds);
+        List<ActivityDTO> activities = dealService.getActivitiesByDealIds(dealIds);
+        
+        DealDtos.ListResponse response = new DealDtos.ListResponse(deals, totalCount, persons, activities);
         return ResponseEntity.ok(response);
     }
 

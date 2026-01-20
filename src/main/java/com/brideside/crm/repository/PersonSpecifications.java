@@ -217,5 +217,30 @@ public final class PersonSpecifications {
         }
         return (root, query, cb) -> cb.notEqual(root.get("id"), excludeId);
     }
+
+    /**
+     * Filter persons who are associated with any of the specified deal IDs
+     * Uses a subquery to find persons linked to deals
+     */
+    public static Specification<Person> hasDealIds(List<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> {
+            // Use subquery to find persons who have deals with the specified IDs
+            jakarta.persistence.criteria.Subquery<Long> dealSubquery = query.subquery(Long.class);
+            jakarta.persistence.criteria.Root<com.brideside.crm.entity.Deal> dealRoot = dealSubquery.from(com.brideside.crm.entity.Deal.class);
+            dealSubquery.select(dealRoot.get("person").get("id"))
+                    .where(cb.and(
+                            dealRoot.get("id").in(dealIds),
+                            cb.or(
+                                    cb.isNull(dealRoot.get("isDeleted")),
+                                    cb.equal(dealRoot.get("isDeleted"), false)
+                            ),
+                            cb.isNotNull(dealRoot.get("person"))
+                    ));
+            return root.get("id").in(dealSubquery);
+        };
+    }
 }
 

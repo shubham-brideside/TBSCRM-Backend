@@ -24,7 +24,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/activities")
@@ -99,6 +102,37 @@ public class ActivityController {
     ) {
         return service.list(personId, dateFrom, dateTo, assignedUser, organizationIds, assignedUserIds,
                 category, status, done, serviceCategory, organizationCategory, dealId, pageable);
+    }
+
+    @Operation(summary = "Get activities by deal IDs", description = "Returns all activities associated with the specified deal IDs. " +
+            "Useful for fetching only the activities related to currently loaded deals. " +
+            "Accepts comma-separated deal IDs (e.g., dealIds=1,2,3). Returns all activities without pagination limit for efficiency.")
+    @GetMapping("/by-deals")
+    public List<ActivityDTO> getByDealIds(
+            @RequestParam(name = "dealIds", required = true) String dealIdsParam
+    ) {
+        // Parse comma-separated deal IDs
+        List<Long> dealIds;
+        if (dealIdsParam == null || dealIdsParam.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            dealIds = Arrays.stream(dealIdsParam.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .map(Long::parseLong)
+                    .filter(id -> id > 0)
+                    .distinct()
+                    .collect(Collectors.toList());
+        } catch (NumberFormatException e) {
+            throw new com.brideside.crm.exception.BadRequestException("Invalid dealIds format: " + dealIdsParam + ". Expected comma-separated numbers (e.g., 1,2,3)");
+        }
+        
+        if (dealIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        return service.getByDealIds(dealIds);
     }
 
     @Operation(summary = "Activities summary", description = "Return counts for dashboard cards (total, pending, completed, assign call, meeting scheduled). " +

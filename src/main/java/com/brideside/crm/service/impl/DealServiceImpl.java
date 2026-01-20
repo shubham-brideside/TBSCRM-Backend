@@ -776,6 +776,80 @@ public class DealServiceImpl implements DealService {
         log.debug("Deal count: Found {} deals matching filters", count);
         return count;
     }
+
+    @Override
+    public List<com.brideside.crm.dto.PersonDTO> getPersonsByDealIds(List<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        log.debug("Fetching persons for {} deals using JOIN", dealIds.size());
+        
+        // Fetch deals to get person IDs, then fetch persons with JOINs
+        // Using a subquery approach: get person IDs from deals, then fetch persons with their relations
+        List<Deal> deals = dealRepository.findAllById(dealIds);
+        Set<Long> personIds = deals.stream()
+            .filter(d -> d.getPerson() != null)
+            .map(d -> d.getPerson().getId())
+            .collect(Collectors.toSet());
+        
+        if (personIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        // Fetch persons with JOINs to avoid N+1 queries
+        // SELECT p.* FROM persons p 
+        // LEFT JOIN organizations o ON p.organization_id = o.id
+        // LEFT JOIN users u ON p.owner_id = u.id
+        // LEFT JOIN categories c ON p.category_id = c.id
+        // LEFT JOIN labels l ON p.label_id = l.id
+        // WHERE p.id IN (:personIds)
+        Specification<Person> personSpec = (root, query, cb) -> {
+            // Use fetch joins to eagerly load related entities
+            root.fetch("organization", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("owner", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("category", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("label", jakarta.persistence.criteria.JoinType.LEFT);
+            return root.get("id").in(personIds);
+        };
+        
+        List<Person> persons = personRepository.findAll(personSpec);
+        log.debug("Found {} distinct persons for {} deals", persons.size(), dealIds.size());
+        
+        return persons.stream()
+            .map(com.brideside.crm.mapper.PersonMapper::toDto)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<com.brideside.crm.dto.ActivityDTO> getActivitiesByDealIds(List<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        log.debug("Fetching activities for {} deals using JOIN", dealIds.size());
+        
+        // Fetch activities with JOIN to organization to avoid N+1 queries
+        // SELECT a.* FROM activities a 
+        // LEFT JOIN organizations o ON a.organization_id = o.id
+        // WHERE a.deal_id IN (:dealIds)
+        Specification<Activity> spec = (root, query, cb) -> {
+            // Use fetch join to eagerly load organization with its owner
+            // Note: category is an enum field in Organization, not a relationship, so it's automatically loaded
+            jakarta.persistence.criteria.Fetch<Activity, Organization> orgFetch = 
+                root.fetch("organizationRef", jakarta.persistence.criteria.JoinType.LEFT);
+            // Fetch organization's owner (category is an enum, not a relationship)
+            orgFetch.fetch("owner", jakarta.persistence.criteria.JoinType.LEFT);
+            return root.get("dealId").in(dealIds);
+        };
+        
+        List<Activity> activities = activityRepository.findAll(spec);
+        log.debug("Found {} activities for {} deals", activities.size(), dealIds.size());
+        
+        return activities.stream()
+            .map(com.brideside.crm.mapper.ActivityMapper::toDto)
+            .collect(Collectors.toList());
+    }
     
     private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId() {
         // Load all activities once and group by dealId

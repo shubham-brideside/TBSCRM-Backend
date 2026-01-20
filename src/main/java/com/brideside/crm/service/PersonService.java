@@ -485,6 +485,28 @@ public class PersonService {
         }
     }
 
+    /**
+     * Get persons associated with the specified deal IDs
+     * Returns distinct persons (no duplicates) who are linked to any of the provided deals
+     */
+    public List<PersonDTO> getByDealIds(List<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return List.of();
+        }
+        
+        Specification<Person> spec = Specification.where(PersonSpecifications.notDeleted())
+                .and(PersonSpecifications.hasDealIds(dealIds));
+        
+        // Use distinct to avoid duplicates (a person might be linked to multiple deals)
+        List<Person> persons = repository.findAll(spec).stream()
+                .distinct()
+                .collect(Collectors.toList());
+        
+        return persons.stream()
+                .map(PersonMapper::toDto)
+                .collect(Collectors.toList());
+    }
+
     public List<PersonDTO.OwnerOption> listOwnerOptions() {
         return userRepository.findByActiveTrue().stream()
                 .map(this::toOwnerOption)

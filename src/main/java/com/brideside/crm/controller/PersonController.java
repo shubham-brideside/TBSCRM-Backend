@@ -125,6 +125,19 @@ public class PersonController {
         return ResponseEntity.ok(ApiResponse.success("Sub sources retrieved successfully", subSources));
     }
 
+    @Operation(summary = "Get persons by deal IDs", description = "Returns all persons associated with the specified deal IDs. " +
+            "Useful for fetching only the persons related to currently loaded deals. " +
+            "Accepts comma-separated deal IDs (e.g., dealIds=1,2,3) or multiple dealIds parameters.")
+    @GetMapping("/by-deals")
+    public List<PersonDTO> getByDealIds(
+            @RequestParam(name = "dealIds", required = false) String dealIdsParam) {
+        List<Long> dealIds = parseCommaSeparatedIds(dealIdsParam);
+        if (dealIds.isEmpty()) {
+            return List.of();
+        }
+        return service.getByDealIds(dealIds);
+    }
+
     @Operation(summary = "List eligible owners", description = "Returns active SALES users that can own a person")
     @GetMapping("/owners")
     public List<PersonDTO.OwnerOption> ownerOptions() {

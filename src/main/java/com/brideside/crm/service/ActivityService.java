@@ -142,10 +142,11 @@ public class ActivityService {
                                   Long dealId,
                                   Pageable pageable) {
         // Build specification WITHOUT date filters (we'll filter dates in memory)
+        List<Long> dealIds = dealId != null ? List.of(dealId) : null;
         Specification<Activity> spec = buildSpecification(
                 personId, null, null, assignedUser, // Pass null for dateFrom/dateTo
                 organizationIds, assignedUserIds, category, status, done,
-                serviceCategoryCodes, organizationCategoryCodes, dealId
+                serviceCategoryCodes, organizationCategoryCodes, dealIds
         );
 
         // Parse date filters for in-memory filtering
@@ -375,6 +376,33 @@ public class ActivityService {
         }
 
         return activities.map(ActivityMapper::toDto);
+    }
+
+    /**
+     * Get activities by multiple deal IDs
+     * Returns all activities associated with the specified deal IDs without pagination
+     */
+    public List<ActivityDTO> getByDealIds(List<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        
+        // Build specification with dealIds
+        Specification<Activity> spec = buildSpecification(
+                null, null, null, null, // personId, dateFrom, dateTo, assignedUser
+                null, null, // organizationIds, assignedUserIds
+                null, // category
+                null, // status
+                null, // done
+                null, // serviceCategoryCodes
+                null, // organizationCategoryCodes
+                dealIds // dealIds
+        );
+        
+        List<Activity> activities = repository.findAll(spec);
+        return activities.stream()
+                .map(ActivityMapper::toDto)
+                .collect(Collectors.toList());
     }
     
     /**
@@ -1017,6 +1045,7 @@ public class ActivityService {
         log.info("  serviceCategoryCodes={}, organizationCategoryCodes={}, dealId={}", 
             serviceCategoryCodes, organizationCategoryCodes, dealId);
         
+        List<Long> dealIds = dealId != null ? List.of(dealId) : null;
         Specification<Activity> spec = buildSpecification(
                 personId, null, null, assignedUser,
                 organizationIds, assignedUserIds,
@@ -1025,7 +1054,7 @@ public class ActivityService {
                 done,
                 serviceCategoryCodes,
                 organizationCategoryCodes,
-                dealId
+                dealIds
         );
 
         List<Activity> list = repository.findAll(spec);
@@ -1114,7 +1143,7 @@ public class ActivityService {
                                                        Boolean done,
                                                        String serviceCategoryCodes,
                                                        String organizationCategoryCodes,
-                                                       Long dealId) {
+                                                       List<Long> dealIds) {
         Specification<Activity> spec = Specification.where(null);
 
         // Apply role-based scoping first (by IDs)
@@ -1199,9 +1228,9 @@ public class ActivityService {
             spec = spec.and((root, q, cb) -> root.get("assignedUserId").in(assignedUserIds));
         }
         
-        // Filter by dealId if provided
-        if (dealId != null) {
-            spec = spec.and((root, q, cb) -> cb.equal(root.get("dealId"), dealId));
+        // Filter by dealIds if provided
+        if (dealIds != null && !dealIds.isEmpty()) {
+            spec = spec.and((root, q, cb) -> root.get("dealId").in(dealIds));
         }
 
         if (personId != null) {
