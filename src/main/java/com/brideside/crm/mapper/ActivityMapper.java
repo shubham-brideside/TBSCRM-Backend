@@ -34,7 +34,12 @@ public class ActivityMapper {
         d.setAssignedUserId(e.getAssignedUserId());
         d.setDone(e.isDone());
         d.setCategory(e.getCategory());
-        d.setDealName(e.getDealName());
+        // Use deal name from Deal entity if available, otherwise fall back to dealName field
+        if (e.getDealRef() != null && e.getDealRef().getName() != null) {
+            d.setDealName(e.getDealRef().getName());
+        } else {
+            d.setDealName(e.getDealName());
+        }
         d.setInstagramId(e.getInstagramId());
         d.setPhone(e.getPhone());
         d.setDueDate(e.getDueDate());

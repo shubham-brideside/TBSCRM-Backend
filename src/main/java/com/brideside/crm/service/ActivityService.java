@@ -148,6 +148,8 @@ public class ActivityService {
                 organizationIds, assignedUserIds, category, status, done,
                 serviceCategoryCodes, organizationCategoryCodes, dealIds
         );
+        // Add fetch join for Deal to get deal name
+        spec = spec.and(withDealFetch());
 
         // Parse date filters for in-memory filtering
         LocalDate fromDate = null;
@@ -187,13 +189,16 @@ public class ActivityService {
             List<Activity> allActivities = repository.findAll(spec);
             log.debug("Loaded {} activities before date filtering", allActivities.size());
             
-            // Force load organizationRef and owner to avoid lazy loading issues
+            // Force load organizationRef, owner, and dealRef to avoid lazy loading issues
             allActivities.forEach(activity -> {
             if (activity.getOrganizationRef() != null) {
                 activity.getOrganizationRef().getName();
                 if (activity.getOrganizationRef().getOwner() != null) {
                     activity.getOrganizationRef().getOwner().getEmail();
                 }
+            }
+            if (activity.getDealRef() != null) {
+                activity.getDealRef().getName(); // Force load deal name
             }
         });
             
@@ -287,13 +292,16 @@ public class ActivityService {
             List<Activity> allActivities = repository.findAll(spec);
             log.debug("Loaded {} activities", allActivities.size());
 
-            // Force load organizationRef and owner to avoid lazy loading issues
+            // Force load organizationRef, owner, and dealRef to avoid lazy loading issues
             allActivities.forEach(activity -> {
                 if (activity.getOrganizationRef() != null) {
                     activity.getOrganizationRef().getName();
                     if (activity.getOrganizationRef().getOwner() != null) {
                         activity.getOrganizationRef().getOwner().getEmail();
                     }
+                }
+                if (activity.getDealRef() != null) {
+                    activity.getDealRef().getName(); // Force load deal name
                 }
             });
 
@@ -1126,6 +1134,17 @@ public class ActivityService {
             return predicates.get(0);
         }
         return cb.or(predicates.toArray(new Predicate[0]));
+    }
+
+    /**
+     * Specification that adds a LEFT JOIN fetch for Deal to get deal name.
+     * This ensures deal name is available even if dealName field in activities table is null.
+     */
+    private Specification<Activity> withDealFetch() {
+        return (root, query, cb) -> {
+            root.fetch("dealRef", JoinType.LEFT);
+            return cb.conjunction(); // Always true, just using this to add the fetch
+        };
     }
 
     /**

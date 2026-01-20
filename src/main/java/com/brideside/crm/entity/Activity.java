@@ -101,7 +101,12 @@ public class Activity {
 
     // Deal linkage (each activity belongs to exactly one deal)
     // Temporarily optional while deals module integration is finalized
+    @Column(name = "deal_id")
     private Long dealId; // FK to deals.id (not enforced here)
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "deal_id", insertable = false, updatable = false)
+    private Deal dealRef;
 
     // Canonical timestamp (optional for testing; can be null)
     private String dateTime; // ISO string (yyyy-MM-dd'T'HH:mm:ss) or agreed format
@@ -178,6 +183,8 @@ public class Activity {
     public void setCallType(CallType callType) { this.callType = callType; }
     public Long getDealId() { return dealId; }
     public void setDealId(Long dealId) { this.dealId = dealId; }
+    public Deal getDealRef() { return dealRef; }
+    public void setDealRef(Deal dealRef) { this.dealRef = dealRef; }
     public String getDateTime() { return dateTime; }
     public void setDateTime(String dateTime) { this.dateTime = dateTime; }
     public String getServiceCategory() { return serviceCategory; }
