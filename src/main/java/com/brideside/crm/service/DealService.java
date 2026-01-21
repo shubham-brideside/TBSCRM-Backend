@@ -29,6 +29,9 @@ public interface DealService {
     Deal markStatus(Long id, DealDtos.MarkStatusRequest request);
     void delete(Long id);
     List<PipelineDtos.PipelineResponse> getAvailablePipelinesForDiversion(Long dealId);
+    DealDtos.StageTotalsResponse getStageTotals(Long pipelineId, String status, Long organizationId, 
+                                                  Long categoryId, Long managerId, String dateFrom, 
+                                                  String dateTo, String search, String source);
 }
 
 

@@ -50,6 +50,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1919,6 +1920,161 @@ public class DealServiceImpl implements DealService {
             log.error("Error creating activities for Qualified stage deal {}: {}", deal.getId(), e.getMessage(), e);
             e.printStackTrace();
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealDtos.StageTotalsResponse getStageTotals(Long pipelineId, String status, Long organizationId,
+                                                        Long categoryId, Long managerId, String dateFrom,
+                                                        String dateTo, String search, String source) {
+        log.debug("Stage totals requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}",
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source);
+
+        // Validate pipelineId is required
+        if (pipelineId == null || pipelineId <= 0) {
+            throw new BadRequestException("pipelineId is required and must be a valid positive integer");
+        }
+
+        // Validate pipeline exists
+        Pipeline pipeline = pipelineRepository.findById(pipelineId)
+            .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found with id " + pipelineId));
+
+        // Get all stages for the pipeline (ordered by orderIndex)
+        List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(pipeline);
+
+        // Build SQL query with filters
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ");
+        sql.append("  d.stage_id, ");
+        sql.append("  COUNT(*) as deal_count, ");
+        sql.append("  COALESCE(SUM(COALESCE(d.value, 0)), 0) as total_value ");
+        sql.append("FROM deals d ");
+        sql.append("LEFT JOIN persons p ON d.person_id = p.id ");
+        sql.append("LEFT JOIN organizations o ON d.organization_id = o.id ");
+        sql.append("LEFT JOIN categories c ON d.category_id = c.id ");
+        sql.append("LEFT JOIN pipelines pip ON d.pipeline_id = pip.id ");
+        sql.append("WHERE (d.is_deleted IS NULL OR d.is_deleted = false) ");
+        sql.append("  AND d.pipeline_id = ? ");
+
+        List<Object> params = new ArrayList<>();
+        params.add(pipelineId);
+
+        // Add status filter
+        if (status != null && !status.trim().isEmpty() && !"all".equalsIgnoreCase(status.trim())) {
+            try {
+                DealStatus dealStatus = DealStatus.valueOf(status.trim().toUpperCase());
+                sql.append("  AND d.status = ? ");
+                params.add(dealStatus.name());
+            } catch (IllegalArgumentException e) {
+                // Invalid status, ignore
+            }
+        }
+
+        // Add organization filter
+        if (organizationId != null) {
+            sql.append("  AND d.organization_id = ? ");
+            params.add(organizationId);
+        }
+
+        // Add category filter (check both deal.category_id and pipeline.category)
+        if (categoryId != null) {
+            sql.append("  AND (d.category_id = ? OR pip.category = (SELECT name FROM categories WHERE id = ?)) ");
+            params.add(categoryId);
+            params.add(categoryId);
+        }
+
+        // Add manager filter (person's owner_id)
+        if (managerId != null) {
+            sql.append("  AND p.owner_id = ? ");
+            params.add(managerId);
+        }
+
+        // Add date range filter
+        if (dateFrom != null && !dateFrom.trim().isEmpty()) {
+            try {
+                LocalDate fromDate = LocalDate.parse(dateFrom.trim());
+                sql.append("  AND d.created_at >= ? ");
+                params.add(fromDate.atStartOfDay());
+            } catch (Exception e) {
+                log.warn("Invalid dateFrom format: {}. Expected YYYY-MM-DD", dateFrom);
+            }
+        }
+        if (dateTo != null && !dateTo.trim().isEmpty()) {
+            try {
+                LocalDate toDate = LocalDate.parse(dateTo.trim());
+                sql.append("  AND d.created_at <= ? ");
+                params.add(toDate.atTime(LocalTime.MAX));
+            } catch (Exception e) {
+                log.warn("Invalid dateTo format: {}. Expected YYYY-MM-DD", dateTo);
+            }
+        }
+
+        // Add search filter
+        if (search != null && !search.trim().isEmpty()) {
+            String searchPattern = "%" + search.trim().toLowerCase() + "%";
+            sql.append("  AND (LOWER(d.name) LIKE ? ");
+            sql.append("    OR LOWER(d.venue) LIKE ? ");
+            sql.append("    OR LOWER(p.name) LIKE ? ");
+            sql.append("    OR LOWER(o.name) LIKE ?) ");
+            params.add(searchPattern);
+            params.add(searchPattern);
+            params.add(searchPattern);
+            params.add(searchPattern);
+        }
+
+        // Add source filter
+        if (source != null && !source.trim().isEmpty()) {
+            DealSource dealSource = DealSource.fromString(source);
+            if (dealSource != null) {
+                sql.append("  AND d.deal_source = ? ");
+                params.add(dealSource.name());
+            }
+        }
+
+        sql.append("GROUP BY d.stage_id ");
+
+        // Execute query
+        List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+
+        // Create a map of stageId -> totals
+        Map<Long, Map<String, Object>> totalsByStageId = new HashMap<>();
+        for (Map<String, Object> row : results) {
+            Object stageIdObj = row.get("stage_id");
+            Long stageId = null;
+            if (stageIdObj != null) {
+                stageId = ((Number) stageIdObj).longValue();
+            }
+            // stageId is null for unassigned deals
+            totalsByStageId.put(stageId, row);
+        }
+
+        // Build response with all stages (even if count is 0)
+        List<DealDtos.StageTotal> stageTotals = new ArrayList<>();
+        for (Stage stage : stages) {
+            Map<String, Object> totals = totalsByStageId.get(stage.getId());
+            Long dealCount = totals != null ? ((Number) totals.get("deal_count")).longValue() : 0L;
+            BigDecimal totalValue = totals != null ? 
+                (BigDecimal) totals.get("total_value") : BigDecimal.ZERO;
+            
+            stageTotals.add(new DealDtos.StageTotal(
+                stage.getId(),
+                stage.getName(),
+                dealCount,
+                totalValue
+            ));
+        }
+
+        // Get unassigned totals (stage_id is NULL)
+        Map<String, Object> unassignedTotals = totalsByStageId.get(null);
+        DealDtos.UnassignedTotal unassigned = new DealDtos.UnassignedTotal(
+            unassignedTotals != null ? ((Number) unassignedTotals.get("deal_count")).longValue() : 0L,
+            unassignedTotals != null ? (BigDecimal) unassignedTotals.get("total_value") : BigDecimal.ZERO
+        );
+
+        log.debug("Stage totals: Found {} stages with totals, unassigned: {} deals, {} value",
+            stageTotals.size(), unassigned.dealCount, unassigned.totalValue);
+
+        return new DealDtos.StageTotalsResponse(stageTotals, unassigned);
     }
 }
 

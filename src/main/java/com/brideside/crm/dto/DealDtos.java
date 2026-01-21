@@ -110,6 +110,40 @@ public class DealDtos {
             this.activities = activities;
         }
     }
+
+    public static class StageTotal {
+        public Long stageId;
+        public String stageName;
+        public Long dealCount;
+        public java.math.BigDecimal totalValue;
+
+        public StageTotal(Long stageId, String stageName, Long dealCount, java.math.BigDecimal totalValue) {
+            this.stageId = stageId;
+            this.stageName = stageName;
+            this.dealCount = dealCount;
+            this.totalValue = totalValue;
+        }
+    }
+
+    public static class UnassignedTotal {
+        public Long dealCount;
+        public java.math.BigDecimal totalValue;
+
+        public UnassignedTotal(Long dealCount, java.math.BigDecimal totalValue) {
+            this.dealCount = dealCount;
+            this.totalValue = totalValue;
+        }
+    }
+
+    public static class StageTotalsResponse {
+        public List<StageTotal> stageTotals;
+        public UnassignedTotal unassigned;
+
+        public StageTotalsResponse(List<StageTotal> stageTotals, UnassignedTotal unassigned) {
+            this.stageTotals = stageTotals;
+            this.unassigned = unassigned;
+        }
+    }
 }
 
 
