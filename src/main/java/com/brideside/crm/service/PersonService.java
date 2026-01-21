@@ -1,13 +1,17 @@
 package com.brideside.crm.service;
 
-import com.brideside.crm.dto.PersonDTO;
-import com.brideside.crm.dto.PersonSummaryDTO;
+import com.brideside.crm.dto.*;
+import com.brideside.crm.dto.PersonDtos.PersonsWithDetailsResponse;
+import com.brideside.crm.dto.PersonDtos.PaginationInfo;
+import com.brideside.crm.entity.Activity;
 import com.brideside.crm.entity.Category;
+import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.DuplicatePersonException;
+import com.brideside.crm.mapper.ActivityMapper;
 import com.brideside.crm.mapper.PersonMapper;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.CategoryRepository;
@@ -17,6 +21,8 @@ import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PersonSpecifications;
 import com.brideside.crm.repository.UserRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -24,9 +30,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,6 +49,7 @@ public class PersonService {
     private final LabelRepository labelRepository;
     private final DealRepository dealRepository;
     private final ActivityRepository activityRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PersonService(PersonRepository repository,
                          OrganizationRepository organizationRepository,
@@ -81,6 +91,223 @@ public class PersonService {
         return repository.findAll(spec, pageable).map(PersonMapper::toDto);
     }
 
+    /**
+     * Get paginated persons with their associated deals and activities
+     * Uses JOINs to efficiently fetch related data
+     */
+    public PersonsWithDetailsResponse listWithDetails(String q,
+                                                      List<Person.PersonLabel> labels,
+                                                      List<Long> organizationIds,
+                                                      List<Long> ownerIds,
+                                                      List<Long> categoryIds,
+                                                      com.brideside.crm.entity.DealSource source,
+                                                      com.brideside.crm.entity.DealSource dealSource,
+                                                      LocalDate leadDateFrom,
+                                                      LocalDate leadDateTo,
+                                                      Pageable pageable) {
+        // Convert LocalDate to Instant for createdAt filtering
+        // leadDateFrom -> start of day, leadDateTo -> start of next day (exclusive end)
+        Instant createdAtFrom = leadDateFrom != null ? 
+            leadDateFrom.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() : null;
+        Instant createdAtTo = leadDateTo != null ? 
+            leadDateTo.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() : null;
+        
+        // Fetch paginated persons using existing filter logic
+        // Note: Using createdAt instead of leadDate for filtering
+        Page<Person> personPage = repository.findAll(
+            Specification.where(PersonSpecifications.notDeleted())
+                    .and(PersonSpecifications.search(q))
+                    .and(PersonSpecifications.hasLabels(labels))
+                    .and(PersonSpecifications.hasOrganizations(organizationIds))
+                    .and(PersonSpecifications.hasOwners(ownerIds))
+                    .and(PersonSpecifications.hasCategories(categoryIds))
+                    .and(PersonSpecifications.hasSource(source))
+                    .and(PersonSpecifications.hasDealSource(dealSource))
+                    .and(PersonSpecifications.createdAtBetween(createdAtFrom, createdAtTo)),
+            pageable
+        );
+
+        // Extract person IDs from loaded persons
+        List<Long> personIds = personPage.getContent().stream()
+                .map(Person::getId)
+                .collect(Collectors.toList());
+
+        // Convert persons to DTOs
+        List<PersonDTO> personDTOs = personPage.getContent().stream()
+                .map(PersonMapper::toDto)
+                .collect(Collectors.toList());
+
+        // Fetch deals for these persons using JOINs
+        List<DealResponse> dealDTOs = List.of();
+        if (!personIds.isEmpty()) {
+            Specification<Deal> dealSpec = (root, query, cb) -> {
+                // Use fetch joins to eagerly load related entities
+                root.fetch("person", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("organization", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("dealCategory", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("stage", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("source", jakarta.persistence.criteria.JoinType.LEFT);
+                root.fetch("labels", jakarta.persistence.criteria.JoinType.LEFT);
+                return cb.and(
+                    root.get("person").get("id").in(personIds),
+                    cb.or(
+                        cb.isNull(root.get("isDeleted")),
+                        cb.equal(root.get("isDeleted"), false)
+                    )
+                );
+            };
+            
+            List<Deal> deals = dealRepository.findAll(dealSpec);
+            dealDTOs = deals.stream()
+                    .map(this::toDealResponse)
+                    .collect(Collectors.toList());
+        }
+
+        // Fetch activities for these persons using JOINs
+        List<ActivityDTO> activityDTOs = List.of();
+        if (!personIds.isEmpty()) {
+            Specification<Activity> activitySpec = (root, query, cb) -> {
+                // Use fetch join to eagerly load organization with its owner
+                jakarta.persistence.criteria.Fetch<Activity, Organization> orgFetch = 
+                    root.fetch("organizationRef", jakarta.persistence.criteria.JoinType.LEFT);
+                orgFetch.fetch("owner", jakarta.persistence.criteria.JoinType.LEFT);
+                // Also fetch deal reference if available
+                root.fetch("dealRef", jakarta.persistence.criteria.JoinType.LEFT);
+                return root.get("personId").in(personIds);
+            };
+            
+            List<Activity> activities = activityRepository.findAll(activitySpec);
+            activityDTOs = activities.stream()
+                    .map(ActivityMapper::toDto)
+                    .collect(Collectors.toList());
+        }
+
+        // Build pagination info
+        PaginationInfo pagination = new PaginationInfo(
+            personPage.getNumber(),
+            personPage.getSize(),
+            personPage.getTotalElements(),
+            personPage.getTotalPages(),
+            personPage.hasNext(),
+            personPage.hasPrevious()
+        );
+
+        // Total persons count (matching all filters, regardless of pagination)
+        long totalPersons = personPage.getTotalElements();
+
+        return new PersonsWithDetailsResponse(personDTOs, dealDTOs, activityDTOs, pagination, totalPersons);
+    }
+
+    /**
+     * Convert Deal entity to DealResponse DTO
+     * Similar to DealController.toResponse but as a service method
+     */
+    private DealResponse toDealResponse(Deal d) {
+        DealResponse r = new DealResponse();
+        r.id = d.getId();
+        r.name = d.getName();
+        r.value = d.getValue();
+        r.personId = d.getPerson() != null ? d.getPerson().getId() : null;
+        r.personName = d.getPerson() != null ? d.getPerson().getName() : null;
+        r.pipelineId = d.getPipeline() != null ? d.getPipeline().getId() : null;
+        r.stageId = d.getStage() != null ? d.getStage().getId() : null;
+        r.sourceId = d.getSource() != null ? d.getSource().getId() : null;
+        r.organizationId = d.getOrganization() != null ? d.getOrganization().getId() : null;
+        r.organizationName = d.getOrganization() != null ? d.getOrganization().getName() : null;
+        r.categoryId = d.getDealCategory() != null ? d.getDealCategory().getId() : null;
+        r.eventType = d.getEventType();
+        r.status = d.getStatus();
+        r.commissionAmount = d.getCommissionAmount();
+        r.createdAt = d.getCreatedAt();
+        r.updatedAt = d.getUpdatedAt();
+        r.venue = d.getVenue();
+        r.phoneNumber = d.getPhoneNumber();
+        r.finalThankYouSent = d.getFinalThankYouSent();
+        r.eventDateAsked = d.getEventDateAsked();
+        r.contactNumberAsked = d.getContactNumberAsked();
+        r.venueAsked = d.getVenueAsked();
+        r.eventDate = d.getEventDate() != null ? d.getEventDate().toString() : null;
+        r.eventDates = parseEventDates(d);
+        
+        // Handle labels: support multiple labels from labels table
+        Set<com.brideside.crm.entity.Label> dealLabels = d.getLabels();
+        if (dealLabels != null && !dealLabels.isEmpty()) {
+            List<Long> labelIdList = new ArrayList<>();
+            List<LabelDtos.Response> labelList = new ArrayList<>();
+            for (com.brideside.crm.entity.Label dealLabel : dealLabels) {
+                dealLabel.getId(); // Trigger lazy load
+                labelIdList.add(dealLabel.getId());
+                labelList.add(new LabelDtos.Response(
+                    dealLabel.getId(),
+                    dealLabel.getName(),
+                    dealLabel.getColor(),
+                    dealLabel.getCreatedAt(),
+                    dealLabel.getUpdatedAt()
+                ));
+            }
+            r.labelIds = labelIdList;
+            r.labels = labelList;
+            if (!labelIdList.isEmpty()) {
+                r.labelId = labelIdList.get(0);
+                r.label = labelList.get(0);
+            } else {
+                r.labelId = null;
+                r.label = null;
+            }
+            r.labelString = null;
+        } else if (d.getLabelEnum() != null) {
+            r.labelString = d.getLabelEnum().toDisplayString();
+            r.labelId = null;
+            r.label = null;
+            r.labelIds = null;
+            r.labels = null;
+        } else {
+            r.labelString = null;
+            r.labelId = null;
+            r.label = null;
+            r.labelIds = null;
+            r.labels = null;
+        }
+        r.source = d.getDealSource() != null ? d.getDealSource().toDisplayString() : null;
+        r.subSource = d.getDealSubSource() != null ? d.getDealSubSource().toDisplayString() : null;
+        r.isDiverted = d.getIsDiverted();
+        r.referencedDealId = d.getReferencedDeal() != null ? d.getReferencedDeal().getId() : null;
+        r.referencedPipelineId = d.getReferencedPipeline() != null ? d.getReferencedPipeline().getId() : null;
+        r.sourcePipelineId = d.getSourcePipeline() != null ? d.getSourcePipeline().getId() : null;
+        r.pipelineHistory = d.getPipelineHistory();
+        r.isDeleted = d.getIsDeleted();
+        r.lostReason = d.getLostReason() != null ? d.getLostReason().toDisplayString() : null;
+        r.clientBudget = d.getClientBudget();
+        r.createdBy = d.getCreatedBy();
+        r.createdByUserId = d.getCreatedByUserId();
+        r.createdByName = d.getCreatedByName();
+        return r;
+    }
+
+    /**
+     * Parses eventDates JSON string to a list of date strings.
+     */
+    private List<String> parseEventDates(Deal deal) {
+        if (deal.getEventDates() == null || deal.getEventDates().isEmpty()) {
+            if (deal.getEventDate() != null) {
+                return List.of(deal.getEventDate().toString());
+            }
+            return null;
+        }
+        try {
+            return objectMapper.readValue(
+                deal.getEventDates(),
+                new TypeReference<List<String>>() {}
+            );
+        } catch (Exception e) {
+            if (deal.getEventDate() != null) {
+                return List.of(deal.getEventDate().toString());
+            }
+            return null;
+        }
+    }
+
     public PersonDTO get(Long id) {
         Person person = repository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Person not found"));
@@ -91,6 +318,65 @@ public class PersonService {
         }
         
         return PersonMapper.toDto(person);
+    }
+
+    /**
+     * Get person by ID with their associated deals and activities
+     * Uses JOINs to efficiently fetch related data
+     */
+    public PersonDtos.PersonWithDetailsResponse getWithDetails(Long id) {
+        Person person = repository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Person not found"));
+        
+        // Check if person is soft-deleted
+        if (Boolean.TRUE.equals(person.getIsDeleted())) {
+            throw new NoSuchElementException("Person not found");
+        }
+        
+        // Convert person to DTO
+        PersonDTO personDTO = PersonMapper.toDto(person);
+        
+        // Fetch deals for this person using JOINs
+        Specification<Deal> dealSpec = (root, query, cb) -> {
+            // Use fetch joins to eagerly load related entities
+            root.fetch("person", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("organization", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("dealCategory", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("stage", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("source", jakarta.persistence.criteria.JoinType.LEFT);
+            root.fetch("labels", jakarta.persistence.criteria.JoinType.LEFT);
+            return cb.and(
+                cb.equal(root.get("person").get("id"), id),
+                cb.or(
+                    cb.isNull(root.get("isDeleted")),
+                    cb.equal(root.get("isDeleted"), false)
+                )
+            );
+        };
+        
+        List<Deal> deals = dealRepository.findAll(dealSpec);
+        List<DealResponse> dealDTOs = deals.stream()
+                .map(this::toDealResponse)
+                .collect(Collectors.toList());
+        
+        // Fetch activities for this person using JOINs
+        Specification<Activity> activitySpec = (root, query, cb) -> {
+            // Use fetch join to eagerly load organization with its owner
+            jakarta.persistence.criteria.Fetch<Activity, Organization> orgFetch = 
+                root.fetch("organizationRef", jakarta.persistence.criteria.JoinType.LEFT);
+            orgFetch.fetch("owner", jakarta.persistence.criteria.JoinType.LEFT);
+            // Also fetch deal reference if available
+            root.fetch("dealRef", jakarta.persistence.criteria.JoinType.LEFT);
+            return cb.equal(root.get("personId"), id);
+        };
+        
+        List<Activity> activities = activityRepository.findAll(activitySpec);
+        List<ActivityDTO> activityDTOs = activities.stream()
+                .map(ActivityMapper::toDto)
+                .collect(Collectors.toList());
+        
+        return new PersonDtos.PersonWithDetailsResponse(personDTO, dealDTOs, activityDTOs);
     }
 
     /**
