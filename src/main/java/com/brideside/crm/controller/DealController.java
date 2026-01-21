@@ -186,9 +186,18 @@ public class DealController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get deal by id")
-    public ResponseEntity<DealResponse> get(@PathVariable Long id) {
-        return ResponseEntity.ok(toResponse(dealService.get(id)));
+    @Operation(summary = "Get deal by id", description = "Returns deal details along with related persons and activities for the specified deal")
+    public ResponseEntity<DealDtos.DetailResponse> get(@PathVariable Long id) {
+        Deal deal = dealService.get(id);
+        DealResponse dealResponse = toResponse(deal);
+        
+        // Fetch persons and activities for this specific deal using JOINs
+        List<Long> dealIds = List.of(id);
+        List<PersonDTO> persons = dealService.getPersonsByDealIds(dealIds);
+        List<ActivityDTO> activities = dealService.getActivitiesByDealIds(dealIds);
+        
+        DealDtos.DetailResponse response = new DealDtos.DetailResponse(dealResponse, persons, activities);
+        return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{id}")

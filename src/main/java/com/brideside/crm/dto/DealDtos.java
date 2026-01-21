@@ -98,6 +98,18 @@ public class DealDtos {
             this.activities = activities;
         }
     }
+
+    public static class DetailResponse {
+        public DealResponse deal;
+        public List<PersonDTO> persons; // Persons linked to this deal
+        public List<ActivityDTO> activities; // Activities linked to this deal
+
+        public DetailResponse(DealResponse deal, List<PersonDTO> persons, List<ActivityDTO> activities) {
+            this.deal = deal;
+            this.persons = persons;
+            this.activities = activities;
+        }
+    }
 }
 
 
