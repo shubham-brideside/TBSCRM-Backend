@@ -24,4 +24,8 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
 
     // Pipelines belonging to a given organization
     List<Pipeline> findByOrganization(com.brideside.crm.entity.Organization organization);
+    
+    // Pipelines assigned to teams with given IDs
+    @Query("SELECT p FROM Pipeline p WHERE p.deleted = false AND p.team IS NOT NULL AND p.team.id IN :teamIds ORDER BY p.name ASC")
+    List<Pipeline> findByDeletedFalseAndTeam_IdInOrderByNameAsc(@Param("teamIds") List<Long> teamIds);
 }
