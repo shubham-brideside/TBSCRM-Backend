@@ -40,7 +40,10 @@ public class DealController {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @PostMapping
-    @Operation(summary = "Create a deal")
+    @Operation(
+            summary = "Create a deal",
+            description = "Creates a new deal. Use GET /api/venues/autocomplete?input=<query> to search and select venues for the venue field."
+    )
     public ResponseEntity<DealResponse> create(@Valid @RequestBody DealDtos.CreateRequest req) {
         Deal d = dealService.create(req);
         return ResponseEntity.ok(toResponse(d));

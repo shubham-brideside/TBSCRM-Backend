@@ -75,6 +75,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/persons/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/api/activities/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/api/custom-filters/**").permitAll() // Temporarily open for testing
+                        .requestMatchers("/api/venues/**").permitAll() // Venue autocomplete API
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/frontend/**").permitAll()
                         .anyRequest().authenticated()
