@@ -242,5 +242,96 @@ public final class PersonSpecifications {
             return root.get("id").in(dealSubquery);
         };
     }
+
+    /**
+     * Filter persons who have at least one deal in any of the specified pipelines
+     * Uses a subquery to find persons linked to deals with the specified pipeline IDs
+     */
+    public static Specification<Person> hasPipelines(List<Long> pipelineIds) {
+        if (pipelineIds == null || pipelineIds.isEmpty()) {
+            return null;
+        }
+        return (root, query, cb) -> {
+            // Use subquery to find persons who have deals in the specified pipelines
+            jakarta.persistence.criteria.Subquery<Long> dealSubquery = query.subquery(Long.class);
+            jakarta.persistence.criteria.Root<com.brideside.crm.entity.Deal> dealRoot = dealSubquery.from(com.brideside.crm.entity.Deal.class);
+            dealSubquery.select(dealRoot.get("person").get("id"))
+                    .where(cb.and(
+                            dealRoot.get("pipelineId").in(pipelineIds),
+                            cb.or(
+                                    cb.isNull(dealRoot.get("isDeleted")),
+                                    cb.equal(dealRoot.get("isDeleted"), false)
+                            ),
+                            cb.isNotNull(dealRoot.get("person")),
+                            cb.isNotNull(dealRoot.get("pipelineId"))
+                    ));
+            return root.get("id").in(dealSubquery);
+        };
+    }
+
+    /**
+     * Filter persons who are accessible based on pipeline IDs.
+     * A person is accessible if:
+     * 1. The person's organization_id is in organizations linked to the specified pipelines, OR
+     * 2. The person has at least one deal where deal.pipeline_id is in the specified pipelines
+     * 
+     * Returns null (no filter) if pipelineIds is null or empty (Admin case or no pipeline filter).
+     */
+    public static Specification<Person> hasAccessibleOrganizations(List<Long> permittedOrganizationIds, List<Long> pipelineIds) {
+        // If no pipelineIds provided, use the old logic with permittedOrganizationIds
+        if (pipelineIds == null || pipelineIds.isEmpty()) {
+            if (permittedOrganizationIds == null) {
+                // null means Admin - no restrictions
+                return null;
+            }
+            if (permittedOrganizationIds.isEmpty()) {
+                // Empty list means no access
+                return (root, query, cb) -> cb.disjunction(); // Always false
+            }
+            // Fallback to organization-based filtering if no pipelineIds
+            return (root, query, cb) -> 
+                root.join("organization", JoinType.LEFT).get("id").in(permittedOrganizationIds);
+        }
+        
+        return (root, query, cb) -> {
+            // Condition 1: Person's organization_id is in organizations linked to the specified pipelines
+            // SQL: p.organization_id IN (SELECT DISTINCT organization_id FROM pipelines WHERE id IN (...))
+            jakarta.persistence.criteria.Subquery<Long> orgSubquery = query.subquery(Long.class);
+            jakarta.persistence.criteria.Root<com.brideside.crm.entity.Pipeline> pipelineRoot = orgSubquery.from(com.brideside.crm.entity.Pipeline.class);
+            orgSubquery.select(pipelineRoot.get("organization").get("id"))
+                    .where(pipelineRoot.get("id").in(pipelineIds))
+                    .distinct(true);
+            // Use join to access organization_id column (generates p.organization_id in SQL)
+            jakarta.persistence.criteria.Predicate personOrgMatch = 
+                root.join("organization", JoinType.LEFT).get("id").in(orgSubquery);
+            
+            // Condition 2: Person has a deal in one of the specified pipelines
+            // SQL: p.id IN (SELECT DISTINCT d.person_id FROM deals d WHERE d.pipeline_id IN (...) AND ...)
+            jakarta.persistence.criteria.Subquery<Long> dealSubquery = query.subquery(Long.class);
+            jakarta.persistence.criteria.Root<com.brideside.crm.entity.Deal> dealRoot = dealSubquery.from(com.brideside.crm.entity.Deal.class);
+            
+            // Join with person to access person_id column (generates d.person_id in SQL)
+            jakarta.persistence.criteria.Join<com.brideside.crm.entity.Deal, com.brideside.crm.entity.Person> personJoin = 
+                dealRoot.join("person", JoinType.INNER);
+            
+            // Build the where clause for deals - only check pipeline_id and is_deleted
+            jakarta.persistence.criteria.Predicate dealConditions = cb.and(
+                    dealRoot.get("pipelineId").in(pipelineIds),
+                    cb.or(
+                            cb.isNull(dealRoot.get("isDeleted")),
+                            cb.equal(dealRoot.get("isDeleted"), false)
+                    )
+            );
+            
+            // Select person_id from the joined person (this generates d.person_id in SQL)
+            dealSubquery.select(personJoin.get("id"))
+                    .where(dealConditions)
+                    .distinct(true);
+            jakarta.persistence.criteria.Predicate dealPipelineMatch = root.get("id").in(dealSubquery);
+            
+            // Return OR of both conditions
+            return cb.or(personOrgMatch, dealPipelineMatch);
+        };
+    }
 }
 

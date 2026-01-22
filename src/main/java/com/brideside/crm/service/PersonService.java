@@ -20,6 +20,8 @@ import com.brideside.crm.repository.LabelRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PersonSpecifications;
+import com.brideside.crm.repository.PipelineRepository;
+import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,11 +32,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -49,6 +57,8 @@ public class PersonService {
     private final LabelRepository labelRepository;
     private final DealRepository dealRepository;
     private final ActivityRepository activityRepository;
+    private final PipelineRepository pipelineRepository;
+    private final TeamRepository teamRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PersonService(PersonRepository repository,
@@ -57,7 +67,9 @@ public class PersonService {
                          CategoryRepository categoryRepository,
                          LabelRepository labelRepository,
                          DealRepository dealRepository,
-                         ActivityRepository activityRepository) {
+                         ActivityRepository activityRepository,
+                         PipelineRepository pipelineRepository,
+                         TeamRepository teamRepository) {
         this.repository = repository;
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
@@ -65,6 +77,8 @@ public class PersonService {
         this.labelRepository = labelRepository;
         this.dealRepository = dealRepository;
         this.activityRepository = activityRepository;
+        this.pipelineRepository = pipelineRepository;
+        this.teamRepository = teamRepository;
     }
 
     public Page<PersonDTO> list(String q,
@@ -78,15 +92,61 @@ public class PersonService {
                                 LocalDate leadDateTo,
                                 Pageable pageable) {
 
+        // Apply role-based filtering for non-admin users
+        List<Long> permittedOrganizationIds = getPermittedOrganizationIds();
+        List<Long> permittedPipelineIds = getPermittedPipelineIds();
+        
+        // No pipelineIds parameter in list() - use permitted pipelines for role-based filtering
+        List<Long> effectivePipelineIds = permittedPipelineIds;
+        
+        // Track if we're using pipeline-based filtering (non-admin with pipeline restrictions)
+        boolean usingPipelineBasedFiltering = effectivePipelineIds != null && !effectivePipelineIds.isEmpty();
+        
+        // Only apply organizationIds filter if NOT using pipeline-based filtering
+        // When using pipeline-based filtering, hasAccessibleOrganizations handles organization filtering
+        if (!usingPipelineBasedFiltering) {
+            if (permittedOrganizationIds != null) {
+                // permittedOrganizationIds is null for Admin (no restrictions)
+                // If it's not null, user has restrictions
+                if (!permittedOrganizationIds.isEmpty()) {
+                    // If user has organization restrictions, filter by permitted organizations
+                    // Merge with user-provided organizationIds if any
+                    if (organizationIds != null && !organizationIds.isEmpty()) {
+                        // Intersection: only show organizations that are both permitted and requested
+                        organizationIds = organizationIds.stream()
+                                .filter(permittedOrganizationIds::contains)
+                                .collect(Collectors.toList());
+                    } else {
+                        // Use permitted organizations as filter
+                        organizationIds = permittedOrganizationIds;
+                    }
+                } else {
+                    // Empty list means no access - set organizationIds to empty to show nothing
+                    organizationIds = List.of();
+                }
+            }
+        } else {
+            // Using pipeline-based filtering - don't apply organizationIds filter
+            // hasAccessibleOrganizations will handle it based on pipelines
+            // But still respect user-provided organizationIds if any
+            if (organizationIds != null && !organizationIds.isEmpty() && permittedOrganizationIds != null) {
+                // Intersection: only show organizations that are both permitted and requested
+                organizationIds = organizationIds.stream()
+                        .filter(permittedOrganizationIds::contains)
+                        .collect(Collectors.toList());
+            }
+        }
+
         Specification<Person> spec = Specification.where(PersonSpecifications.notDeleted())
                 .and(PersonSpecifications.search(q))
                 .and(PersonSpecifications.hasLabels(labels))
-                .and(PersonSpecifications.hasOrganizations(organizationIds))
+                .and(usingPipelineBasedFiltering ? null : PersonSpecifications.hasOrganizations(organizationIds))
                 .and(PersonSpecifications.hasOwners(ownerIds))
                 .and(PersonSpecifications.hasCategories(categoryIds))
                 .and(PersonSpecifications.hasSource(source))
                 .and(PersonSpecifications.hasDealSource(dealSource))
-                .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo));
+                .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo))
+                .and(PersonSpecifications.hasAccessibleOrganizations(permittedOrganizationIds, effectivePipelineIds));
 
         return repository.findAll(spec, pageable).map(PersonMapper::toDto);
     }
@@ -100,6 +160,7 @@ public class PersonService {
                                                       List<Long> organizationIds,
                                                       List<Long> ownerIds,
                                                       List<Long> categoryIds,
+                                                      List<Long> pipelineIds,
                                                       com.brideside.crm.entity.DealSource source,
                                                       com.brideside.crm.entity.DealSource dealSource,
                                                       LocalDate leadDateFrom,
@@ -112,18 +173,82 @@ public class PersonService {
         Instant createdAtTo = leadDateTo != null ? 
             leadDateTo.plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() : null;
         
+        // Apply role-based filtering for non-admin users
+        List<Long> permittedOrganizationIds = getPermittedOrganizationIds();
+        List<Long> permittedPipelineIds = getPermittedPipelineIds();
+        
+        // If pipelineIds are provided in API, intersect with permitted pipelines (for role-based filtering)
+        List<Long> effectivePipelineIds = null;
+        if (pipelineIds != null && !pipelineIds.isEmpty()) {
+            if (permittedPipelineIds == null) {
+                // Admin - use all provided pipelineIds
+                effectivePipelineIds = pipelineIds;
+            } else if (!permittedPipelineIds.isEmpty()) {
+                // Non-admin - only use pipelineIds that are in permitted pipelines
+                effectivePipelineIds = pipelineIds.stream()
+                        .filter(permittedPipelineIds::contains)
+                        .collect(Collectors.toList());
+            } else {
+                // No permitted pipelines - user has no access
+                effectivePipelineIds = List.of();
+            }
+        } else {
+            // No pipelineIds in API - use permitted pipelines for role-based filtering
+            effectivePipelineIds = permittedPipelineIds;
+        }
+        
+        // Track if we're using pipeline-based filtering (non-admin with pipeline restrictions)
+        boolean usingPipelineBasedFiltering = effectivePipelineIds != null && !effectivePipelineIds.isEmpty();
+        
+        // Only apply organizationIds filter if NOT using pipeline-based filtering
+        // When using pipeline-based filtering, hasAccessibleOrganizations handles organization filtering
+        if (!usingPipelineBasedFiltering) {
+            if (permittedOrganizationIds != null) {
+                // permittedOrganizationIds is null for Admin (no restrictions)
+                // If it's not null, user has restrictions
+                if (!permittedOrganizationIds.isEmpty()) {
+                    // If user has organization restrictions, filter by permitted organizations
+                    // Merge with user-provided organizationIds if any
+                    if (organizationIds != null && !organizationIds.isEmpty()) {
+                        // Intersection: only show organizations that are both permitted and requested
+                        organizationIds = organizationIds.stream()
+                                .filter(permittedOrganizationIds::contains)
+                                .collect(Collectors.toList());
+                    } else {
+                        // Use permitted organizations as filter
+                        organizationIds = permittedOrganizationIds;
+                    }
+                } else {
+                    // Empty list means no access - set organizationIds to empty to show nothing
+                    organizationIds = List.of();
+                }
+            }
+        } else {
+            // Using pipeline-based filtering - don't apply organizationIds filter
+            // hasAccessibleOrganizations will handle it based on pipelines
+            // But still respect user-provided organizationIds if any
+            if (organizationIds != null && !organizationIds.isEmpty() && permittedOrganizationIds != null) {
+                // Intersection: only show organizations that are both permitted and requested
+                organizationIds = organizationIds.stream()
+                        .filter(permittedOrganizationIds::contains)
+                        .collect(Collectors.toList());
+            }
+        }
+
         // Fetch paginated persons using existing filter logic
         // Note: Using createdAt instead of leadDate for filtering
         Page<Person> personPage = repository.findAll(
             Specification.where(PersonSpecifications.notDeleted())
                     .and(PersonSpecifications.search(q))
                     .and(PersonSpecifications.hasLabels(labels))
-                    .and(PersonSpecifications.hasOrganizations(organizationIds))
+                    .and(usingPipelineBasedFiltering ? null : PersonSpecifications.hasOrganizations(organizationIds))
                     .and(PersonSpecifications.hasOwners(ownerIds))
                     .and(PersonSpecifications.hasCategories(categoryIds))
+                    .and(PersonSpecifications.hasPipelines(pipelineIds))
                     .and(PersonSpecifications.hasSource(source))
                     .and(PersonSpecifications.hasDealSource(dealSource))
-                    .and(PersonSpecifications.createdAtBetween(createdAtFrom, createdAtTo)),
+                    .and(PersonSpecifications.createdAtBetween(createdAtFrom, createdAtTo))
+                    .and(PersonSpecifications.hasAccessibleOrganizations(permittedOrganizationIds, effectivePipelineIds)),
             pageable
         );
 
@@ -911,6 +1036,183 @@ public class PersonService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /**
+     * Get the current logged-in user from SecurityContext
+     */
+    private Optional<User> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetails)) {
+            return Optional.empty();
+        }
+        String email = ((UserDetails) authentication.getPrincipal()).getUsername();
+        return userRepository.findByEmail(email);
+    }
+
+    /**
+     * Get permitted organization IDs based on the current user's role.
+     * Returns null for Admin (no restrictions) or empty list if no organizations are accessible.
+     * 
+     * Logic:
+     * 1. Admin: Returns null (no restrictions)
+     * 2. Other roles: Get permitted pipelines, then extract organizations from:
+     *    - Organizations directly linked to pipelines (pipeline.organization_id)
+     *    - Organizations from deals in those pipelines (deal.organization_id where deal.pipeline_id in permitted pipelines)
+     */
+    private List<Long> getPermittedOrganizationIds() {
+        Optional<User> currentUserOpt = getCurrentUser();
+        
+        // If no user is logged in, return empty list (no access)
+        if (currentUserOpt.isEmpty() || currentUserOpt.get().getRole() == null) {
+            return List.of();
+        }
+
+        User currentUser = currentUserOpt.get();
+        com.brideside.crm.entity.Role.RoleName roleName = currentUser.getRole().getName();
+
+        // Admin sees all organizations (no filtering)
+        if (roleName == com.brideside.crm.entity.Role.RoleName.ADMIN) {
+            return null; // null means no restrictions
+        }
+
+        // Get permitted pipelines based on role (reuse the logic from PipelineServiceImpl)
+        List<com.brideside.crm.entity.Pipeline> permittedPipelines = getPermittedPipelines(currentUser, roleName);
+        
+        if (permittedPipelines.isEmpty()) {
+            return List.of(); // No pipelines = no organizations
+        }
+
+        Set<Long> organizationIds = new HashSet<>();
+        List<Long> pipelineIds = permittedPipelines.stream()
+                .map(com.brideside.crm.entity.Pipeline::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+
+        // 1. Get organizations directly linked to pipelines
+        for (com.brideside.crm.entity.Pipeline pipeline : permittedPipelines) {
+            if (pipeline.getOrganization() != null && pipeline.getOrganization().getId() != null) {
+                organizationIds.add(pipeline.getOrganization().getId());
+            }
+        }
+
+        // 2. Get organizations from deals in those pipelines
+        if (!pipelineIds.isEmpty()) {
+            List<com.brideside.crm.entity.Deal> deals = dealRepository.findAll((root, query, cb) -> {
+                return cb.and(
+                    root.get("pipelineId").in(pipelineIds),
+                    cb.or(
+                        cb.isNull(root.get("isDeleted")),
+                        cb.equal(root.get("isDeleted"), false)
+                    ),
+                    cb.isNotNull(root.get("organizationId"))
+                );
+            });
+            
+            for (com.brideside.crm.entity.Deal deal : deals) {
+                if (deal.getOrganizationId() != null) {
+                    organizationIds.add(deal.getOrganizationId());
+                }
+            }
+        }
+
+        return new ArrayList<>(organizationIds);
+    }
+
+    /**
+     * Get permitted pipeline IDs based on the current user's role.
+     * Returns null for Admin (no restrictions) or list of pipeline IDs for other roles.
+     */
+    private List<Long> getPermittedPipelineIds() {
+        Optional<User> currentUserOpt = getCurrentUser();
+        
+        // If no user is logged in, return empty list (no access)
+        if (currentUserOpt.isEmpty() || currentUserOpt.get().getRole() == null) {
+            return List.of();
+        }
+
+        User currentUser = currentUserOpt.get();
+        com.brideside.crm.entity.Role.RoleName roleName = currentUser.getRole().getName();
+
+        // Admin sees all pipelines (no filtering)
+        if (roleName == com.brideside.crm.entity.Role.RoleName.ADMIN) {
+            return null; // null means no restrictions
+        }
+
+        // Get permitted pipelines
+        List<com.brideside.crm.entity.Pipeline> permittedPipelines = getPermittedPipelines(currentUser, roleName);
+        
+        if (permittedPipelines.isEmpty()) {
+            return List.of(); // No pipelines = no access
+        }
+
+        return permittedPipelines.stream()
+                .map(com.brideside.crm.entity.Pipeline::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get permitted pipelines based on user role (same logic as PipelineServiceImpl.getFilteredPipelines)
+     */
+    private List<com.brideside.crm.entity.Pipeline> getPermittedPipelines(User currentUser, com.brideside.crm.entity.Role.RoleName roleName) {
+        Set<Long> allowedTeamIds = new HashSet<>();
+
+        if (roleName == com.brideside.crm.entity.Role.RoleName.CATEGORY_MANAGER) {
+            // Category Manager: Find all Sales users reporting to them
+            // Then find teams where those Sales users are managers
+            List<User> allUsers = userRepository.findAll();
+            Set<Long> salesManagerIds = new HashSet<>();
+            
+            for (User user : allUsers) {
+                if (user.getId() == null || user.getRole() == null) continue;
+                
+                // Direct reports (Sales users directly under Category Manager)
+                if (user.getManager() != null && 
+                    currentUser.getId().equals(user.getManager().getId()) &&
+                    user.getRole().getName() == com.brideside.crm.entity.Role.RoleName.SALES) {
+                    salesManagerIds.add(user.getId());
+                }
+            }
+            
+            // Find teams where these Sales Managers are team managers
+            for (Long salesManagerId : salesManagerIds) {
+                List<com.brideside.crm.entity.Team> teams = teamRepository.findByManager_Id(salesManagerId);
+                for (com.brideside.crm.entity.Team team : teams) {
+                    if (team.getId() != null) {
+                        allowedTeamIds.add(team.getId());
+                    }
+                }
+            }
+        } else if (roleName == com.brideside.crm.entity.Role.RoleName.SALES) {
+            // Sales Manager: Find teams where they are the team manager
+            List<com.brideside.crm.entity.Team> teams = teamRepository.findByManager_Id(currentUser.getId());
+            for (com.brideside.crm.entity.Team team : teams) {
+                if (team.getId() != null) {
+                    allowedTeamIds.add(team.getId());
+                }
+            }
+        } else if (roleName == com.brideside.crm.entity.Role.RoleName.PRESALES) {
+            // Pre-Sales: Find their Sales Manager (their manager)
+            // Then find teams where that Sales Manager is the team manager
+            if (currentUser.getManager() != null && currentUser.getManager().getId() != null) {
+                Long salesManagerId = currentUser.getManager().getId();
+                List<com.brideside.crm.entity.Team> teams = teamRepository.findByManager_Id(salesManagerId);
+                for (com.brideside.crm.entity.Team team : teams) {
+                    if (team.getId() != null) {
+                        allowedTeamIds.add(team.getId());
+                    }
+                }
+            }
+        }
+
+        // If no teams are allowed, return empty list
+        if (allowedTeamIds.isEmpty()) {
+            return List.of();
+        }
+
+        // Return pipelines linked to allowed teams
+        return pipelineRepository.findByDeletedFalseAndTeam_IdInOrderByNameAsc(new ArrayList<>(allowedTeamIds));
     }
 }
 

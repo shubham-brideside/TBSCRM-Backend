@@ -102,6 +102,7 @@ public class PersonController {
             @RequestParam(name = "organizationId", required = false) String organizationId,
             @RequestParam(name = "ownerId", required = false) String ownerId,
             @RequestParam(name = "categoryId", required = false) String categoryId,
+            @RequestParam(name = "pipelineId", required = false) String pipelineId,
             @RequestParam(name = "leadFrom", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadFrom,
             @RequestParam(name = "leadTo", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadTo,
             @ParameterObject @PageableDefault(size = 200, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
@@ -112,9 +113,10 @@ public class PersonController {
         List<Long> organizationIds = parseCommaSeparatedIds(organizationId);
         List<Long> ownerIds = parseCommaSeparatedIds(ownerId);
         List<Long> categoryIds = parseCommaSeparatedIds(categoryId);
+        List<Long> pipelineIds = parseCommaSeparatedIds(pipelineId);
         
         PersonDtos.PersonsWithDetailsResponse response = service.listWithDetails(
-            query, labels, organizationIds, ownerIds, categoryIds, source, dealSource, leadFrom, leadTo, pageable
+            query, labels, organizationIds, ownerIds, categoryIds, pipelineIds, source, dealSource, leadFrom, leadTo, pageable
         );
         
         return ResponseEntity.ok(response);
