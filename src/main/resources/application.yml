@@ -111,3 +111,11 @@ azure:
       container-name: ${AZURE_STORAGE_BLOB_CONTAINER_NAME:call-screenshots}
       base-url: ${AZURE_STORAGE_BLOB_BASE_URL:}
 
+ola:
+  maps:
+    enabled: ${OLA_MAPS_ENABLED:true}
+    base-url: ${OLA_MAPS_BASE_URL:https://api.olamaps.io}
+    client-id: ${OLA_MAPS_CLIENT_ID:81dd884f-9e2f-46d1-9133-e5a92760937e}
+    client-secret: ${OLA_MAPS_CLIENT_SECRET:ce49cc6df9fb4ac69ab047ef0d627f5f}
+    timeout: ${OLA_MAPS_TIMEOUT:10000}
+

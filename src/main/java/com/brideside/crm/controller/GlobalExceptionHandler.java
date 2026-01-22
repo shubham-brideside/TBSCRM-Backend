@@ -153,8 +153,24 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Data integrity violation: " + (message != null ? message : "Invalid data provided")));
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException ex) {
+        // Log the full exception for debugging
+        ex.printStackTrace();
+        String message = ex.getMessage();
+        if (message != null && message.contains("OLA Maps API")) {
+            // Return more user-friendly message for OLA Maps errors
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Venue search service error: " + message));
+        }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("An error occurred: " + message));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Object>> handleGenericException(Exception ex) {
+        // Log the full exception for debugging
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.error("An unexpected error occurred: " + ex.getMessage()));
     }
