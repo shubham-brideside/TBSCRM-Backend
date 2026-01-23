@@ -24,6 +24,7 @@ public class DealDtos {
         public BigDecimal commissionAmount; // optional
         public String venue; // optional
         public String phoneNumber; // optional
+        public String city; // optional
         public Boolean finalThankYouSent; // optional
         public Boolean eventDateAsked; // optional
         public Boolean contactNumberAsked; // optional
@@ -70,6 +71,7 @@ public class DealDtos {
         public BigDecimal commissionAmount;
         public String venue;
         public String phoneNumber;
+        public String city;
         public Boolean finalThankYouSent;
         public Boolean eventDateAsked;
         public Boolean contactNumberAsked;

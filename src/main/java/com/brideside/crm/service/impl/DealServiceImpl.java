@@ -174,6 +174,7 @@ public class DealServiceImpl implements DealService {
             personRepository.save(person);
         }
         deal.setPhoneNumber(request.phoneNumber);
+        deal.setCity(request.city);
         deal.setFinalThankYouSent(request.finalThankYouSent);
         deal.setEventDateAsked(request.eventDateAsked);
         deal.setContactNumberAsked(request.contactNumberAsked);
@@ -454,6 +455,9 @@ public class DealServiceImpl implements DealService {
         }
         if (request.phoneNumber != null) {
             deal.setPhoneNumber(request.phoneNumber);
+        }
+        if (request.city != null) {
+            deal.setCity(request.city);
         }
         if (request.finalThankYouSent != null) {
             deal.setFinalThankYouSent(request.finalThankYouSent);

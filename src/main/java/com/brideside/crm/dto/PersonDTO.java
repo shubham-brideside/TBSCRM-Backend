@@ -40,6 +40,9 @@ public class PersonDTO {
     @Schema(description = "Venue for the person (e.g., wedding venue)")
     private String venue;
 
+    @Schema(description = "City for the person")
+    private String city;
+
     @Schema(description = "Event date associated with the person (yyyy-MM-dd)")
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate eventDate;
@@ -140,6 +143,14 @@ public class PersonDTO {
 
     public void setVenue(String venue) {
         this.venue = venue;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public void setCity(String city) {
+        this.city = city;
     }
 
     public LocalDate getEventDate() {
