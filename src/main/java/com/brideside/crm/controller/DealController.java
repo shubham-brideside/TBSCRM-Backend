@@ -249,6 +249,7 @@ public class DealController {
         r.updatedAt = d.getUpdatedAt();
         r.venue = d.getVenue();
         r.phoneNumber = d.getPhoneNumber();
+        r.city = d.getCity();
         r.finalThankYouSent = d.getFinalThankYouSent();
         r.eventDateAsked = d.getEventDateAsked();
         r.contactNumberAsked = d.getContactNumberAsked();

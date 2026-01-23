@@ -30,6 +30,9 @@ public class Person {
     @Column(name = "venue")
     private String venue;
 
+    @Column(name = "city", length = 255)
+    private String city;
+
     // Maps to legacy wedding_date column in DB, represents event date for the person
     // Note: wedding_date is VARCHAR(255) in DB, so using String type
     @Column(name = "wedding_date", length = 255)
@@ -141,6 +144,14 @@ public class Person {
 
     public void setVenue(String venue) {
         this.venue = venue;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public void setCity(String city) {
+        this.city = city;
     }
 
     public String getEventDate() {

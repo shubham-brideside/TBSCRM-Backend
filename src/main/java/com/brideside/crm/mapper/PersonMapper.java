@@ -25,6 +25,7 @@ public final class PersonMapper {
         dto.setEmail(person.getEmail());
         dto.setLeadDate(person.getLeadDate());
         dto.setVenue(person.getVenue());
+        dto.setCity(person.getCity());
         // Convert String eventDate from entity to LocalDate for DTO
         if (person.getEventDate() != null && !person.getEventDate().isEmpty()) {
             try {
@@ -104,6 +105,9 @@ public final class PersonMapper {
         }
         if (dto.getVenue() != null) {
             entity.setVenue(dto.getVenue());
+        }
+        if (dto.getCity() != null) {
+            entity.setCity(dto.getCity());
         }
         // Convert LocalDate eventDate from DTO to String for entity
         if (dto.getEventDate() != null) {

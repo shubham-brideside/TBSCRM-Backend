@@ -96,6 +96,9 @@ public class Deal {
     @Column(name = "phone_number", nullable = true)
     private String phoneNumber;
 
+    @Column(name = "city", nullable = true, length = 255)
+    private String city;
+
     @Column(name = "final_thank_you_sent", nullable = true)
     private Boolean finalThankYouSent;
 
@@ -229,6 +232,8 @@ public class Deal {
     public void setVenue(String venue) { this.venue = venue; }
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+    public String getCity() { return city; }
+    public void setCity(String city) { this.city = city; }
     public Boolean getFinalThankYouSent() { return finalThankYouSent; }
     public void setFinalThankYouSent(Boolean finalThankYouSent) { this.finalThankYouSent = finalThankYouSent; }
     public Boolean getEventDateAsked() { return eventDateAsked; }
