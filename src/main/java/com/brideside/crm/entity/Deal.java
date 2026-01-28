@@ -44,6 +44,10 @@ public class Deal {
     @JoinColumn(name = "stage_id", nullable = true)
     private Stage stage;
 
+    // Direct foreign key field to avoid JOINs when filtering by stage_id
+    @Column(name = "stage_id", insertable = false, updatable = false)
+    private Long stageId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_id")
     private Source source;
@@ -206,6 +210,8 @@ public class Deal {
     public Long getPipelineId() { return pipelineId; }
     public Stage getStage() { return stage; }
     public void setStage(Stage stage) { this.stage = stage; }
+    public Long getStageId() { return stageId; }
+    public void setStageId(Long stageId) { this.stageId = stageId; }
     public Source getSource() { return source; }
     public void setSource(Source source) { this.source = source; }
     public Organization getOrganization() { return organization; }

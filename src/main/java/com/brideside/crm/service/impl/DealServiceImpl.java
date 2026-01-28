@@ -629,7 +629,7 @@ public class DealServiceImpl implements DealService {
     @Override
     public List<Deal> list(String sortField, String sortDirection) {
         // Call the new filtered list method with all filters as null, and no pagination (null limit/offset)
-        return list(null, null, null, null, null, null, null, null, null, sortField, sortDirection, null, null);
+        return list(null, null, null, null, null, null, null, null, null, sortField, sortDirection, null, null, null);
     }
 
     /**
@@ -637,7 +637,7 @@ public class DealServiceImpl implements DealService {
      */
     private Specification<Deal> buildSpecification(Long pipelineId, String status, Long organizationId, 
                                                     Long categoryId, Long managerId, String dateFrom, 
-                                                    String dateTo, String search, String source) {
+                                                    String dateTo, String search, String source, Long stageId) {
         // Parse and validate source if provided
         com.brideside.crm.entity.DealSource dealSource = null;
         if (source != null && !source.trim().isEmpty()) {
@@ -655,6 +655,7 @@ public class DealServiceImpl implements DealService {
                 .and(DealSpecifications.hasOrganization(organizationId))
                 .and(DealSpecifications.hasCategory(categoryId))
                 .and(DealSpecifications.hasManager(managerId))
+                .and(DealSpecifications.hasStage(stageId))
                 .and(DealSpecifications.search(search))
                 .and(DealSpecifications.hasSource(dealSource));
 
@@ -683,16 +684,16 @@ public class DealServiceImpl implements DealService {
     @Override
     public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
                            Long managerId, String dateFrom, String dateTo, String search, String source,
-                           String sortField, String sortDirection, Integer limit, Integer offset) {
-        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, sort={},{}, limit={}, offset={}", 
-            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset);
+                           String sortField, String sortDirection, Integer limit, Integer offset, Long stageId) {
+        log.debug("Deal list requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}, sort={},{}, limit={}, offset={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId, sortField, sortDirection, limit, offset);
         
         // Build specification with all filters
         Specification<Deal> spec = buildSpecification(pipelineId, status, organizationId, categoryId, 
-                                                       managerId, dateFrom, dateTo, search, source);
+                                                       managerId, dateFrom, dateTo, search, source, stageId);
         
-        log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}", 
-            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source);
+        log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
 
         // Load deals with specification
         // Note: We can't use JOIN FETCH directly with Specifications in a simple way,
@@ -768,13 +769,13 @@ public class DealServiceImpl implements DealService {
 
     @Override
     public long count(Long pipelineId, String status, Long organizationId, Long categoryId,
-                      Long managerId, String dateFrom, String dateTo, String search, String source) {
-        log.debug("Deal count requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}", 
-            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source);
+                      Long managerId, String dateFrom, String dateTo, String search, String source, Long stageId) {
+        log.debug("Deal count requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
         
         // Build specification with all filters (same as list method)
         Specification<Deal> spec = buildSpecification(pipelineId, status, organizationId, categoryId, 
-                                                       managerId, dateFrom, dateTo, search, source);
+                                                       managerId, dateFrom, dateTo, search, source, stageId);
         
         // Count deals matching the specification
         long count = dealRepository.count(spec);

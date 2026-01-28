@@ -51,7 +51,7 @@ public class DealController {
 
     @GetMapping
     @Operation(summary = "List deals", description = "List deals with optional filters, sorting, and pagination. " +
-            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue/person/organization), source (Direct/Divert/Reference/Planner/TBS). " +
+            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, stageId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue/person/organization), source (Direct/Divert/Reference/Planner/TBS). " +
             "Sort: 'field,direction' (e.g., 'name,asc' or 'value,desc'). Default: 'nextActivity,asc'. " +
             "Pagination: limit (default: 100), offset (default: 0). " +
             "Returns paginated deals list and totalCount based on applied filters.")
@@ -61,6 +61,7 @@ public class DealController {
             @RequestParam(required = false) Long organizationId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long managerId,
+            @RequestParam(required = false) Long stageId,
             @RequestParam(required = false) String dateFrom,
             @RequestParam(required = false) String dateTo,
             @RequestParam(required = false) String search,
@@ -80,6 +81,9 @@ public class DealController {
             return ResponseEntity.badRequest().build();
         }
         if (managerId != null && managerId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (stageId != null && stageId <= 0) {
             return ResponseEntity.badRequest().build();
         }
         
@@ -120,7 +124,7 @@ public class DealController {
         // Get deals list with pagination
         List<Deal> dealEntities = dealService.list(
                 pipelineId, status, organizationId, categoryId, managerId,
-                dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset
+                dateFrom, dateTo, search, source, sortField, sortDirection, limit, offset, stageId
         );
         
         List<DealResponse> deals = dealEntities.stream()
@@ -130,7 +134,7 @@ public class DealController {
         // Get total count with same filters (before pagination)
         long totalCount = dealService.count(
                 pipelineId, status, organizationId, categoryId, managerId,
-                dateFrom, dateTo, search, source
+                dateFrom, dateTo, search, source, stageId
         );
         
         // Extract deal IDs from loaded deals

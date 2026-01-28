@@ -183,5 +183,17 @@ public final class DealSpecifications {
         }
         return (root, query, cb) -> cb.equal(root.get("dealSource"), source);
     }
+
+    /**
+     * Filter by stage ID
+     * Uses the foreign key column directly (stage_id) without joining the stages table
+     */
+    public static Specification<Deal> hasStage(Long stageId) {
+        if (stageId == null) {
+            return null;
+        }
+        return (root, query, cb) -> 
+            cb.equal(root.get("stageId"), stageId);
+    }
 }
 
