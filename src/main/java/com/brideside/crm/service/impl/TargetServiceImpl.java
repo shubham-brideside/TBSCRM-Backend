@@ -1222,16 +1222,37 @@ public class TargetServiceImpl implements TargetService {
         return BigDecimal.valueOf(15).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Resolve the "owner" user for target / incentive calculations.
+     *
+     * Business rule update:
+     * - Attribute won deals to the user who owns the pipeline on which the deal
+     *   is won (via the pipeline's team manager) whenever possible.
+     * - Fall back to organization owner, then person owner only when a
+     *   pipeline / team context is not available.
+     */
     private User resolveDealOwner(Deal deal) {
         if (deal == null) {
             return null;
         }
-        if (deal.getPerson() != null && deal.getPerson().getOwner() != null) {
-            return deal.getPerson().getOwner();
+
+        // 1) Primary: pipeline's team manager (pipeline "owner" for targets)
+        if (deal.getPipeline() != null
+                && deal.getPipeline().getTeam() != null
+                && deal.getPipeline().getTeam().getManager() != null) {
+            return deal.getPipeline().getTeam().getManager();
         }
+
+        // 2) Fallback: organization owner
         if (deal.getOrganization() != null && deal.getOrganization().getOwner() != null) {
             return deal.getOrganization().getOwner();
         }
+
+        // 3) Final fallback: person owner
+        if (deal.getPerson() != null && deal.getPerson().getOwner() != null) {
+            return deal.getPerson().getOwner();
+        }
+
         return null;
     }
 
