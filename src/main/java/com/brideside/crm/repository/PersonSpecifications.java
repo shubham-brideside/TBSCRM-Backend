@@ -44,6 +44,22 @@ public final class PersonSpecifications {
         };
     }
 
+    /**
+     * Focused search for global search API - only searches in name, instagramId, and phone
+     * Does not search in email, organization name, or owner name to avoid unrelated results
+     */
+    public static Specification<Person> focusedSearch(String q) {
+        if (q == null || q.isBlank()) {
+            return null;
+        }
+        String like = "%" + q.toLowerCase() + "%";
+        return (root, query, cb) -> cb.or(
+                cb.like(cb.lower(root.get("name")), like),
+                cb.like(cb.lower(root.get("instagramId")), like),
+                cb.like(cb.lower(root.get("phone")), like)
+        );
+    }
+
     public static Specification<Person> hasLabel(Person.PersonLabel label) {
         if (label == null) {
             return null;

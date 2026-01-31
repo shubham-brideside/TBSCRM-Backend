@@ -146,7 +146,7 @@ public final class DealSpecifications {
     }
 
     /**
-     * Search across multiple fields: deal name, venue, person name, and organization name (case-insensitive)
+     * Search across multiple fields: deal name, venue, phone number, person name, person instagram ID, and organization name (case-insensitive)
      */
     public static Specification<Deal> search(String searchQuery) {
         if (searchQuery == null || searchQuery.trim().isEmpty()) {
@@ -158,10 +158,21 @@ public final class DealSpecifications {
             jakarta.persistence.criteria.Predicate dealNamePredicate = cb.like(cb.lower(root.get("name")), likePattern);
             jakarta.persistence.criteria.Predicate venuePredicate = cb.like(cb.lower(root.get("venue")), likePattern);
             
-            // Search in person name (if person exists)
+            // Search in deal phone number
+            jakarta.persistence.criteria.Predicate phoneNumberPredicate = cb.like(
+                cb.lower(root.get("phoneNumber")), likePattern
+            );
+            
+            // Search in person name, instagram ID, and phone (if person exists)
             Join<Object, Object> personJoin = root.join("person", JoinType.LEFT);
             jakarta.persistence.criteria.Predicate personNamePredicate = cb.like(
                 cb.lower(personJoin.get("name")), likePattern
+            );
+            jakarta.persistence.criteria.Predicate personInstagramPredicate = cb.like(
+                cb.lower(personJoin.get("instagramId")), likePattern
+            );
+            jakarta.persistence.criteria.Predicate personPhonePredicate = cb.like(
+                cb.lower(personJoin.get("phone")), likePattern
             );
             
             // Search in organization name (if organization exists)
@@ -170,7 +181,44 @@ public final class DealSpecifications {
                 cb.lower(orgJoin.get("name")), likePattern
             );
             
-            return cb.or(dealNamePredicate, venuePredicate, personNamePredicate, orgNamePredicate);
+            return cb.or(dealNamePredicate, venuePredicate, phoneNumberPredicate, 
+                         personNamePredicate, personInstagramPredicate, personPhonePredicate, 
+                         orgNamePredicate);
+        };
+    }
+
+    /**
+     * Focused search for global search API - only searches in deal name, phone number, person name, person instagram ID, and person phone
+     * Does not search in venue or organization name to avoid unrelated results
+     */
+    public static Specification<Deal> focusedSearch(String searchQuery) {
+        if (searchQuery == null || searchQuery.trim().isEmpty()) {
+            return null;
+        }
+        String likePattern = "%" + searchQuery.trim().toLowerCase() + "%";
+        return (root, query, cb) -> {
+            // Search in deal name
+            jakarta.persistence.criteria.Predicate dealNamePredicate = cb.like(cb.lower(root.get("name")), likePattern);
+            
+            // Search in deal phone number
+            jakarta.persistence.criteria.Predicate phoneNumberPredicate = cb.like(
+                cb.lower(root.get("phoneNumber")), likePattern
+            );
+            
+            // Search in person name, instagram ID, and phone (if person exists)
+            Join<Object, Object> personJoin = root.join("person", JoinType.LEFT);
+            jakarta.persistence.criteria.Predicate personNamePredicate = cb.like(
+                cb.lower(personJoin.get("name")), likePattern
+            );
+            jakarta.persistence.criteria.Predicate personInstagramPredicate = cb.like(
+                cb.lower(personJoin.get("instagramId")), likePattern
+            );
+            jakarta.persistence.criteria.Predicate personPhonePredicate = cb.like(
+                cb.lower(personJoin.get("phone")), likePattern
+            );
+            
+            return cb.or(dealNamePredicate, phoneNumberPredicate, 
+                         personNamePredicate, personInstagramPredicate, personPhonePredicate);
         };
     }
 
