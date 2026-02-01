@@ -533,15 +533,12 @@ public class PipelineServiceImpl implements PipelineService {
                 }
             }
         } else if (roleName == Role.RoleName.PRESALES) {
-            // Pre-Sales: Find their Sales Manager (their manager)
-            // Then find teams where that Sales Manager is the team manager
-            if (currentUser.getManager() != null && currentUser.getManager().getId() != null) {
-                Long salesManagerId = currentUser.getManager().getId();
-                List<Team> teams = teamRepository.findByManager_Id(salesManagerId);
-                for (Team team : teams) {
-                    if (team.getId() != null) {
-                        teamIds.add(team.getId());
-                    }
+            // Pre-Sales: Find teams where they are members
+            // With multiple team membership enabled, they see pipelines for all teams they belong to
+            List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
+            for (Team team : teams) {
+                if (team.getId() != null) {
+                    teamIds.add(team.getId());
                 }
             }
         }
