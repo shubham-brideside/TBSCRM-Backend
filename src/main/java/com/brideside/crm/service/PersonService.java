@@ -152,6 +152,57 @@ public class PersonService {
     }
 
     /**
+     * List persons without role-based restrictions (unrestricted search).
+     * This method is intended for use cases like "create deal" where users need to search
+     * for any person regardless of their role-based access restrictions.
+     * 
+     * Still respects:
+     * - Soft-delete filtering (excludes deleted persons)
+     * - User-provided filters (search query, labels, organizations, owners, categories, etc.)
+     * 
+     * Does NOT apply:
+     * - Role-based organization filtering
+     * - Role-based pipeline filtering
+     * 
+     * @param q Search query string
+     * @param labels List of person labels to filter by
+     * @param organizationIds List of organization IDs to filter by
+     * @param ownerIds List of owner IDs to filter by
+     * @param categoryIds List of category IDs to filter by
+     * @param source Person source filter
+     * @param dealSource Deal source filter
+     * @param leadDateFrom Start date for lead date range
+     * @param leadDateTo End date for lead date range
+     * @param pageable Pagination and sorting parameters
+     * @return Page of PersonDTO without role-based restrictions
+     */
+    public Page<PersonDTO> listUnrestricted(String q,
+                                            List<Person.PersonLabel> labels,
+                                            List<Long> organizationIds,
+                                            List<Long> ownerIds,
+                                            List<Long> categoryIds,
+                                            com.brideside.crm.entity.DealSource source,
+                                            com.brideside.crm.entity.DealSource dealSource,
+                                            LocalDate leadDateFrom,
+                                            LocalDate leadDateTo,
+                                            Pageable pageable) {
+        // Build specification WITHOUT role-based filtering
+        // This allows all users (regardless of role) to search for any person
+        Specification<Person> spec = Specification.where(PersonSpecifications.notDeleted())
+                .and(PersonSpecifications.search(q))
+                .and(PersonSpecifications.hasLabels(labels))
+                .and(PersonSpecifications.hasOrganizations(organizationIds))
+                .and(PersonSpecifications.hasOwners(ownerIds))
+                .and(PersonSpecifications.hasCategories(categoryIds))
+                .and(PersonSpecifications.hasSource(source))
+                .and(PersonSpecifications.hasDealSource(dealSource))
+                .and(PersonSpecifications.leadDateBetween(leadDateFrom, leadDateTo));
+        // Note: No hasAccessibleOrganizations() call - no role-based filtering
+
+        return repository.findAll(spec, pageable).map(PersonMapper::toDto);
+    }
+
+    /**
      * Get paginated persons with their associated deals and activities
      * Uses JOINs to efficiently fetch related data
      */

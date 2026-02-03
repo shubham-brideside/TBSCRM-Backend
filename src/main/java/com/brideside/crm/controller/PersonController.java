@@ -89,6 +89,34 @@ public class PersonController {
         return service.list(query, labels, organizationIds, ownerIds, categoryIds, source, dealSource, leadFrom, leadTo, pageable);
     }
 
+    @Operation(summary = "Search persons (unrestricted)", 
+            description = "Search persons without role-based access restrictions. " +
+                    "This endpoint is intended for use cases like 'create deal' where users need to search for any person " +
+                    "regardless of their role-based access restrictions. " +
+                    "Supports the same filters as /api/persons but does NOT apply role-based organization or pipeline filtering. " +
+                    "Still respects soft-delete filtering and all user-provided filters.")
+    @GetMapping("/search")
+    public Page<PersonDTO> searchUnrestricted(
+            @RequestParam(name = "q", required = false) String query,
+            @RequestParam(name = "label", required = false) String labelCode,
+            @RequestParam(name = "source", required = false) String sourceCode,
+            @RequestParam(name = "dealSource", required = false) String dealSourceCode,
+            @RequestParam(name = "organizationId", required = false) String organizationId,
+            @RequestParam(name = "ownerId", required = false) String ownerId,
+            @RequestParam(name = "categoryId", required = false) String categoryId,
+            @RequestParam(name = "leadFrom", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadFrom,
+            @RequestParam(name = "leadTo", required = false) @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate leadTo,
+            @ParameterObject @PageableDefault(size = 50, sort = "name", direction = Sort.Direction.ASC) Pageable pageable
+    ) {
+        List<Person.PersonLabel> labels = parseCommaSeparatedLabels(labelCode);
+        com.brideside.crm.entity.DealSource source = parseSource(sourceCode);
+        com.brideside.crm.entity.DealSource dealSource = parseDealSource(dealSourceCode);
+        List<Long> organizationIds = parseCommaSeparatedIds(organizationId);
+        List<Long> ownerIds = parseCommaSeparatedIds(ownerId);
+        List<Long> categoryIds = parseCommaSeparatedIds(categoryId);
+        return service.listUnrestricted(query, labels, organizationIds, ownerIds, categoryIds, source, dealSource, leadFrom, leadTo, pageable);
+    }
+
     @Operation(summary = "List persons with details", description = "Returns paginated persons with their associated deals and activities in a single optimized response. " +
             "Uses JOINs to efficiently fetch related data. Supports all the same filters as /api/persons endpoint. " +
             "Default page size is 200 (recommended for infinite scroll). " +
@@ -181,7 +209,7 @@ public class PersonController {
     @Operation(summary = "Get person by ID")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Person found")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Person not found")
-    @GetMapping("/{id}")
+    @GetMapping("/{id:\\d+}")
     public PersonDTO get(@Parameter(description = "Person ID") @PathVariable Long id) {
         return service.get(id);
     }
@@ -190,7 +218,7 @@ public class PersonController {
             "Uses JOINs to efficiently fetch related data. This endpoint replaces the need to call /api/persons/{id}, /api/deals/person/{personId}, and /api/activities?personId={personId} separately.")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Person found with details")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Person not found")
-    @GetMapping("/{id}/with-details")
+    @GetMapping("/{id:\\d+}/with-details")
     public ResponseEntity<PersonDtos.PersonWithDetailsResponse> getWithDetails(
             @Parameter(description = "Person ID") @PathVariable Long id) {
         PersonDtos.PersonWithDetailsResponse response = service.getWithDetails(id);
@@ -198,7 +226,7 @@ public class PersonController {
     }
 
     @Operation(summary = "Get person summary")
-    @GetMapping("/{id}/summary")
+    @GetMapping("/{id:\\d+}/summary")
     public PersonSummaryDTO getSummary(@PathVariable Long id) {
         return service.getSummary(id);
     }
