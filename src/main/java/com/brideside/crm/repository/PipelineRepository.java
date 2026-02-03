@@ -28,4 +28,8 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
     // Pipelines assigned to teams with given IDs
     @Query("SELECT p FROM Pipeline p WHERE p.deleted = false AND p.team IS NOT NULL AND p.team.id IN :teamIds ORDER BY p.name ASC")
     List<Pipeline> findByDeletedFalseAndTeam_IdInOrderByNameAsc(@Param("teamIds") List<Long> teamIds);
+    
+    // Pipelines with a specific category
+    @Query("SELECT p FROM Pipeline p WHERE p.deleted = false AND p.category = :category ORDER BY p.name ASC")
+    List<Pipeline> findByDeletedFalseAndCategoryOrderByNameAsc(@Param("category") String category);
 }
