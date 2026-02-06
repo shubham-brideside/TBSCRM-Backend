@@ -1,8 +1,11 @@
 package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
+import com.brideside.crm.dto.AdminDashboardDtos;
 import com.brideside.crm.dto.CreateAdminRequest;
 import com.brideside.crm.dto.UserResponse;
+import com.brideside.crm.exception.BadRequestException;
+import com.brideside.crm.service.AdminDashboardService;
 import com.brideside.crm.service.AuthService;
 import com.brideside.crm.service.EmailService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -11,6 +14,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -20,6 +24,9 @@ public class AdminController {
 
     @Autowired
     private AuthService authService;
+
+    @Autowired
+    private AdminDashboardService adminDashboardService;
 
     @Autowired
     private EmailService emailService;
@@ -54,6 +61,138 @@ public class AdminController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Failed to send test email: " + e.getMessage()));
         }
+    }
+
+    @GetMapping("/dashboard/won-deals-by-sales-user")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Won deals grouped by SALES users",
+            description = "Returns aggregated counts and total values of WON deals grouped by sales users. "
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.WonDealsBySalesUserResponse>> getWonDealsBySalesUser() {
+        AdminDashboardDtos.WonDealsBySalesUserResponse data =
+                adminDashboardService.getWonDealsBySalesUser();
+        return ResponseEntity.ok(
+                ApiResponse.success("Won deals grouped by sales user fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/lost-deals-by-sales-user")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Lost deals grouped by SALES users",
+            description = "Returns aggregated counts and total values of LOST deals grouped by sales users. "
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.LostDealsBySalesUserResponse>> getLostDealsBySalesUser() {
+        AdminDashboardDtos.LostDealsBySalesUserResponse data =
+                adminDashboardService.getLostDealsBySalesUser();
+        return ResponseEntity.ok(
+                ApiResponse.success("Lost deals grouped by sales user fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/won-deals-by-sales-user/monthly")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Monthly won deals grouped by SALES users",
+            description = "Returns, for a given year, monthly counts and total values of WON deals grouped by sales users. "
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse>> getWonDealsBySalesUserMonthly(
+            @RequestParam("year") Integer year) {
+        if (year == null) {
+            throw new BadRequestException("year is required");
+        }
+        AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse data =
+                adminDashboardService.getWonDealsBySalesUserMonthly(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Monthly won deals grouped by sales user fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/lost-deals-by-sales-user/monthly")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Monthly lost deals grouped by SALES users",
+            description = "Returns, for a given year, monthly counts and total values of LOST deals grouped by sales users. "
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse>> getLostDealsBySalesUserMonthly(
+            @RequestParam("year") Integer year) {
+        if (year == null) {
+            throw new BadRequestException("year is required");
+        }
+        AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse data =
+                adminDashboardService.getLostDealsBySalesUserMonthly(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Monthly lost deals grouped by sales user fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/deals-status-monthly")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Monthly deal status summary (WON / LOST / IN_PROGRESS)",
+            description = "Returns, for a given year, monthly counts and total values of deals broken down by status "
+                    + "(WON, LOST, IN_PROGRESS) for the admin dashboard.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.DealStatusMonthlySummaryResponse>> getDealStatusMonthlySummary(
+            @RequestParam("year") Integer year) {
+        if (year == null) {
+            throw new BadRequestException("year is required");
+        }
+        AdminDashboardDtos.DealStatusMonthlySummaryResponse data =
+                adminDashboardService.getDealStatusMonthlySummary(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Monthly deal status summary fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/user-activities-monthly")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Monthly activities per user (including call counts and duration)",
+            description = "Returns, for a given year, per-user monthly activity counts plus call count and total call "
+                    + "duration in minutes for the admin dashboard.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.UserActivityMonthlySummaryResponse>> getUserActivityMonthlySummary(
+            @RequestParam("year") Integer year) {
+        if (year == null) {
+            throw new BadRequestException("year is required");
+        }
+        AdminDashboardDtos.UserActivityMonthlySummaryResponse data =
+                adminDashboardService.getUserActivityMonthlySummary(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Monthly user activity summary fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/organization-deals-status")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Deal status per organization (all time + monthly by year)",
+            description = "Returns, for each organization, all-time WON/LOST/IN_PROGRESS counts and values plus a "
+                    + "per-month breakdown for the specified year.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.OrganizationDealStatusSummaryResponse>> getOrganizationDealStatusSummary(
+            @RequestParam("year") Integer year) {
+        if (year == null) {
+            throw new BadRequestException("year is required");
+        }
+        AdminDashboardDtos.OrganizationDealStatusSummaryResponse data =
+                adminDashboardService.getOrganizationDealStatusSummary(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Organization deal status summary fetched", data)
+        );
+    }
+
+    @GetMapping("/dashboard/lost-reasons")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Lost deal reasons summary",
+            description = "Returns all-time LOST deal reasons with count and percentage for donut charts "
+                    + "on the admin dashboard.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.LostReasonSummaryResponse>> getLostReasonSummary() {
+        AdminDashboardDtos.LostReasonSummaryResponse data =
+                adminDashboardService.getLostReasonSummary();
+        return ResponseEntity.ok(
+                ApiResponse.success("Lost reason summary fetched", data)
+        );
     }
 }
 
