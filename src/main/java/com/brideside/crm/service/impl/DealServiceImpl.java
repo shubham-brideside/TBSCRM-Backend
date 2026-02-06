@@ -17,6 +17,7 @@ import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Source;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.entity.User;
+import com.brideside.crm.entity.Role;
 import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
@@ -781,6 +782,89 @@ public class DealServiceImpl implements DealService {
         long count = dealRepository.count(spec);
         log.debug("Deal count: Found {} deals matching filters", count);
         return count;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealDtos.UserDealTotalsResponse getUserDealTotals(Long pipelineId) {
+        log.debug("User deal totals requested for pipelineId={}", pipelineId);
+
+        // Reuse the filtered list() logic to respect soft-delete and filters.
+        List<Deal> deals = list(
+                pipelineId,
+                null,          // status: all
+                null,          // organizationId
+                null,          // categoryId
+                null,          // managerId (we derive owner from organization)
+                null,          // dateFrom
+                null,          // dateTo
+                null,          // search
+                null,          // source
+                null,          // sortField
+                null,          // sortDirection
+                null,          // limit (no pagination)
+                null,          // offset
+                null           // stageId
+        );
+
+        Map<Long, DealDtos.UserDealTotals> totalsByUser = new HashMap<>();
+
+        for (Deal deal : deals) {
+            if (deal == null || deal.getOrganization() == null) {
+                continue;
+            }
+            Organization org = deal.getOrganization();
+            User owner = org.getOwner();
+            if (owner == null || owner.getId() == null) {
+                continue;
+            }
+
+            // Only consider SALES users for this aggregation.
+            if (owner.getRole() == null || owner.getRole().getName() != Role.RoleName.SALES) {
+                continue;
+            }
+
+            Long userId = owner.getId();
+            String userName = (owner.getFirstName() != null ? owner.getFirstName() : "") + " " +
+                              (owner.getLastName() != null ? owner.getLastName() : "");
+            userName = userName.trim();
+
+            DealDtos.UserDealTotals current = totalsByUser.get(userId);
+            if (current == null) {
+                current = new DealDtos.UserDealTotals(
+                        userId,
+                        userName,
+                        0L,
+                        BigDecimal.ZERO,
+                        0L,
+                        BigDecimal.ZERO,
+                        0L,
+                        BigDecimal.ZERO
+                );
+                totalsByUser.put(userId, current);
+            }
+
+            BigDecimal value = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+
+            // Update total counts and values
+            current.totalCount = current.totalCount + 1;
+            current.totalValue = current.totalValue.add(value);
+
+            // Update won / lost buckets
+            if (deal.getStatus() == DealStatus.WON) {
+                current.wonCount = current.wonCount + 1;
+                current.wonValue = current.wonValue.add(value);
+            } else if (deal.getStatus() == DealStatus.LOST) {
+                current.lostCount = current.lostCount + 1;
+                current.lostValue = current.lostValue.add(value);
+            }
+        }
+
+        List<DealDtos.UserDealTotals> users = new ArrayList<>(totalsByUser.values());
+        // Optional: sort by userName for stable frontend display
+        users.sort(Comparator.comparing(u -> u.userName != null ? u.userName.toLowerCase() : ""));
+
+        return new DealDtos.UserDealTotalsResponse(users);
     }
 
     @Override

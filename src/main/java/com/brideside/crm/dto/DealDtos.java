@@ -6,6 +6,47 @@ import com.brideside.crm.entity.CreatedByType;
 import com.brideside.crm.entity.DealStatus;
 
 public class DealDtos {
+
+    /**
+     * Aggregated deal totals per sales user (organization owner).
+     */
+    public static class UserDealTotals {
+        public Long userId;
+        public String userName;
+        public Long wonCount;
+        public java.math.BigDecimal wonValue;
+        public Long lostCount;
+        public java.math.BigDecimal lostValue;
+        public Long totalCount;
+        public java.math.BigDecimal totalValue;
+
+        public UserDealTotals(Long userId,
+                              String userName,
+                              Long wonCount,
+                              java.math.BigDecimal wonValue,
+                              Long lostCount,
+                              java.math.BigDecimal lostValue,
+                              Long totalCount,
+                              java.math.BigDecimal totalValue) {
+            this.userId = userId;
+            this.userName = userName;
+            this.wonCount = wonCount;
+            this.wonValue = wonValue;
+            this.lostCount = lostCount;
+            this.lostValue = lostValue;
+            this.totalCount = totalCount;
+            this.totalValue = totalValue;
+        }
+    }
+
+    public static class UserDealTotalsResponse {
+        public java.util.List<UserDealTotals> users;
+
+        public UserDealTotalsResponse(java.util.List<UserDealTotals> users) {
+            this.users = users;
+        }
+    }
+
     public static class CreateRequest {
         public String name;
         public BigDecimal value;

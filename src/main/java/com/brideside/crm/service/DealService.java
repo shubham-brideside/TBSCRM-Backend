@@ -32,6 +32,14 @@ public interface DealService {
     DealDtos.StageTotalsResponse getStageTotals(Long pipelineId, String status, Long organizationId, 
                                                   Long categoryId, Long managerId, String dateFrom, 
                                                   String dateTo, String search, String source);
+
+    /**
+     * Aggregated totals of deals per sales user (organization owner), optionally filtered by pipeline.
+     *
+     * @param pipelineId optional pipeline id to filter deals; when null, includes all pipelines
+     * @return aggregated won/lost/all deal counts and values per sales user
+     */
+    DealDtos.UserDealTotalsResponse getUserDealTotals(Long pipelineId);
 }
 
 
