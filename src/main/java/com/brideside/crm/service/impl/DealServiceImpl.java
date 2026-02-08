@@ -47,6 +47,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -78,6 +80,9 @@ public class DealServiceImpl implements DealService {
     @Autowired private OrganizationRepository organizationRepository;
     @Autowired private CategoryRepository categoryRepository;
     @Autowired private ActivityRepository activityRepository;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
     @Autowired private UserRepository userRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired(required = false)
@@ -782,6 +787,56 @@ public class DealServiceImpl implements DealService {
         long count = dealRepository.count(spec);
         log.debug("Deal count: Found {} deals matching filters", count);
         return count;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealDtos.RevenueResponse calculateRevenue(Long pipelineId, String status, Long organizationId, 
+                                                      Long categoryId, Long managerId, String dateFrom, 
+                                                      String dateTo, String search, String source, Long stageId) {
+        log.debug("Revenue calculation requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}", 
+            pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
+        
+        // Build specification with all filters (same as count method)
+        Specification<Deal> spec = buildSpecification(pipelineId, status, organizationId, categoryId, 
+                                                       managerId, dateFrom, dateTo, search, source, stageId);
+        
+        // Calculate sum of deal values using Criteria API
+        BigDecimal totalRevenue = calculateSumWithSpecification(spec);
+        long dealCount = dealRepository.count(spec);
+        
+        log.debug("Revenue calculation: Total revenue={}, Deal count={}", totalRevenue, dealCount);
+        return new DealDtos.RevenueResponse(totalRevenue, dealCount);
+    }
+
+    /**
+     * Calculate sum of deal values using JPA Criteria API with the given specification.
+     * This is more efficient than fetching all deals and summing in Java.
+     */
+    private BigDecimal calculateSumWithSpecification(Specification<Deal> spec) {
+        jakarta.persistence.criteria.CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        jakarta.persistence.criteria.CriteriaQuery<BigDecimal> query = cb.createQuery(BigDecimal.class);
+        jakarta.persistence.criteria.Root<Deal> root = query.from(Deal.class);
+        
+        // Build the sum expression
+        query.select(cb.sum(root.get("value")));
+        
+        // Apply the specification predicates
+        if (spec != null) {
+            jakarta.persistence.criteria.Predicate predicate = spec.toPredicate(root, query, cb);
+            if (predicate != null) {
+                query.where(predicate);
+            }
+        }
+        
+        // Execute query and get result
+        try {
+            BigDecimal result = entityManager.createQuery(query).getSingleResult();
+            return result != null ? result : BigDecimal.ZERO;
+        } catch (jakarta.persistence.NoResultException e) {
+            // No deals match the criteria, return zero
+            return BigDecimal.ZERO;
+        }
     }
 
     @Override

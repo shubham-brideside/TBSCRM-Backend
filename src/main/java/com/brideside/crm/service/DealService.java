@@ -40,6 +40,27 @@ public interface DealService {
      * @return aggregated won/lost/all deal counts and values per sales user
      */
     DealDtos.UserDealTotalsResponse getUserDealTotals(Long pipelineId);
+    
+    /**
+     * Calculate total revenue (sum of deal values) for deals matching the specified filters.
+     * This is optimized for dashboard revenue calculation - calculates SUM on backend instead of
+     * fetching all deals and calculating on frontend.
+     * 
+     * @param pipelineId Optional pipeline filter
+     * @param status Optional status filter (WON, LOST, IN_PROGRESS, or 'all')
+     * @param organizationId Optional organization filter
+     * @param categoryId Optional category filter
+     * @param managerId Optional manager filter (person owner)
+     * @param dateFrom Optional start date filter (YYYY-MM-DD)
+     * @param dateTo Optional end date filter (YYYY-MM-DD)
+     * @param search Optional search term
+     * @param source Optional deal source filter
+     * @param stageId Optional stage filter
+     * @return RevenueResponse with total revenue and deal count
+     */
+    DealDtos.RevenueResponse calculateRevenue(Long pipelineId, String status, Long organizationId, 
+                                              Long categoryId, Long managerId, String dateFrom, 
+                                              String dateTo, String search, String source, Long stageId);
 }
 
 

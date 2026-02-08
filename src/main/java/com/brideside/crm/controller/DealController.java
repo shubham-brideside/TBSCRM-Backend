@@ -444,6 +444,61 @@ public class DealController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/revenue")
+    @Operation(summary = "Calculate revenue", description = "Calculate total revenue (sum of deal values) for deals matching the specified filters. " +
+            "This endpoint is optimized for dashboard revenue calculation - calculates SUM on backend instead of fetching all deals. " +
+            "Filters: pipelineId, status (IN_PROGRESS/WON/LOST/all), organizationId, categoryId, managerId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD), search (name/venue/person/organization), source (Direct/Divert/Reference/Planner/TBS), stageId. " +
+            "Returns total revenue and deal count.")
+    public ResponseEntity<ApiResponse<DealDtos.RevenueResponse>> calculateRevenue(
+            @RequestParam(required = false) Long pipelineId,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long organizationId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long managerId,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long stageId) {
+        
+        // Validate numeric parameters
+        if (pipelineId != null && pipelineId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (organizationId != null && organizationId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (categoryId != null && categoryId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (managerId != null && managerId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (stageId != null && stageId <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        // Validate date formats
+        if (dateFrom != null && !dateFrom.trim().isEmpty()) {
+            try {
+                java.time.LocalDate.parse(dateFrom.trim());
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        if (dateTo != null && !dateTo.trim().isEmpty()) {
+            try {
+                java.time.LocalDate.parse(dateTo.trim());
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().build();
+            }
+        }
+        
+        DealDtos.RevenueResponse response = dealService.calculateRevenue(
+                pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
+        return ResponseEntity.ok(ApiResponse.success("Revenue calculated", response));
+    }
+
     public static class SourceOption {
         private String code;
         private String label;

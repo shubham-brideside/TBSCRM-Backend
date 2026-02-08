@@ -187,6 +187,30 @@ public class DealDtos {
             this.unassigned = unassigned;
         }
     }
+
+    /**
+     * Revenue calculation response
+     */
+    public static class RevenueResponse {
+        public BigDecimal totalRevenue;
+        public Long dealCount;
+        public String currency; // Optional: for future use
+
+        public RevenueResponse() {
+        }
+
+        public RevenueResponse(BigDecimal totalRevenue, Long dealCount) {
+            this.totalRevenue = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
+            this.dealCount = dealCount != null ? dealCount : 0L;
+            this.currency = "INR"; // Default currency
+        }
+
+        public RevenueResponse(BigDecimal totalRevenue, Long dealCount, String currency) {
+            this.totalRevenue = totalRevenue != null ? totalRevenue : BigDecimal.ZERO;
+            this.dealCount = dealCount != null ? dealCount : 0L;
+            this.currency = currency != null ? currency : "INR";
+        }
+    }
 }
 
 
