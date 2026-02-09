@@ -5,8 +5,10 @@ import com.brideside.crm.dto.SearchDtos;
 import com.brideside.crm.service.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -21,11 +23,15 @@ public class SearchController {
     }
     
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
     @Operation(
         summary = "Global search",
         description = "Search across persons and deals by name, instagram_id, and phone_number. " +
                      "Returns matching persons and deals in a single response. " +
-                     "Searches in: person name, instagram ID, phone, email; deal name, venue, phone number, and related person/organization names."
+                     "Searches in: person name, instagram ID, phone, email; deal name, venue, phone number, and related person/organization names. " +
+                     "Results are filtered based on user role: Admin sees all, Category Manager sees their orgs and those of Sales/Presales under them, " +
+                     "Sales sees their orgs and those of Presales under them, Presales sees only their own orgs.",
+        security = @SecurityRequirement(name = "Bearer Authentication")
     )
     public ResponseEntity<ApiResponse<SearchDtos.GlobalSearchResponse>> globalSearch(
             @Parameter(description = "Search query - searches in name, instagram_id, and phone_number", required = true)

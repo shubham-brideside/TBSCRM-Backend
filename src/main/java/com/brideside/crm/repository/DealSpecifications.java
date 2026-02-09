@@ -9,6 +9,7 @@ import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 
 public final class DealSpecifications {
 
@@ -242,6 +243,43 @@ public final class DealSpecifications {
         }
         return (root, query, cb) -> 
             cb.equal(root.get("stageId"), stageId);
+    }
+
+    /**
+     * Filter deals by organization owner ID or person owner ID.
+     * Returns deals where:
+     * - The deal's organization is owned by any of the specified owner IDs, OR
+     * - The deal's person is owned by any of the specified owner IDs
+     * Returns null if ownerIds is null (no restrictions) or empty (no access).
+     * Handles null organizations and persons gracefully using LEFT JOINs.
+     */
+    public static Specification<Deal> hasOrganizationOrPersonOwnerIn(List<Long> ownerIds) {
+        if (ownerIds == null) {
+            // null means no restrictions (Admin)
+            return null;
+        }
+        if (ownerIds.isEmpty()) {
+            // Empty list means no access
+            return (root, query, cb) -> cb.disjunction(); // Always false
+        }
+        return (root, query, cb) -> {
+            // Condition 1: Deal's organization owner is in the list (only if organization exists)
+            Join<Object, Object> organizationJoin = root.join("organization", JoinType.LEFT);
+            jakarta.persistence.criteria.Predicate orgOwnerMatch = cb.and(
+                cb.isNotNull(organizationJoin.get("owner")),
+                organizationJoin.get("owner").get("id").in(ownerIds)
+            );
+            
+            // Condition 2: Deal's person owner is in the list (only if person exists)
+            Join<Object, Object> personJoin = root.join("person", JoinType.LEFT);
+            jakarta.persistence.criteria.Predicate personOwnerMatch = cb.and(
+                cb.isNotNull(personJoin.get("owner")),
+                personJoin.get("owner").get("id").in(ownerIds)
+            );
+            
+            // Return OR of both conditions
+            return cb.or(orgOwnerMatch, personOwnerMatch);
+        };
     }
 }
 

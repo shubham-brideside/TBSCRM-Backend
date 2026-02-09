@@ -286,6 +286,26 @@ public final class PersonSpecifications {
     }
 
     /**
+     * Filter persons by organization owner ID.
+     * Returns persons whose organization is owned by any of the specified owner IDs.
+     * Returns null if ownerIds is null (no restrictions) or empty (no access).
+     */
+    public static Specification<Person> hasOrganizationOwnerIn(List<Long> ownerIds) {
+        if (ownerIds == null) {
+            // null means no restrictions (Admin)
+            return null;
+        }
+        if (ownerIds.isEmpty()) {
+            // Empty list means no access
+            return (root, query, cb) -> cb.disjunction(); // Always false
+        }
+        return (root, query, cb) -> {
+            Join<Object, Object> organizationJoin = root.join("organization", JoinType.LEFT);
+            return organizationJoin.get("owner").get("id").in(ownerIds);
+        };
+    }
+
+    /**
      * Filter persons who are accessible based on pipeline IDs.
      * A person is accessible if:
      * 1. The person's organization_id is in organizations linked to the specified pipelines, OR

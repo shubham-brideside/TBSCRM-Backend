@@ -6,11 +6,15 @@ import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.dto.SearchDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Person;
+import com.brideside.crm.entity.Role;
+import com.brideside.crm.entity.User;
+import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.mapper.PersonMapper;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.DealSpecifications;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.PersonSpecifications;
+import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.SearchService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,10 +23,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -34,12 +42,15 @@ public class SearchServiceImpl implements SearchService {
     
     private final PersonRepository personRepository;
     private final DealRepository dealRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     
     public SearchServiceImpl(PersonRepository personRepository,
-                            DealRepository dealRepository) {
+                            DealRepository dealRepository,
+                            UserRepository userRepository) {
         this.personRepository = personRepository;
         this.dealRepository = dealRepository;
+        this.userRepository = userRepository;
     }
     
     @Override
@@ -53,22 +64,36 @@ public class SearchServiceImpl implements SearchService {
         
         log.debug("Global search requested with query: '{}', limit: {}", query, searchLimit);
         
+        // Get accessible owner IDs based on current user's role for RBAC filtering
+        List<Long> accessibleOwnerIds = getAccessibleOwnerIds();
+        log.debug("RBAC filtering: accessible owner IDs: {}", accessibleOwnerIds);
+        
         // Search persons - use focusedSearch to only match name, instagramId, and phone
         // This avoids unrelated results from owner name, organization name, or email
         Specification<Person> personSpec = Specification.where(PersonSpecifications.notDeleted())
                 .and(PersonSpecifications.focusedSearch(query));
+        
+        // Apply RBAC filtering: filter by organization owner
+        if (accessibleOwnerIds != null) {
+            personSpec = personSpec.and(PersonSpecifications.hasOrganizationOwnerIn(accessibleOwnerIds));
+        }
         
         List<PersonDTO> persons = personRepository.findAll(personSpec, pageable)
                 .stream()
                 .map(PersonMapper::toDto)
                 .collect(Collectors.toList());
         
-        log.debug("Found {} persons matching query '{}'", persons.size(), query);
+        log.debug("Found {} persons matching query '{}' (after RBAC filtering)", persons.size(), query);
         
         // Search deals - use focusedSearch to only match deal name, phone number, and related person fields
         // This avoids unrelated results from venue or organization name
         Specification<Deal> dealSpec = Specification.where(DealSpecifications.notDeleted())
                 .and(DealSpecifications.focusedSearch(query));
+        
+        // Apply RBAC filtering: filter by organization owner OR person owner
+        if (accessibleOwnerIds != null) {
+            dealSpec = dealSpec.and(DealSpecifications.hasOrganizationOrPersonOwnerIn(accessibleOwnerIds));
+        }
         
         List<Deal> dealEntities = dealRepository.findAll(dealSpec, pageable).getContent();
         
@@ -79,9 +104,135 @@ public class SearchServiceImpl implements SearchService {
                 .map(this::toDealResponse)
                 .collect(Collectors.toList());
         
-        log.debug("Found {} deals matching query '{}'", deals.size(), query);
+        log.debug("Found {} deals matching query '{}' (after RBAC filtering)", deals.size(), query);
         
         return new SearchDtos.GlobalSearchResponse(persons, deals);
+    }
+    
+    /**
+     * Get accessible owner IDs based on the current user's role.
+     * Returns null for Admin (no restrictions), or list of owner IDs for other roles.
+     * Logic matches OrganizationServiceImpl.listAccessibleForCurrentUser:
+     * - ADMIN: null (no restrictions)
+     * - CATEGORY_MANAGER: themselves + Sales/Presales under them
+     * - SALES: themselves + Presales under them
+     * - PRESALES: themselves only
+     */
+    private List<Long> getAccessibleOwnerIds() {
+        Optional<User> currentUserOpt = getCurrentUser();
+        
+        // If no user is logged in, return empty list (no access)
+        if (currentUserOpt.isEmpty() || currentUserOpt.get().getRole() == null) {
+            log.warn("No authenticated user found for global search - returning empty results");
+            return List.of();
+        }
+        
+        User currentUser = currentUserOpt.get();
+        Role.RoleName roleName = currentUser.getRole().getName();
+        
+        // Admin sees all (no filtering)
+        if (roleName == Role.RoleName.ADMIN) {
+            return null; // null means no restrictions
+        }
+        
+        List<Long> ownerIds = new ArrayList<>();
+        
+        switch (roleName) {
+            case CATEGORY_MANAGER:
+                ownerIds = findAccessibleOwnerIdsForCategoryManager(currentUser);
+                break;
+            case SALES:
+                ownerIds = findAccessibleOwnerIdsForSales(currentUser);
+                break;
+            case PRESALES:
+                // Presales sees the same data as Sales - if they have a Sales manager, see what that manager sees
+                // This includes: Sales manager's organizations + all Presales under that Sales manager (including themselves)
+                if (currentUser.getManager() != null && 
+                    currentUser.getManager().getRole() != null &&
+                    currentUser.getManager().getRole().getName() == Role.RoleName.SALES) {
+                    // Use the same logic as Sales - see what their Sales manager sees
+                    ownerIds = findAccessibleOwnerIdsForSales(currentUser.getManager());
+                    // Ensure the Presales user's own ID is included (in case they're not in the manager's list)
+                    if (!ownerIds.contains(currentUser.getId())) {
+                        ownerIds = new ArrayList<>(ownerIds);
+                        ownerIds.add(currentUser.getId());
+                    }
+                } else {
+                    // No Sales manager - see only their own organizations
+                    ownerIds = List.of(currentUser.getId());
+                }
+                break;
+            default:
+                // Unknown role - no access
+                ownerIds = List.of();
+        }
+        
+        return ownerIds;
+    }
+    
+    /**
+     * Find all user IDs that a Category Manager can access (for organization ownership)
+     * Includes: the category manager themselves, direct Sales/Presales reports, and Sales who have Presales under them
+     */
+    private List<Long> findAccessibleOwnerIdsForCategoryManager(User categoryManager) {
+        List<Long> ownerIds = new ArrayList<>();
+        ownerIds.add(categoryManager.getId()); // Category Manager's own organizations
+        
+        // Find direct reports (Sales and Presales directly under this Category Manager)
+        List<User> directReports = userRepository.findByManagerId(categoryManager.getId());
+        for (User report : directReports) {
+            if (report.getRole() != null) {
+                Role.RoleName reportRole = report.getRole().getName();
+                if (reportRole == Role.RoleName.SALES || reportRole == Role.RoleName.PRESALES) {
+                    ownerIds.add(report.getId());
+                }
+            }
+        }
+        
+        // Find Sales under this Category Manager, then find their Presales
+        for (User sales : directReports) {
+            if (sales.getRole() != null && sales.getRole().getName() == Role.RoleName.SALES) {
+                List<User> presalesUnderSales = userRepository.findByManagerId(sales.getId());
+                for (User presales : presalesUnderSales) {
+                    if (presales.getRole() != null && presales.getRole().getName() == Role.RoleName.PRESALES) {
+                        ownerIds.add(presales.getId());
+                    }
+                }
+            }
+        }
+        
+        return ownerIds;
+    }
+    
+    /**
+     * Find all user IDs that a Sales user can access (for organization ownership)
+     * Includes: the sales user themselves and their direct Presales reports
+     */
+    private List<Long> findAccessibleOwnerIdsForSales(User salesUser) {
+        List<Long> ownerIds = new ArrayList<>();
+        ownerIds.add(salesUser.getId()); // Sales user's own organizations
+        
+        // Find direct Presales reports under this Sales user
+        List<User> directReports = userRepository.findByManagerId(salesUser.getId());
+        for (User report : directReports) {
+            if (report.getRole() != null && report.getRole().getName() == Role.RoleName.PRESALES) {
+                ownerIds.add(report.getId());
+            }
+        }
+        
+        return ownerIds;
+    }
+    
+    /**
+     * Get the current authenticated user
+     */
+    private Optional<User> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetails)) {
+            return Optional.empty();
+        }
+        String email = ((UserDetails) authentication.getPrincipal()).getUsername();
+        return userRepository.findByEmail(email);
     }
     
     /**
