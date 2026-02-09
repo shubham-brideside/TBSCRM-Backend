@@ -2,6 +2,8 @@ package com.brideside.crm.service;
 
 import com.brideside.crm.dto.AdminDashboardDtos;
 
+import java.time.LocalDate;
+
 public interface AdminDashboardService {
 
     /**
@@ -12,7 +14,12 @@ public interface AdminDashboardService {
     /**
      * Aggregate WON deals grouped by SALES users and month for a specific year.
      */
-    AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse getWonDealsBySalesUserMonthly(Integer year);
+    AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse getWonDealsBySalesUserMonthly(
+            Integer year,
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
 
     /**
      * Aggregate LOST deals grouped by SALES users using the pipeline -> organization -> owner chain.
@@ -22,7 +29,12 @@ public interface AdminDashboardService {
     /**
      * Aggregate LOST deals grouped by SALES users and month for a specific year.
      */
-    AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse getLostDealsBySalesUserMonthly(Integer year);
+    AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse getLostDealsBySalesUserMonthly(
+            Integer year,
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
 
     /**
      * Aggregate WON/LOST/IN_PROGRESS deals by month for a specific year (global, not per user).
@@ -44,6 +56,6 @@ public interface AdminDashboardService {
     /**
      * Aggregate LOST deals by lostReason (all time), returning counts and percentages.
      */
-    AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary();
+    AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(String category);
 }
 

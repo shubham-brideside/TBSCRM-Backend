@@ -12,10 +12,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -96,14 +99,20 @@ public class AdminController {
     @Operation(
             summary = "Monthly won deals grouped by SALES users",
             description = "Returns, for a given year, monthly counts and total values of WON deals grouped by sales users. "
-                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role). "
+                    + "Optionally filter by organization category and/or date range within the given year.")
     public ResponseEntity<ApiResponse<AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse>> getWonDealsBySalesUserMonthly(
-            @RequestParam("year") Integer year) {
+            @RequestParam("year") Integer year,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(value = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
         if (year == null) {
             throw new BadRequestException("year is required");
         }
         AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse data =
-                adminDashboardService.getWonDealsBySalesUserMonthly(year);
+                adminDashboardService.getWonDealsBySalesUserMonthly(year, category, dateFrom, dateTo);
         return ResponseEntity.ok(
                 ApiResponse.success("Monthly won deals grouped by sales user fetched", data)
         );
@@ -114,14 +123,20 @@ public class AdminController {
     @Operation(
             summary = "Monthly lost deals grouped by SALES users",
             description = "Returns, for a given year, monthly counts and total values of LOST deals grouped by sales users. "
-                    + "Deals are attributed via pipeline -> organization -> owner (SALES role).")
+                    + "Deals are attributed via pipeline -> organization -> owner (SALES role). "
+                    + "Optionally filter by organization category and/or date range within the given year.")
     public ResponseEntity<ApiResponse<AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse>> getLostDealsBySalesUserMonthly(
-            @RequestParam("year") Integer year) {
+            @RequestParam("year") Integer year,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "dateFrom", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(value = "dateTo", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
         if (year == null) {
             throw new BadRequestException("year is required");
         }
         AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse data =
-                adminDashboardService.getLostDealsBySalesUserMonthly(year);
+                adminDashboardService.getLostDealsBySalesUserMonthly(year, category, dateFrom, dateTo);
         return ResponseEntity.ok(
                 ApiResponse.success("Monthly lost deals grouped by sales user fetched", data)
         );
@@ -186,10 +201,12 @@ public class AdminController {
     @Operation(
             summary = "Lost deal reasons summary",
             description = "Returns all-time LOST deal reasons with count and percentage for donut charts "
-                    + "on the admin dashboard.")
-    public ResponseEntity<ApiResponse<AdminDashboardDtos.LostReasonSummaryResponse>> getLostReasonSummary() {
+                    + "on the admin dashboard. "
+                    + "Optionally filter by organization category within all-time LOST deals.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.LostReasonSummaryResponse>> getLostReasonSummary(
+            @RequestParam(value = "category", required = false) String category) {
         AdminDashboardDtos.LostReasonSummaryResponse data =
-                adminDashboardService.getLostReasonSummary();
+                adminDashboardService.getLostReasonSummary(category);
         return ResponseEntity.ok(
                 ApiResponse.success("Lost reason summary fetched", data)
         );
