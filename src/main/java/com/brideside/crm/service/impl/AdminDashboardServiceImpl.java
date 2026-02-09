@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -118,9 +119,19 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse getWonDealsBySalesUserMonthly(Integer year) {
+    public AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse getWonDealsBySalesUserMonthly(
+            Integer year,
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
         if (year == null) {
             throw new IllegalArgumentException("year is required");
+        }
+
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
         }
 
         List<Deal> wonDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON);
@@ -135,9 +146,31 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 continue;
             }
 
+            // Optional date range filter (within the same year)
+            LocalDate referenceDate = reference.toLocalDate();
+            if (dateFrom != null && referenceDate.isBefore(dateFrom)) {
+                continue;
+            }
+            if (dateTo != null && referenceDate.isAfter(dateTo)) {
+                continue;
+            }
+
             User owner = resolveSalesOwnerFromPipelineOrganization(deal);
             if (owner == null || owner.getId() == null) {
                 continue;
+            }
+
+            // Optional organization category filter
+            if (categoryFilter != null) {
+                Organization organization = deal.getPipeline() != null
+                        ? deal.getPipeline().getOrganization()
+                        : null;
+                if (organization == null || organization.getCategory() == null) {
+                    continue;
+                }
+                if (organization.getCategory() != categoryFilter) {
+                    continue;
+                }
             }
 
             Long userId = owner.getId();
@@ -189,15 +222,26 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse response =
                 new AdminDashboardDtos.MonthlyWonDealsBySalesUserResponse();
         response.year = year;
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.users = userRows;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse getLostDealsBySalesUserMonthly(Integer year) {
+    public AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse getLostDealsBySalesUserMonthly(
+            Integer year,
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
         if (year == null) {
             throw new IllegalArgumentException("year is required");
+        }
+
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
         }
 
         List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
@@ -212,9 +256,31 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 continue;
             }
 
+            // Optional date range filter (within the same year)
+            LocalDate referenceDate = reference.toLocalDate();
+            if (dateFrom != null && referenceDate.isBefore(dateFrom)) {
+                continue;
+            }
+            if (dateTo != null && referenceDate.isAfter(dateTo)) {
+                continue;
+            }
+
             User owner = resolveSalesOwnerFromPipelineOrganization(deal);
             if (owner == null || owner.getId() == null) {
                 continue;
+            }
+
+            // Optional organization category filter
+            if (categoryFilter != null) {
+                Organization organization = deal.getPipeline() != null
+                        ? deal.getPipeline().getOrganization()
+                        : null;
+                if (organization == null || organization.getCategory() == null) {
+                    continue;
+                }
+                if (organization.getCategory() != categoryFilter) {
+                    continue;
+                }
             }
 
             Long userId = owner.getId();
@@ -266,6 +332,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse response =
                 new AdminDashboardDtos.MonthlyLostDealsBySalesUserResponse();
         response.year = year;
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.users = userRows;
         return response;
     }
@@ -300,15 +367,38 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
             BigDecimal value = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
 
+            // Resolve organization category (if any) for per-category breakdown.
+            String categoryKey = null;
+            Organization org = deal.getOrganization();
+            if (org != null && org.getCategory() != null) {
+                categoryKey = org.getCategory().getDbValue();
+            }
+            StatusByCategory catAgg = null;
+            if (categoryKey != null) {
+                catAgg = agg.byCategory.computeIfAbsent(categoryKey, k -> new StatusByCategory());
+            }
+
             if (deal.getStatus() == DealStatus.WON) {
                 agg.wonCount = agg.wonCount + 1;
                 agg.wonValue = agg.wonValue.add(value);
+                if (catAgg != null) {
+                    catAgg.wonCount = catAgg.wonCount + 1;
+                    catAgg.wonValue = catAgg.wonValue.add(value);
+                }
             } else if (deal.getStatus() == DealStatus.LOST) {
                 agg.lostCount = agg.lostCount + 1;
                 agg.lostValue = agg.lostValue.add(value);
+                if (catAgg != null) {
+                    catAgg.lostCount = catAgg.lostCount + 1;
+                    catAgg.lostValue = catAgg.lostValue.add(value);
+                }
             } else if (deal.getStatus() == DealStatus.IN_PROGRESS) {
                 agg.inProgressCount = agg.inProgressCount + 1;
                 agg.inProgressValue = agg.inProgressValue.add(value);
+                if (catAgg != null) {
+                    catAgg.inProgressCount = catAgg.inProgressCount + 1;
+                    catAgg.inProgressValue = catAgg.inProgressValue.add(value);
+                }
             }
         }
 
@@ -324,6 +414,25 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 row.lostValue = agg.lostValue;
                 row.inProgressCount = agg.inProgressCount;
                 row.inProgressValue = agg.inProgressValue;
+
+                // Build per-category breakdown for this month
+                java.util.List<AdminDashboardDtos.DealStatusCategoryRow> categoryRows =
+                        new java.util.ArrayList<>();
+                for (java.util.Map.Entry<String, StatusByCategory> entry
+                        : agg.byCategory.entrySet()) {
+                    AdminDashboardDtos.DealStatusCategoryRow catRow =
+                            new AdminDashboardDtos.DealStatusCategoryRow();
+                    catRow.category = entry.getKey();
+                    StatusByCategory s = entry.getValue();
+                    catRow.wonCount = s.wonCount;
+                    catRow.wonValue = s.wonValue;
+                    catRow.lostCount = s.lostCount;
+                    catRow.lostValue = s.lostValue;
+                    catRow.inProgressCount = s.inProgressCount;
+                    catRow.inProgressValue = s.inProgressValue;
+                    categoryRows.add(catRow);
+                }
+                row.categories = categoryRows;
             } else {
                 row.wonCount = 0L;
                 row.wonValue = BigDecimal.ZERO;
@@ -331,6 +440,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 row.lostValue = BigDecimal.ZERO;
                 row.inProgressCount = 0L;
                 row.inProgressValue = BigDecimal.ZERO;
+                row.categories = new java.util.ArrayList<>();
             }
             monthRows.add(row);
         }
@@ -585,7 +695,12 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary() {
+    public AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(String category) {
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
+        }
+
         List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
 
         Map<String, Long> countsByReason = new HashMap<>();
@@ -595,6 +710,15 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             if (deal.getLostReason() == null) {
                 continue;
             }
+
+            // Optional organization category filter based on deal.organization.category
+            if (categoryFilter != null) {
+                Organization org = deal.getOrganization();
+                if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+
             String reasonLabel = deal.getLostReason().toDisplayString();
             countsByReason.merge(reasonLabel, 1L, Long::sum);
             totalLost++;
@@ -618,6 +742,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         AdminDashboardDtos.LostReasonSummaryResponse response =
                 new AdminDashboardDtos.LostReasonSummaryResponse();
         response.totalLostDeals = totalLost;
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.reasons = rows;
         return response;
     }
@@ -659,6 +784,17 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     private static class StatusMonthlyAggregate {
+        Long wonCount = 0L;
+        BigDecimal wonValue = BigDecimal.ZERO;
+        Long lostCount = 0L;
+        BigDecimal lostValue = BigDecimal.ZERO;
+        Long inProgressCount = 0L;
+        BigDecimal inProgressValue = BigDecimal.ZERO;
+        // organization category (dbValue) -> per-category aggregate for this month
+        java.util.Map<String, StatusByCategory> byCategory = new java.util.HashMap<>();
+    }
+
+    private static class StatusByCategory {
         Long wonCount = 0L;
         BigDecimal wonValue = BigDecimal.ZERO;
         Long lostCount = 0L;

@@ -49,6 +49,11 @@ public class AdminDashboardDtos {
      */
     public static class MonthlyWonDealsBySalesUserResponse {
         public Integer year;
+        /**
+         * Optional organization category filter that was applied, e.g. "Photography".
+         * Null if no category filter was used.
+         */
+        public String category;
         public List<SalesUserMonthlyWonDealsRow> users;
     }
 
@@ -57,6 +62,11 @@ public class AdminDashboardDtos {
      */
     public static class MonthlyLostDealsBySalesUserResponse {
         public Integer year;
+        /**
+         * Optional organization category filter that was applied, e.g. "Photography".
+         * Null if no category filter was used.
+         */
+        public String category;
         public List<SalesUserMonthlyLostDealsRow> users;
     }
 
@@ -105,6 +115,23 @@ public class AdminDashboardDtos {
         public BigDecimal lostValue;
         public Long inProgressCount;
         public BigDecimal inProgressValue;
+        /**
+         * Optional breakdown by organization category for this month.
+         */
+        public java.util.List<DealStatusCategoryRow> categories;
+    }
+
+    /**
+     * Per-category deal status summary for a given month.
+     */
+    public static class DealStatusCategoryRow {
+        public String category; // e.g. "Photography", "Makeup"
+        public Long wonCount;
+        public BigDecimal wonValue;
+        public Long lostCount;
+        public BigDecimal lostValue;
+        public Long inProgressCount;
+        public BigDecimal inProgressValue;
     }
 
     /**
@@ -136,6 +163,11 @@ public class AdminDashboardDtos {
      */
     public static class LostReasonSummaryResponse {
         public Long totalLostDeals;
+        /**
+         * Optional organization category filter that was applied, e.g. "Photography".
+         * Null if no category filter was used.
+         */
+        public String category;
         public java.util.List<LostReasonRow> reasons;
     }
 
