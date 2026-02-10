@@ -196,17 +196,41 @@ public class AdminController {
         );
     }
 
+    @GetMapping("/dashboard/revenue")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Revenue summary (WON deals) by category, user, and pipeline",
+            description = "Returns, for a given date range, the count and total value of WON, non-deleted deals "
+                    + "aggregated per organization category, per SALES user (via pipeline -> organization -> owner), "
+                    + "and per pipeline.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.RevenueSummaryResponse>> getRevenueSummary(
+            @RequestParam("dateFrom")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam("dateTo")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
+        if (dateFrom == null || dateTo == null) {
+            throw new BadRequestException("dateFrom and dateTo are required");
+        }
+        AdminDashboardDtos.RevenueSummaryResponse data =
+                adminDashboardService.getRevenueSummary(dateFrom, dateTo);
+        return ResponseEntity.ok(
+                ApiResponse.success("Revenue summary fetched", data)
+        );
+    }
+
     @GetMapping("/dashboard/lost-reasons")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(
             summary = "Lost deal reasons summary",
             description = "Returns all-time LOST deal reasons with count and percentage for donut charts "
                     + "on the admin dashboard. "
-                    + "Optionally filter by organization category within all-time LOST deals.")
+                    + "Optionally filter by organization category, SALES user and/or pipeline within all-time LOST deals.")
     public ResponseEntity<ApiResponse<AdminDashboardDtos.LostReasonSummaryResponse>> getLostReasonSummary(
-            @RequestParam(value = "category", required = false) String category) {
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "pipelineId", required = false) Long pipelineId) {
         AdminDashboardDtos.LostReasonSummaryResponse data =
-                adminDashboardService.getLostReasonSummary(category);
+                adminDashboardService.getLostReasonSummary(category, userId, pipelineId);
         return ResponseEntity.ok(
                 ApiResponse.success("Lost reason summary fetched", data)
         );

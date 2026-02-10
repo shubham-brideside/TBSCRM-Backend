@@ -378,12 +378,35 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 catAgg = agg.byCategory.computeIfAbsent(categoryKey, k -> new StatusByCategory());
             }
 
+            // Resolve SALES owner for per-user breakdown.
+            User owner = resolveSalesOwnerFromPipelineOrganization(deal);
+            StatusByUser userAgg = null;
+            if (owner != null && owner.getId() != null) {
+                Long userId = owner.getId();
+                userAgg = agg.byUser.computeIfAbsent(userId, id -> new StatusByUser(owner));
+            }
+
+            // Resolve pipeline for per-pipeline breakdown.
+            StatusByPipeline pipelineAgg = null;
+            if (deal.getPipeline() != null && deal.getPipeline().getId() != null) {
+                Long pipelineId = deal.getPipeline().getId();
+                pipelineAgg = agg.byPipeline.computeIfAbsent(pipelineId, id -> new StatusByPipeline(deal));
+            }
+
             if (deal.getStatus() == DealStatus.WON) {
                 agg.wonCount = agg.wonCount + 1;
                 agg.wonValue = agg.wonValue.add(value);
                 if (catAgg != null) {
                     catAgg.wonCount = catAgg.wonCount + 1;
                     catAgg.wonValue = catAgg.wonValue.add(value);
+                }
+                if (userAgg != null) {
+                    userAgg.wonCount = userAgg.wonCount + 1;
+                    userAgg.wonValue = userAgg.wonValue.add(value);
+                }
+                if (pipelineAgg != null) {
+                    pipelineAgg.wonCount = pipelineAgg.wonCount + 1;
+                    pipelineAgg.wonValue = pipelineAgg.wonValue.add(value);
                 }
             } else if (deal.getStatus() == DealStatus.LOST) {
                 agg.lostCount = agg.lostCount + 1;
@@ -392,12 +415,28 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                     catAgg.lostCount = catAgg.lostCount + 1;
                     catAgg.lostValue = catAgg.lostValue.add(value);
                 }
+                if (userAgg != null) {
+                    userAgg.lostCount = userAgg.lostCount + 1;
+                    userAgg.lostValue = userAgg.lostValue.add(value);
+                }
+                if (pipelineAgg != null) {
+                    pipelineAgg.lostCount = pipelineAgg.lostCount + 1;
+                    pipelineAgg.lostValue = pipelineAgg.lostValue.add(value);
+                }
             } else if (deal.getStatus() == DealStatus.IN_PROGRESS) {
                 agg.inProgressCount = agg.inProgressCount + 1;
                 agg.inProgressValue = agg.inProgressValue.add(value);
                 if (catAgg != null) {
                     catAgg.inProgressCount = catAgg.inProgressCount + 1;
                     catAgg.inProgressValue = catAgg.inProgressValue.add(value);
+                }
+                if (userAgg != null) {
+                    userAgg.inProgressCount = userAgg.inProgressCount + 1;
+                    userAgg.inProgressValue = userAgg.inProgressValue.add(value);
+                }
+                if (pipelineAgg != null) {
+                    pipelineAgg.inProgressCount = pipelineAgg.inProgressCount + 1;
+                    pipelineAgg.inProgressValue = pipelineAgg.inProgressValue.add(value);
                 }
             }
         }
@@ -433,6 +472,47 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                     categoryRows.add(catRow);
                 }
                 row.categories = categoryRows;
+
+                // Build per-sales-user breakdown for this month
+                java.util.List<AdminDashboardDtos.DealStatusMonthlyUserRow> userRows =
+                        new java.util.ArrayList<>();
+                for (java.util.Map.Entry<Long, StatusByUser> entry
+                        : agg.byUser.entrySet()) {
+                    AdminDashboardDtos.DealStatusMonthlyUserRow userRow =
+                            new AdminDashboardDtos.DealStatusMonthlyUserRow();
+                    StatusByUser s = entry.getValue();
+                    userRow.userId = s.userId;
+                    userRow.userName = s.userName;
+                    userRow.email = s.email;
+                    userRow.wonCount = s.wonCount;
+                    userRow.wonValue = s.wonValue;
+                    userRow.lostCount = s.lostCount;
+                    userRow.lostValue = s.lostValue;
+                    userRow.inProgressCount = s.inProgressCount;
+                    userRow.inProgressValue = s.inProgressValue;
+                    userRows.add(userRow);
+                }
+                row.users = userRows;
+
+                // Build per-pipeline breakdown for this month
+                java.util.List<AdminDashboardDtos.DealStatusPipelineRow> pipelineRows =
+                        new java.util.ArrayList<>();
+                for (java.util.Map.Entry<Long, StatusByPipeline> entry
+                        : agg.byPipeline.entrySet()) {
+                    StatusByPipeline s = entry.getValue();
+                    AdminDashboardDtos.DealStatusPipelineRow pRow =
+                            new AdminDashboardDtos.DealStatusPipelineRow();
+                    pRow.pipelineId = s.pipelineId;
+                    pRow.pipelineName = s.pipelineName;
+                    pRow.wonCount = s.wonCount;
+                    pRow.wonValue = s.wonValue;
+                    pRow.lostCount = s.lostCount;
+                    pRow.lostValue = s.lostValue;
+                    pRow.inProgressCount = s.inProgressCount;
+                    pRow.inProgressValue = s.inProgressValue;
+                    pipelineRows.add(pRow);
+                }
+                row.pipelines = pipelineRows;
             } else {
                 row.wonCount = 0L;
                 row.wonValue = BigDecimal.ZERO;
@@ -441,6 +521,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 row.inProgressCount = 0L;
                 row.inProgressValue = BigDecimal.ZERO;
                 row.categories = new java.util.ArrayList<>();
+                row.users = new java.util.ArrayList<>();
+                row.pipelines = new java.util.ArrayList<>();
             }
             monthRows.add(row);
         }
@@ -590,16 +672,30 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             if (deal.getOrganization() == null || deal.getOrganization().getId() == null) {
                 continue;
             }
-            Long orgId = deal.getOrganization().getId();
-            String orgName = deal.getOrganization().getName();
+            Organization org = deal.getOrganization();
+            Long orgId = org.getId();
+            String orgName = org.getName();
 
             OrganizationAggregate agg =
                     aggregates.computeIfAbsent(orgId, id -> {
                         String category = null;
-                        if (deal.getOrganization().getCategory() != null) {
-                            category = deal.getOrganization().getCategory().getDbValue();
+                        if (org.getCategory() != null) {
+                            category = org.getCategory().getDbValue();
                         }
-                        return new OrganizationAggregate(orgName, category);
+
+                        Long ownerId = null;
+                        String ownerName = null;
+                        String ownerEmail = null;
+                        User owner = org.getOwner();
+                        if (owner != null && owner.getId() != null) {
+                            ownerId = owner.getId();
+                            String firstName = owner.getFirstName() != null ? owner.getFirstName() : "";
+                            String lastName = owner.getLastName() != null ? owner.getLastName() : "";
+                            ownerName = (firstName + " " + lastName).trim();
+                            ownerEmail = owner.getEmail();
+                        }
+
+                        return new OrganizationAggregate(orgName, category, ownerId, ownerName, ownerEmail);
                     });
 
             BigDecimal value = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
@@ -649,6 +745,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             row.organizationId = orgId;
             row.organizationName = agg.organizationName;
             row.organizationCategory = agg.organizationCategory;
+            row.ownerId = agg.ownerId;
+            row.ownerName = agg.ownerName;
+            row.ownerEmail = agg.ownerEmail;
 
             // All-time totals
             row.wonCountAll = agg.wonCountAll;
@@ -695,7 +794,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(String category) {
+    public AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(
+            String category,
+            Long userId,
+            Long pipelineId
+    ) {
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -715,6 +818,22 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             if (categoryFilter != null) {
                 Organization org = deal.getOrganization();
                 if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+
+            // Optional SALES user filter (via pipeline -> organization -> owner)
+            if (userId != null) {
+                User owner = resolveSalesOwnerFromPipelineOrganization(deal);
+                if (owner == null || owner.getId() == null || !userId.equals(owner.getId())) {
+                    continue;
+                }
+            }
+
+            // Optional pipeline filter
+            if (pipelineId != null) {
+                if (deal.getPipeline() == null || deal.getPipeline().getId() == null
+                        || !pipelineId.equals(deal.getPipeline().getId())) {
                     continue;
                 }
             }
@@ -743,7 +862,128 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 new AdminDashboardDtos.LostReasonSummaryResponse();
         response.totalLostDeals = totalLost;
         response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.userId = userId;
+        response.pipelineId = pipelineId;
         response.reasons = rows;
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminDashboardDtos.RevenueSummaryResponse getRevenueSummary(
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        if (dateFrom == null || dateTo == null) {
+            throw new IllegalArgumentException("dateFrom and dateTo are required");
+        }
+        if (dateTo.isBefore(dateFrom)) {
+            throw new IllegalArgumentException("dateTo must be on or after dateFrom");
+        }
+
+        LocalDateTime fromDateTime = dateFrom.atStartOfDay();
+        LocalDateTime toDateTime = dateTo.plusDays(1).atStartOfDay(); // inclusive end
+
+        // Start from all WON, non-deleted deals, then filter by date range.
+        List<Deal> wonDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON);
+
+        long totalDeals = 0L;
+        BigDecimal totalValue = BigDecimal.ZERO;
+
+        Map<String, CategoryRevenueAggregate> byCategory = new HashMap<>();
+        Map<Long, UserRevenueAggregate> byUser = new HashMap<>();
+        Map<Long, PipelineRevenueAggregate> byPipeline = new HashMap<>();
+
+        for (Deal deal : wonDeals) {
+            LocalDateTime reference =
+                    deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+            if (reference == null) {
+                continue;
+            }
+            if (reference.isBefore(fromDateTime) || !reference.isBefore(toDateTime)) {
+                continue;
+            }
+
+            BigDecimal value = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+
+            totalDeals++;
+            totalValue = totalValue.add(value);
+
+            // ---- By organization category ----
+            String categoryKey = null;
+            if (deal.getOrganization() != null && deal.getOrganization().getCategory() != null) {
+                categoryKey = deal.getOrganization().getCategory().getDbValue();
+            }
+            if (categoryKey != null) {
+                CategoryRevenueAggregate catAgg =
+                        byCategory.computeIfAbsent(categoryKey, k -> new CategoryRevenueAggregate());
+                catAgg.totalDeals = catAgg.totalDeals + 1;
+                catAgg.totalValue = catAgg.totalValue.add(value);
+            }
+
+            // ---- By SALES user (via pipeline -> organization -> owner) ----
+            User owner = resolveSalesOwnerFromPipelineOrganization(deal);
+            if (owner != null && owner.getId() != null) {
+                Long userId = owner.getId();
+                UserRevenueAggregate userAgg =
+                        byUser.computeIfAbsent(userId, id -> new UserRevenueAggregate(owner));
+                userAgg.totalDeals = userAgg.totalDeals + 1;
+                userAgg.totalValue = userAgg.totalValue.add(value);
+            }
+
+            // ---- By pipeline ----
+            if (deal.getPipeline() != null && deal.getPipeline().getId() != null) {
+                Long pipelineId = deal.getPipeline().getId();
+                PipelineRevenueAggregate pipeAgg =
+                        byPipeline.computeIfAbsent(pipelineId, id -> new PipelineRevenueAggregate(deal));
+                pipeAgg.totalDeals = pipeAgg.totalDeals + 1;
+                pipeAgg.totalValue = pipeAgg.totalValue.add(value);
+            }
+        }
+
+        AdminDashboardDtos.RevenueSummaryResponse response =
+                new AdminDashboardDtos.RevenueSummaryResponse();
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.totalDeals = totalDeals;
+        response.totalDealValue = totalValue;
+
+        List<AdminDashboardDtos.RevenueByCategoryRow> categoryRows = new ArrayList<>();
+        for (Map.Entry<String, CategoryRevenueAggregate> entry : byCategory.entrySet()) {
+            AdminDashboardDtos.RevenueByCategoryRow row =
+                    new AdminDashboardDtos.RevenueByCategoryRow();
+            row.category = entry.getKey();
+            row.totalDeals = entry.getValue().totalDeals;
+            row.totalDealValue = entry.getValue().totalValue;
+            categoryRows.add(row);
+        }
+        response.categories = categoryRows;
+
+        List<AdminDashboardDtos.RevenueByUserRow> userRows = new ArrayList<>();
+        for (UserRevenueAggregate agg : byUser.values()) {
+            AdminDashboardDtos.RevenueByUserRow row =
+                    new AdminDashboardDtos.RevenueByUserRow();
+            row.userId = agg.userId;
+            row.userName = agg.userName;
+            row.email = agg.email;
+            row.totalDeals = agg.totalDeals;
+            row.totalDealValue = agg.totalValue;
+            userRows.add(row);
+        }
+        response.users = userRows;
+
+        List<AdminDashboardDtos.RevenueByPipelineRow> pipelineRows = new ArrayList<>();
+        for (PipelineRevenueAggregate agg : byPipeline.values()) {
+            AdminDashboardDtos.RevenueByPipelineRow row =
+                    new AdminDashboardDtos.RevenueByPipelineRow();
+            row.pipelineId = agg.pipelineId;
+            row.pipelineName = agg.pipelineName;
+            row.totalDeals = agg.totalDeals;
+            row.totalDealValue = agg.totalValue;
+            pipelineRows.add(row);
+        }
+        response.pipelines = pipelineRows;
+
         return response;
     }
 
@@ -792,6 +1032,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         BigDecimal inProgressValue = BigDecimal.ZERO;
         // organization category (dbValue) -> per-category aggregate for this month
         java.util.Map<String, StatusByCategory> byCategory = new java.util.HashMap<>();
+        // sales userId -> per-user aggregate for this month
+        java.util.Map<Long, StatusByUser> byUser = new java.util.HashMap<>();
+        // pipelineId -> per-pipeline aggregate for this month
+        java.util.Map<Long, StatusByPipeline> byPipeline = new java.util.HashMap<>();
     }
 
     private static class StatusByCategory {
@@ -801,6 +1045,77 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         BigDecimal lostValue = BigDecimal.ZERO;
         Long inProgressCount = 0L;
         BigDecimal inProgressValue = BigDecimal.ZERO;
+    }
+
+    private static class StatusByUser {
+        final Long userId;
+        final String userName;
+        final String email;
+
+        Long wonCount = 0L;
+        BigDecimal wonValue = BigDecimal.ZERO;
+        Long lostCount = 0L;
+        BigDecimal lostValue = BigDecimal.ZERO;
+        Long inProgressCount = 0L;
+        BigDecimal inProgressValue = BigDecimal.ZERO;
+
+        StatusByUser(User owner) {
+            this.userId = owner.getId();
+            String firstName = owner.getFirstName() != null ? owner.getFirstName() : "";
+            String lastName = owner.getLastName() != null ? owner.getLastName() : "";
+            this.userName = (firstName + " " + lastName).trim();
+            this.email = owner.getEmail();
+        }
+    }
+
+    private static class StatusByPipeline {
+        final Long pipelineId;
+        final String pipelineName;
+
+        Long wonCount = 0L;
+        BigDecimal wonValue = BigDecimal.ZERO;
+        Long lostCount = 0L;
+        BigDecimal lostValue = BigDecimal.ZERO;
+        Long inProgressCount = 0L;
+        BigDecimal inProgressValue = BigDecimal.ZERO;
+
+        StatusByPipeline(Deal deal) {
+            this.pipelineId = deal.getPipeline() != null ? deal.getPipeline().getId() : null;
+            this.pipelineName = deal.getPipeline() != null ? deal.getPipeline().getName() : null;
+        }
+    }
+
+    private static class CategoryRevenueAggregate {
+        Long totalDeals = 0L;
+        BigDecimal totalValue = BigDecimal.ZERO;
+    }
+
+    private static class UserRevenueAggregate {
+        final Long userId;
+        final String userName;
+        final String email;
+        Long totalDeals = 0L;
+        BigDecimal totalValue = BigDecimal.ZERO;
+
+        UserRevenueAggregate(User owner) {
+            this.userId = owner.getId();
+            String firstName = owner.getFirstName() != null ? owner.getFirstName() : "";
+            String lastName = owner.getLastName() != null ? owner.getLastName() : "";
+            this.userName = (firstName + " " + lastName).trim();
+            this.email = owner.getEmail();
+        }
+    }
+
+    private static class PipelineRevenueAggregate {
+        final Long pipelineId;
+        final String pipelineName;
+        Long totalDeals = 0L;
+        BigDecimal totalValue = BigDecimal.ZERO;
+
+        PipelineRevenueAggregate(Deal deal) {
+            this.pipelineId = deal.getPipeline() != null ? deal.getPipeline().getId() : null;
+            this.pipelineName = deal.getPipeline() != null ? deal.getPipeline().getName() : null;
+        }
     }
 
     private static class ActivityMonthlyAggregate {
@@ -814,6 +1129,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private static class OrganizationAggregate {
         final String organizationName;
         final String organizationCategory;
+        final Long ownerId;
+        final String ownerName;
+        final String ownerEmail;
 
         Long wonCountAll = 0L;
         BigDecimal wonValueAll = BigDecimal.ZERO;
@@ -825,9 +1143,18 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         // month -> StatusMonthlyAggregate for this org
         Map<Integer, StatusMonthlyAggregate> monthlyStatus = new HashMap<>();
 
-        OrganizationAggregate(String organizationName, String organizationCategory) {
+        OrganizationAggregate(
+                String organizationName,
+                String organizationCategory,
+                Long ownerId,
+                String ownerName,
+                String ownerEmail
+        ) {
             this.organizationName = organizationName;
             this.organizationCategory = organizationCategory;
+            this.ownerId = ownerId;
+            this.ownerName = ownerName;
+            this.ownerEmail = ownerEmail;
         }
     }
 }
