@@ -119,6 +119,14 @@ public class AdminDashboardDtos {
          * Optional breakdown by organization category for this month.
          */
         public java.util.List<DealStatusCategoryRow> categories;
+        /**
+         * Optional breakdown by SALES user for this month.
+         */
+        public java.util.List<DealStatusMonthlyUserRow> users;
+        /**
+         * Optional breakdown by pipeline for this month.
+         */
+        public java.util.List<DealStatusPipelineRow> pipelines;
     }
 
     /**
@@ -126,6 +134,35 @@ public class AdminDashboardDtos {
      */
     public static class DealStatusCategoryRow {
         public String category; // e.g. "Photography", "Makeup"
+        public Long wonCount;
+        public BigDecimal wonValue;
+        public Long lostCount;
+        public BigDecimal lostValue;
+        public Long inProgressCount;
+        public BigDecimal inProgressValue;
+    }
+
+    /**
+     * Per-SALES-user deal status summary for a given month.
+     */
+    public static class DealStatusMonthlyUserRow {
+        public Long userId;
+        public String userName;
+        public String email;
+        public Long wonCount;
+        public BigDecimal wonValue;
+        public Long lostCount;
+        public BigDecimal lostValue;
+        public Long inProgressCount;
+        public BigDecimal inProgressValue;
+    }
+
+    /**
+     * Per-pipeline deal status summary for a given month.
+     */
+    public static class DealStatusPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
         public Long wonCount;
         public BigDecimal wonValue;
         public Long lostCount;
@@ -168,6 +205,16 @@ public class AdminDashboardDtos {
          * Null if no category filter was used.
          */
         public String category;
+        /**
+         * Optional SALES user filter that was applied (attributed via pipeline -> organization -> owner).
+         * Null if no user filter was used.
+         */
+        public Long userId;
+        /**
+         * Optional pipeline filter that was applied.
+         * Null if no pipeline filter was used.
+         */
+        public Long pipelineId;
         public java.util.List<LostReasonRow> reasons;
     }
 
@@ -189,6 +236,10 @@ public class AdminDashboardDtos {
         public Long organizationId;
         public String organizationName;
         public String organizationCategory;
+        // Optional owner (SALES user or general owner) of this organization
+        public Long ownerId;
+        public String ownerName;
+        public String ownerEmail;
 
         // All-time totals
         public Long wonCountAll;
@@ -210,6 +261,41 @@ public class AdminDashboardDtos {
         public BigDecimal lostValue;
         public Long inProgressCount;
         public BigDecimal inProgressValue;
+    }
+
+    /**
+     * Revenue summary over a time range (for admin dashboard).
+     * Uses WON, non-deleted deals only.
+     */
+    public static class RevenueSummaryResponse {
+        public java.time.LocalDate dateFrom;
+        public java.time.LocalDate dateTo;
+        public Long totalDeals;
+        public BigDecimal totalDealValue;
+        public java.util.List<RevenueByCategoryRow> categories;
+        public java.util.List<RevenueByUserRow> users;
+        public java.util.List<RevenueByPipelineRow> pipelines;
+    }
+
+    public static class RevenueByCategoryRow {
+        public String category; // organization category, e.g. "Photography"
+        public Long totalDeals;
+        public BigDecimal totalDealValue;
+    }
+
+    public static class RevenueByUserRow {
+        public Long userId;
+        public String userName;
+        public String email;
+        public Long totalDeals;
+        public BigDecimal totalDealValue;
+    }
+
+    public static class RevenueByPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
+        public Long totalDeals;
+        public BigDecimal totalDealValue;
     }
 }
 

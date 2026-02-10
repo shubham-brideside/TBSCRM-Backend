@@ -56,6 +56,19 @@ public interface AdminDashboardService {
     /**
      * Aggregate LOST deals by lostReason (all time), returning counts and percentages.
      */
-    AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(String category);
+    AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(
+            String category,
+            Long userId,
+            Long pipelineId
+    );
+
+    /**
+     * Revenue summary (WON, non-deleted deals) over a time range,
+     * aggregated per category, per SALES user, and per pipeline.
+     */
+    AdminDashboardDtos.RevenueSummaryResponse getRevenueSummary(
+            java.time.LocalDate dateFrom,
+            java.time.LocalDate dateTo
+    );
 }
 
