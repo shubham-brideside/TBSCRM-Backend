@@ -594,7 +594,9 @@ public class TargetServiceImpl implements TargetService {
                                 .computeIfAbsent(dealMonth, key -> new EnumMap<>(TargetCategory.class))
                                 .computeIfAbsent(dealCategory, key -> new HashMap<>())
                                 .computeIfAbsent(ownerId, key -> new DealAggregate());
-                        aggregate.achieved = aggregate.achieved.add(safeValue(deal.getValue()));
+                        // For SALES dashboard rows, Achieved should be based on commission amount
+                        // rather than the raw deal value.
+                        aggregate.achieved = aggregate.achieved.add(safeValue(deal.getCommissionAmount()));
                         aggregate.dealsCount += 1;
 
                         // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
@@ -617,7 +619,8 @@ public class TargetServiceImpl implements TargetService {
                 DealAggregate ownerAllAggregate = presalesAllCategoryMap
                         .computeIfAbsent(dealMonth, key -> new HashMap<>())
                         .computeIfAbsent(ownerId, key -> new DealAggregate());
-                ownerAllAggregate.achieved = ownerAllAggregate.achieved.add(safeValue(deal.getValue()));
+                // Keep presales-all-category aggregates aligned with commission-based achieved
+                ownerAllAggregate.achieved = ownerAllAggregate.achieved.add(safeValue(deal.getCommissionAmount()));
                 ownerAllAggregate.dealsCount += 1;
                 // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
                 boolean diverted = Boolean.TRUE.equals(deal.getIsDiverted()) 
@@ -639,7 +642,7 @@ public class TargetServiceImpl implements TargetService {
                         DealAggregate presalesAggregate = presalesAllCategoryMap
                                 .computeIfAbsent(dealMonth, key -> new HashMap<>())
                                 .computeIfAbsent(presalesId, key -> new DealAggregate());
-                        presalesAggregate.achieved = presalesAggregate.achieved.add(safeValue(deal.getValue()));
+                        presalesAggregate.achieved = presalesAggregate.achieved.add(safeValue(deal.getCommissionAmount()));
                         presalesAggregate.dealsCount += 1;
                         if (diverted) {
                             presalesAggregate.diversionDeals += 1;
