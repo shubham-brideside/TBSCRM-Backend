@@ -1734,8 +1734,19 @@ public class TargetServiceImpl implements TargetService {
             }
             
             MonthlyDealAggregate aggregate = monthlyDeals.computeIfAbsent(ym, key -> new MonthlyDealAggregate());
-            BigDecimal value = safeValue(deal.getValue());
-            aggregate.achieved = aggregate.achieved.add(value);
+
+            // For the user monthly detail page:
+            // - SALES users: "Achieved" should be based on SUM(commissionAmount)
+            // - PRESALES users: this aggregate.achieved field is not used (their
+            //   detail view is count‑based), so we can continue to store deal
+            //   value here without affecting behaviour.
+            BigDecimal valueForAggregation;
+            if (userRole == Role.RoleName.SALES) {
+                valueForAggregation = safeValue(deal.getCommissionAmount());
+            } else {
+                valueForAggregation = safeValue(deal.getValue());
+            }
+            aggregate.achieved = aggregate.achieved.add(valueForAggregation);
             aggregate.totalDeals += 1;
 
             // A deal is considered "diverted" if either isDiverted flag is true OR dealSource is DIVERT
