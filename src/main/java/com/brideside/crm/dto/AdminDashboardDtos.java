@@ -97,6 +97,10 @@ public class AdminDashboardDtos {
         public Integer month; // 1-12
         public Long totalDeals;
         public BigDecimal totalDealValue;
+        /**
+         * Total commission amount for the deals in this month (may be null or 0 if no commission recorded).
+         */
+        public BigDecimal totalDealCommission;
     }
 
     /**

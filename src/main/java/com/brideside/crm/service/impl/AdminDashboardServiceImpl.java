@@ -184,6 +184,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             agg.totalDeals = agg.totalDeals + 1;
             BigDecimal dealValue = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
             agg.totalDealValue = agg.totalDealValue.add(dealValue);
+            BigDecimal commission = deal.getCommissionAmount() != null
+                    ? deal.getCommissionAmount()
+                    : BigDecimal.ZERO;
+            agg.totalDealCommission = agg.totalDealCommission.add(commission);
         }
 
         List<AdminDashboardDtos.SalesUserMonthlyWonDealsRow> userRows = new ArrayList<>();
@@ -209,9 +213,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 if (agg != null) {
                     stats.totalDeals = agg.totalDeals;
                     stats.totalDealValue = agg.totalDealValue;
+                    stats.totalDealCommission = agg.totalDealCommission;
                 } else {
                     stats.totalDeals = 0L;
                     stats.totalDealValue = BigDecimal.ZERO;
+                    stats.totalDealCommission = BigDecimal.ZERO;
                 }
                 monthStats.add(stats);
             }
@@ -319,9 +325,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 if (agg != null) {
                     stats.totalDeals = agg.totalDeals;
                     stats.totalDealValue = agg.totalDealValue;
+                    stats.totalDealCommission = agg.totalDealCommission;
                 } else {
                     stats.totalDeals = 0L;
                     stats.totalDealValue = BigDecimal.ZERO;
+                    stats.totalDealCommission = BigDecimal.ZERO;
                 }
                 monthStats.add(stats);
             }
@@ -1014,6 +1022,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         final String email;
         Long totalDeals = 0L;
         BigDecimal totalDealValue = BigDecimal.ZERO;
+        BigDecimal totalDealCommission = BigDecimal.ZERO;
 
         MonthlyAggregate(User owner) {
             String firstName = owner.getFirstName() != null ? owner.getFirstName() : "";
