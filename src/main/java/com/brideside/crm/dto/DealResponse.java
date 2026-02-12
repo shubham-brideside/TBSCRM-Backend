@@ -1,5 +1,6 @@
 package com.brideside.crm.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -47,6 +48,8 @@ public class DealResponse {
     public Boolean isDeleted; // true if this deal has been soft deleted
     public String lostReason; // Reason why deal was marked as LOST: "Slot not opened", "Not Interested", "Date postponed", "Not Available", "Ghosted", "Budget", "Booked Someone else"
     public BigDecimal clientBudget; // Client's budget amount (set when lost reason is "Budget")
+    @JsonProperty("won_at")
+    public LocalDateTime wonAt; // When the deal was marked as WON (null if not won or later changed to LOST/IN_PROGRESS)
     public CreatedByType createdBy; // USER or BOT - who created the deal
     public Long createdByUserId; // User ID if created by USER
     public String createdByName; // User name if created by USER

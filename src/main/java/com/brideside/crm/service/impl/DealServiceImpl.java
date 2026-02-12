@@ -156,6 +156,9 @@ public class DealServiceImpl implements DealService {
         }
         // Keep legacy 'won' column in sync for DBs that still require it
         deal.setLegacyWon(deal.getStatus() == DealStatus.WON);
+        if (deal.getStatus() == DealStatus.WON) {
+            deal.setWonAt(LocalDateTime.now());
+        }
         if (request.commissionAmount != null) {
             deal.setCommissionAmount(request.commissionAmount);
         }
@@ -446,6 +449,11 @@ public class DealServiceImpl implements DealService {
             deal.setStatus(request.status);
             // Sync legacy 'won' column
             deal.setLegacyWon(request.status == DealStatus.WON);
+            if (request.status == DealStatus.WON) {
+                deal.setWonAt(LocalDateTime.now());
+            } else {
+                deal.setWonAt(null);
+            }
         }
         if (request.commissionAmount != null) {
             deal.setCommissionAmount(request.commissionAmount);
@@ -479,6 +487,18 @@ public class DealServiceImpl implements DealService {
         }
         if (request.clientBudget != null) {
             deal.setClientBudget(request.clientBudget);
+        }
+        if (request.wonAt != null && !request.wonAt.isBlank()) {
+            try {
+                String s = request.wonAt.trim().replace(" ", "T");
+                if (s.length() <= 10) {
+                    deal.setWonAt(LocalDate.parse(s).atStartOfDay());
+                } else {
+                    deal.setWonAt(LocalDateTime.parse(s));
+                }
+            } catch (Exception e) {
+                // Ignore parse errors
+            }
         }
         
         // Handle multiple event dates (preferred)
@@ -1422,12 +1442,17 @@ public class DealServiceImpl implements DealService {
         deal.setStatus(status);
         // Sync legacy 'won' column
         deal.setLegacyWon(status == DealStatus.WON);
+        if (status == DealStatus.WON) {
+            deal.setWonAt(LocalDateTime.now());
+        } else {
+            deal.setWonAt(null);
+        }
         deal.setUpdatedAt(LocalDateTime.now());
         Deal saved = dealRepository.save(deal);
         syncGoogleCalendarEvent(saved);
         return saved;
     }
-    
+
     /**
      * Calculates commission based on deal value and deal source.
      * - 10% for Direct, Reference, or Planner

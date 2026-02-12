@@ -1,5 +1,6 @@
 package com.brideside.crm.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
 import java.util.List;
 import com.brideside.crm.entity.CreatedByType;
@@ -125,6 +126,9 @@ public class DealDtos {
         public String source; // optional: Direct, Divert, Reference, Planner
         public String subSource; // optional: Instagram, Whatsapp, Landing Page, Email (only valid when source is "Direct")
         public BigDecimal clientBudget; // optional: Client's budget amount (typically set when lost reason is "Budget")
+        /** optional: When the deal was marked WON (ISO-8601 date-time e.g. 2026-01-15T10:30:00, or date 2026-01-15). Only meaningful for WON deals. */
+        @JsonProperty("won_at")
+        public String wonAt;
     }
 
     public static class ListResponse {
