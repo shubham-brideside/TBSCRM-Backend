@@ -33,7 +33,7 @@ public class TargetController {
 
     @GetMapping("/dashboard")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Target dashboard data", description = "Returns per-category target vs achieved metrics plus won deal list.")
+    @Operation(summary = "Target dashboard data", description = "Returns per-category target vs achieved metrics plus won deal list. Use includeCategoryBreakdown=true when a category is selected to get category breakdown in one call and avoid calling /category-breakdown separately.")
     public ApiResponse<TargetDtos.DashboardResponse> dashboard(
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "timePreset", required = false) String timePreset,
@@ -42,7 +42,8 @@ public class TargetController {
             @RequestParam(value = "fromMonth", required = false) Integer fromMonth,
             @RequestParam(value = "fromYear", required = false) Integer fromYear,
             @RequestParam(value = "toMonth", required = false) Integer toMonth,
-            @RequestParam(value = "toYear", required = false) Integer toYear
+            @RequestParam(value = "toYear", required = false) Integer toYear,
+            @RequestParam(value = "includeCategoryBreakdown", required = false, defaultValue = "false") boolean includeCategoryBreakdown
     ) {
         TargetDtos.DashboardFilter filter = new TargetDtos.DashboardFilter();
         filter.category = parseCategory(category);
@@ -54,15 +55,15 @@ public class TargetController {
         filter.toMonth = toMonth;
         filter.toYear = toYear;
 
-        return ApiResponse.success("Target dashboard fetched", targetService.dashboard(filter));
+        return ApiResponse.success("Target dashboard fetched", targetService.dashboard(filter, includeCategoryBreakdown));
     }
 
     @GetMapping("/category-breakdown")
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Category monthly breakdown", description = "Returns month-wise aggregates and per-user rows for a category across longer periods (quarter/half-year/year).")
+    @Operation(summary = "Category monthly breakdown", description = "Returns month-wise aggregates and per-user rows for a category. With timePreset: quarter/half-year/year. Without timePreset (category only): only months that have at least one target.")
     public ApiResponse<TargetDtos.CategoryMonthlyBreakdownResponse> categoryBreakdown(
             @RequestParam(value = "category") String category,
-            @RequestParam(value = "timePreset") String timePreset,
+            @RequestParam(value = "timePreset", required = false) String timePreset,
             @RequestParam(value = "month", required = false) Integer month,
             @RequestParam(value = "year", required = false) Integer year,
             @RequestParam(value = "fromMonth", required = false) Integer fromMonth,
@@ -75,8 +76,13 @@ public class TargetController {
             throw new BadRequestException("category is required");
         }
 
-        TargetDtos.TargetTimePreset preset = TargetDtos.TargetTimePreset.fromValue(timePreset);
-        if (preset == null) {
+        TargetDtos.TargetTimePreset preset = (timePreset == null || timePreset.isBlank())
+                ? null
+                : TargetDtos.TargetTimePreset.fromValue(timePreset);
+        if (preset != null && preset != TargetDtos.TargetTimePreset.THIS_YEAR
+                && preset != TargetDtos.TargetTimePreset.THIS_QUARTER
+                && preset != TargetDtos.TargetTimePreset.HALF_YEAR
+                && preset != TargetDtos.TargetTimePreset.CUSTOM_RANGE) {
             throw new BadRequestException("timePreset must be THIS_YEAR, THIS_QUARTER, HALF_YEAR, or CUSTOM_RANGE");
         }
 
