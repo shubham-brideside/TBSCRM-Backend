@@ -583,7 +583,7 @@ public class TargetServiceImpl implements TargetService {
                 .collect(Collectors.toList());
         
         wonDeals.sort(Comparator.comparing(
-                (Deal d) -> d.getUpdatedAt() != null ? d.getUpdatedAt() : d.getCreatedAt(),
+                (Deal d) -> getDealWonReference(d),
                 Comparator.nullsLast(Comparator.naturalOrder())
         ).reversed());
 
@@ -646,7 +646,7 @@ public class TargetServiceImpl implements TargetService {
         List<TargetDtos.DealSummary> dealSummaries = new ArrayList<>();
 
         for (Deal deal : wonDeals) {
-            LocalDateTime reference = deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+            LocalDateTime reference = getDealWonReference(deal);
             if (reference == null) {
                 continue;
             }
@@ -1338,6 +1338,14 @@ public class TargetServiceImpl implements TargetService {
         return null;
     }
 
+    /** Reference date for a won deal: won_at when set, else updatedAt, else createdAt (for legacy data). */
+    private LocalDateTime getDealWonReference(Deal deal) {
+        if (deal.getWonAt() != null) {
+            return deal.getWonAt();
+        }
+        return deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+    }
+
     private TargetDtos.DealSummary toDealSummary(Deal deal, User owner, TargetCategory category) {
         TargetDtos.DealSummary summary = new TargetDtos.DealSummary();
         summary.dealId = deal.getId();
@@ -1357,10 +1365,8 @@ public class TargetServiceImpl implements TargetService {
         }
         summary.venue = deal.getVenue();
         summary.eventDate = deal.getEventDate() != null ? deal.getEventDate().toString() : null;
-        // Won date – mirror the reference timestamp used elsewhere in target
-        // calculations (updatedAt when present, otherwise createdAt).
-        java.time.LocalDateTime wonReference =
-                deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+        // Won date – use won_at (when deal was marked WON); fallback for legacy data
+        java.time.LocalDateTime wonReference = getDealWonReference(deal);
         summary.wonDate = wonReference != null ? wonReference.toLocalDate().toString() : null;
         summary.phoneNumber = resolvePhone(deal);
         summary.category = category != null ? category.getLabel() : null;
@@ -1814,7 +1820,7 @@ public class TargetServiceImpl implements TargetService {
                         : toDealSummary(deal, user, dealCategory);
                 userDeals.add(summary);
             }
-            LocalDateTime reference = deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+            LocalDateTime reference = getDealWonReference(deal);
             if (reference == null) {
                 continue;
             }
