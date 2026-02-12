@@ -160,6 +160,9 @@ public class Deal {
     @Column(name = "client_budget", precision = 15, scale = 2, nullable = true)
     private BigDecimal clientBudget;
 
+    @Column(name = "won_at", nullable = true)
+    private LocalDateTime wonAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "referenced_deal_id", nullable = true)
     private Deal referencedDeal;
@@ -269,6 +272,8 @@ public class Deal {
     public void setLostReason(DealLostReason lostReason) { this.lostReason = lostReason; }
     public BigDecimal getClientBudget() { return clientBudget; }
     public void setClientBudget(BigDecimal clientBudget) { this.clientBudget = clientBudget; }
+    public LocalDateTime getWonAt() { return wonAt; }
+    public void setWonAt(LocalDateTime wonAt) { this.wonAt = wonAt; }
     public Deal getReferencedDeal() { return referencedDeal; }
     public void setReferencedDeal(Deal referencedDeal) { this.referencedDeal = referencedDeal; }
     public Pipeline getReferencedPipeline() { return referencedPipeline; }
