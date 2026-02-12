@@ -94,6 +94,8 @@ public class TargetDtos {
         public AppliedFilters filters;
         public List<MonthBlock> months;
         public List<DealSummary> deals;
+        /** When requested via includeCategoryBreakdown=true and a category is selected, same shape as GET /category-breakdown to avoid a second call. */
+        public CategoryMonthlyBreakdownResponse categoryBreakdown;
     }
 
     public static class AppliedFilters {

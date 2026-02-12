@@ -16,7 +16,7 @@ public interface TargetService {
 
     List<TargetDtos.TargetResponse> list(TargetDtos.TargetListFilter filter);
 
-    TargetDtos.DashboardResponse dashboard(TargetDtos.DashboardFilter filter);
+    TargetDtos.DashboardResponse dashboard(TargetDtos.DashboardFilter filter, boolean includeCategoryBreakdown);
 
     TargetDtos.CategoryMonthlyBreakdownResponse categoryMonthlyBreakdown(TargetDtos.DashboardFilter filter);
 

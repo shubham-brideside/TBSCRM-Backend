@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Year;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -234,7 +235,7 @@ public class TargetServiceImpl implements TargetService {
 
     @Override
     @Transactional(readOnly = true)
-    public TargetDtos.DashboardResponse dashboard(TargetDtos.DashboardFilter filter) {
+    public TargetDtos.DashboardResponse dashboard(TargetDtos.DashboardFilter filter, boolean includeCategoryBreakdown) {
         TargetDtos.DashboardFilter safeFilter = filter != null ? filter : new TargetDtos.DashboardFilter();
         if (safeFilter.preset == null) {
             safeFilter.preset = inferPreset(safeFilter);
@@ -284,6 +285,9 @@ public class TargetServiceImpl implements TargetService {
         response.filters = buildAppliedFilters(safeFilter, computation.months, role);
         response.months = monthBlocks;
         response.deals = computation.dealSummaries;
+        if (includeCategoryBreakdown && safeFilter.category != null) {
+            response.categoryBreakdown = buildCategoryBreakdownFromComputation(computation, safeFilter.category, response.filters);
+        }
         return response;
     }
 
@@ -294,20 +298,40 @@ public class TargetServiceImpl implements TargetService {
         if (safeFilter.category == null) {
             throw new BadRequestException("category is required");
         }
-        if (safeFilter.preset == null) {
-            safeFilter.preset = inferPreset(safeFilter);
-        }
-        if (!CATEGORY_PERIOD_PRESETS.contains(safeFilter.preset)) {
-            throw new BadRequestException("timePreset must be one of " + CATEGORY_PERIOD_PRESETS);
-        }
 
         Role.RoleName role = getCurrentUserRole();
-        DashboardComputation computation = buildDashboardComputation(safeFilter);
+        DashboardComputation computation;
 
+        if (safeFilter.preset == null) {
+            // Category only: no time period selected — return only months that have at least one target
+            int year = safeFilter.year != null ? safeFilter.year : Year.now(zoneId).getValue();
+            safeFilter.year = year;
+            List<YearMonth> monthsWithTargets = resolveMonthsWithTargetsForCategory(safeFilter.category, year);
+            computation = buildDashboardComputation(safeFilter, monthsWithTargets);
+        } else {
+            if (!CATEGORY_PERIOD_PRESETS.contains(safeFilter.preset)) {
+                throw new BadRequestException("timePreset must be one of " + CATEGORY_PERIOD_PRESETS);
+            }
+            computation = buildDashboardComputation(safeFilter);
+        }
+
+        TargetDtos.CategoryMonthlyBreakdownResponse response = buildCategoryBreakdownFromComputation(
+                computation, safeFilter.category, buildAppliedFilters(safeFilter, computation.months, role));
+        return response;
+    }
+
+    /**
+     * Builds category monthly breakdown from an existing dashboard computation so the same
+     * computation can be reused when dashboard is called with includeCategoryBreakdown=true.
+     */
+    private TargetDtos.CategoryMonthlyBreakdownResponse buildCategoryBreakdownFromComputation(
+            DashboardComputation computation,
+            TargetCategory category,
+            TargetDtos.AppliedFilters filters) {
         TargetDtos.CategoryMonthlyBreakdownResponse response = new TargetDtos.CategoryMonthlyBreakdownResponse();
-        response.category = safeFilter.category.getCode();
-        response.categoryLabel = safeFilter.category.getLabel();
-        response.filters = buildAppliedFilters(safeFilter, computation.months, role);
+        response.category = category.getCode();
+        response.categoryLabel = category.getLabel();
+        response.filters = filters;
 
         List<TargetDtos.CategoryMonthlyRow> monthRows = new ArrayList<>();
         BigDecimal totalTarget = BigDecimal.ZERO;
@@ -317,14 +341,14 @@ public class TargetServiceImpl implements TargetService {
         for (YearMonth ym : computation.months) {
             List<SalesTarget> categoryTargets = computation.targetsByMonth
                     .getOrDefault(ym, Collections.emptyMap())
-                    .getOrDefault(safeFilter.category, Collections.emptyList());
+                    .getOrDefault(category, Collections.emptyList());
             List<TargetDtos.TargetRow> users = categoryTargets.stream()
                     .map(target -> toTargetRow(
                             target,
                             computation.achievedMap,
                             computation.presalesAllCategoryMap,
                             ym,
-                            safeFilter.category))
+                            category))
                     .collect(Collectors.toList());
 
             BigDecimal monthTarget = users.stream()
@@ -377,13 +401,110 @@ public class TargetServiceImpl implements TargetService {
         return response;
     }
 
+    /**
+     * Returns sorted list of months in the given year that have at least one target
+     * for the category (for users accessible to the current user). Used when only
+     * category is selected and no time period — no placeholder/empty months.
+     */
+    private List<YearMonth> resolveMonthsWithTargetsForCategory(TargetCategory category, int year) {
+        LocalDate startDate = YearMonth.of(year, 1).atDay(1);
+        LocalDate endDate = YearMonth.of(year, 12).atEndOfMonth();
+        LocalDate queryStart = resolveTargetQueryStart(startDate);
+
+        List<SalesTarget> allTargets = salesTargetRepository.findByCategoryAndPeriodStartBetween(category, queryStart, endDate);
+        Set<Long> accessibleUserIds = getAccessibleUserIdsForTargets();
+
+        List<SalesTarget> targets = allTargets.stream()
+                .filter(target -> target.getUser() != null && target.getUser().getId() != null
+                        && accessibleUserIds.contains(target.getUser().getId()))
+                .collect(Collectors.toList());
+
+        Set<YearMonth> distinct = new java.util.TreeSet<>();
+        for (SalesTarget target : targets) {
+            YearMonth targetStart = YearMonth.from(target.getPeriodStart());
+            List<YearMonth> coveredMonths = new ArrayList<>();
+            if (target.getPeriodType() == SalesTarget.PeriodType.MONTHLY) {
+                coveredMonths.add(targetStart);
+            } else if (target.getPeriodType() == SalesTarget.PeriodType.QUARTERLY) {
+                for (int i = 0; i < 3; i++) {
+                    coveredMonths.add(targetStart.plusMonths(i));
+                }
+            } else if (target.getPeriodType() == SalesTarget.PeriodType.HALF_YEARLY) {
+                for (int i = 0; i < 6; i++) {
+                    coveredMonths.add(targetStart.plusMonths(i));
+                }
+            } else if (target.getPeriodType() == SalesTarget.PeriodType.YEARLY) {
+                for (int i = 0; i < 12; i++) {
+                    coveredMonths.add(targetStart.plusMonths(i));
+                }
+            }
+            for (YearMonth ym : coveredMonths) {
+                if (ym.getYear() == year) {
+                    distinct.add(ym);
+                }
+            }
+        }
+        return new ArrayList<>(distinct);
+    }
+
+    private Set<Long> getAccessibleUserIdsForTargets() {
+        User currentUser = requireCurrentUser();
+        Long currentUserId = currentUser.getId();
+        Role.RoleName currentUserRole = currentUser.getRole() != null
+                ? currentUser.getRole().getName()
+                : null;
+
+        Set<Long> accessibleUserIds = new HashSet<>();
+        accessibleUserIds.add(currentUserId);
+
+        if (currentUserRole == Role.RoleName.ADMIN) {
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (user.getId() != null) {
+                    accessibleUserIds.add(user.getId());
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (isAccessibleForTargets(currentUser, user, currentUserRole) && user.getId() != null) {
+                    accessibleUserIds.add(user.getId());
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.SALES) {
+            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
+            List<User> presalesTeam = allSubordinates.stream()
+                    .filter(u -> u.getActive() != null && u.getActive()
+                            && u.getRole() != null
+                            && u.getRole().getName() == Role.RoleName.PRESALES)
+                    .collect(Collectors.toList());
+            for (User presalesUser : presalesTeam) {
+                if (presalesUser.getId() != null) {
+                    accessibleUserIds.add(presalesUser.getId());
+                }
+            }
+        } else if (currentUserRole == Role.RoleName.PRESALES
+                && currentUser.getManager() != null
+                && currentUser.getManager().getId() != null) {
+            accessibleUserIds.add(currentUser.getManager().getId());
+        }
+        return accessibleUserIds;
+    }
+
     private DashboardComputation buildDashboardComputation(TargetDtos.DashboardFilter filter) {
-        List<YearMonth> months = resolveMonths(filter);
+        return buildDashboardComputation(filter, null);
+    }
+
+    private DashboardComputation buildDashboardComputation(TargetDtos.DashboardFilter filter, List<YearMonth> monthsOverride) {
+        List<YearMonth> months = (monthsOverride != null && !monthsOverride.isEmpty())
+                ? monthsOverride
+                : resolveMonths(filter);
         if (months.isEmpty()) {
             months = List.of(YearMonth.now(zoneId));
         }
 
-        // Get the current logged-in user to filter targets and deals
         User currentUser = requireCurrentUser();
         Long currentUserId = currentUser.getId();
         Role.RoleName currentUserRole = currentUser.getRole() != null 
@@ -400,49 +521,7 @@ public class TargetServiceImpl implements TargetService {
                 ? salesTargetRepository.findByCategoryAndPeriodStartBetween(categoryFilter, queryStart, endDate)
                 : salesTargetRepository.findByPeriodStartBetween(queryStart, endDate);
         
-        // Get accessible users based on role hierarchy
-        Set<Long> accessibleUserIds = new HashSet<>();
-        accessibleUserIds.add(currentUserId);
-        
-        if (currentUserRole == Role.RoleName.ADMIN) {
-            // ADMIN can see all SALES and PRESALES users across all categories
-            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
-                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
-            for (User user : allActiveSalesAndPresales) {
-                if (user.getId() != null) {
-                    accessibleUserIds.add(user.getId());
-                }
-            }
-        } else if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
-            // CATEGORY_MANAGER can see all SALES and PRESALES users under them
-            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
-                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
-            for (User user : allActiveSalesAndPresales) {
-                if (isAccessibleForTargets(currentUser, user, currentUserRole)) {
-                    if (user.getId() != null) {
-                        accessibleUserIds.add(user.getId());
-                    }
-                }
-            }
-        } else if (currentUserRole == Role.RoleName.SALES) {
-            // SALES users can see their PRESALES team members' targets
-            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
-            List<User> presalesTeam = allSubordinates.stream()
-                    .filter(u -> u.getActive() != null && u.getActive()
-                            && u.getRole() != null 
-                            && u.getRole().getName() == Role.RoleName.PRESALES)
-                    .collect(Collectors.toList());
-            for (User presalesUser : presalesTeam) {
-                if (presalesUser.getId() != null) {
-                    accessibleUserIds.add(presalesUser.getId());
-                }
-            }
-        } else if (currentUserRole == Role.RoleName.PRESALES 
-                && currentUser.getManager() != null 
-                && currentUser.getManager().getId() != null) {
-            // PRESALES users can see their manager's targets
-            accessibleUserIds.add(currentUser.getManager().getId());
-        }
+        Set<Long> accessibleUserIds = getAccessibleUserIdsForTargets();
         
         // Filter to only show targets for accessible users
         final Set<Long> finalAccessibleUserIds = accessibleUserIds;
@@ -1326,6 +1405,17 @@ public class TargetServiceImpl implements TargetService {
         TargetDtos.AppliedFilters applied = new TargetDtos.AppliedFilters();
         applied.timePreset = (filter.preset != null ? filter.preset.name() : TargetTimePreset.THIS_MONTH.name());
         applied.category = filter.category != null ? filter.category.getCode() : null;
+
+        if (months == null || months.isEmpty()) {
+            applied.month = filter.month;
+            applied.year = filter.year;
+            applied.fromMonth = filter.fromMonth;
+            applied.fromYear = filter.fromYear;
+            applied.toMonth = filter.toMonth;
+            applied.toYear = filter.toYear;
+            applied.editableForCurrentUser = false;
+            return applied;
+        }
 
         YearMonth first = months.get(0);
         YearMonth last = months.get(months.size() - 1);
