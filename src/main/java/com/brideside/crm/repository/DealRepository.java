@@ -35,8 +35,8 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "left join fetch d.dealCategory cat " +
             "left join fetch d.source src " +
             "where d.status = com.brideside.crm.entity.DealStatus.WON " +
-            "and ( (d.updatedAt is not null and d.updatedAt >= :start and d.updatedAt < :end) " +
-            "   or (d.updatedAt is null and d.createdAt >= :start and d.createdAt < :end) )")
+            "and ( (d.wonAt is not null and d.wonAt >= :start and d.wonAt < :end) " +
+            "   or (d.wonAt is null and ( (d.updatedAt is not null and d.updatedAt >= :start and d.updatedAt < :end) or (d.updatedAt is null and d.createdAt >= :start and d.createdAt < :end) ) ) )")
     List<Deal> findWonDealsUpdatedBetween(
             @Param("start") LocalDateTime start,
             @Param("end") LocalDateTime end);
