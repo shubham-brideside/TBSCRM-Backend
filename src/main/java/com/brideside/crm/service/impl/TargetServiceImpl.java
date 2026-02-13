@@ -4,6 +4,7 @@ import com.brideside.crm.dto.TargetDtos;
 import com.brideside.crm.dto.TargetDtos.TargetTimePreset;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealSource;
+import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.SalesTarget;
@@ -1363,6 +1364,12 @@ public class TargetServiceImpl implements TargetService {
         } else {
             summary.dealSource = null;
         }
+        // Map sub-source (only populated when source is "Direct")
+        if (deal.getDealSubSource() != null) {
+            summary.subSource = deal.getDealSubSource().getDisplayName();
+        } else {
+            summary.subSource = null;
+        }
         summary.venue = deal.getVenue();
         summary.eventDate = deal.getEventDate() != null ? deal.getEventDate().toString() : null;
         // Won date – use won_at (when deal was marked WON); fallback for legacy data
@@ -1854,13 +1861,33 @@ public class TargetServiceImpl implements TargetService {
             if (diverted) {
                 aggregate.diversionDeals += 1;
             } else {
-                String source = normalizeSource(resolveDealSourceLabel(deal));
-                if ("INSTA".equals(source) || "INSTAGRAM".equals(source)) {
-                    aggregate.instaDeals += 1;
-                } else if ("REFERENCE".equals(source) || "REFERRAL".equals(source)) {
-                    aggregate.referenceDeals += 1;
-                } else if ("PLANNER".equals(source)) {
-                    aggregate.plannerDeals += 1;
+                // Check main deal source first
+                if (deal.getDealSource() != null) {
+                    if (deal.getDealSource() == DealSource.DIRECT) {
+                        // For Direct deals, check sub-source (only count Insta and Whatsapp)
+                        if (deal.getDealSubSource() != null) {
+                            if (deal.getDealSubSource() == DealSubSource.INSTAGRAM) {
+                                aggregate.instaDeals += 1;
+                            } else if (deal.getDealSubSource() == DealSubSource.WHATSAPP) {
+                                aggregate.whatsappDeals += 1;
+                            }
+                            // Skip Landing Page and Email sub-sources as per requirements
+                        }
+                    } else if (deal.getDealSource() == DealSource.REFERENCE) {
+                        aggregate.referenceDeals += 1;
+                    } else if (deal.getDealSource() == DealSource.PLANNER) {
+                        aggregate.plannerDeals += 1;
+                    }
+                } else {
+                    // Fallback to legacy source resolution for backward compatibility
+                    String source = normalizeSource(resolveDealSourceLabel(deal));
+                    if ("INSTA".equals(source) || "INSTAGRAM".equals(source)) {
+                        aggregate.instaDeals += 1;
+                    } else if ("REFERENCE".equals(source) || "REFERRAL".equals(source)) {
+                        aggregate.referenceDeals += 1;
+                    } else if ("PLANNER".equals(source)) {
+                        aggregate.plannerDeals += 1;
+                    }
                 }
             }
         }
@@ -1923,6 +1950,7 @@ public class TargetServiceImpl implements TargetService {
                 breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
                 breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;
                 breakdown.plannerDeals = aggregate != null ? aggregate.plannerDeals : 0;
+                breakdown.whatsappDeals = aggregate != null ? aggregate.whatsappDeals : 0;
             } else {
                 // SALES (or default) behaviour – value-based incentive
                 BigDecimal achieved = aggregate != null ? aggregate.achieved : BigDecimal.ZERO;
@@ -1944,6 +1972,7 @@ public class TargetServiceImpl implements TargetService {
                 breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
                 breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;
                 breakdown.plannerDeals = aggregate != null ? aggregate.plannerDeals : 0;
+                breakdown.whatsappDeals = aggregate != null ? aggregate.whatsappDeals : 0;
             }
             rows.add(breakdown);
         }
@@ -2101,6 +2130,7 @@ public class TargetServiceImpl implements TargetService {
         private int instaDeals = 0;
         private int referenceDeals = 0;
         private int plannerDeals = 0;
+        private int whatsappDeals = 0;
     }
 }
 
