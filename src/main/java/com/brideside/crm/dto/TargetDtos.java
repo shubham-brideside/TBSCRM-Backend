@@ -171,6 +171,7 @@ public class TargetDtos {
         public BigDecimal dealValue;
         public BigDecimal commissionAmount;
         public String dealSource;
+        public String subSource; // Sub-source (e.g., Instagram, Whatsapp, Landing Page, Email) - only populated when dealSource is "Direct"
         public String personSource;
         public String phoneNumber;
         public String venue;
@@ -274,9 +275,10 @@ public class TargetDtos {
         public Integer totalDeals;
         public BigDecimal incentive;
         public Integer diversionDeals;
-        public Integer instaDeals;
-        public Integer referenceDeals;
-        public Integer plannerDeals;
+        public Integer instaDeals; // Count of deals with source=Direct and subSource=Instagram
+        public Integer referenceDeals; // Count of deals with source=Reference
+        public Integer plannerDeals; // Count of deals with source=Planner
+        public Integer whatsappDeals; // Count of deals with source=Direct and subSource=Whatsapp
     }
 }
 
