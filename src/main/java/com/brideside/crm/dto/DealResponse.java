@@ -50,6 +50,8 @@ public class DealResponse {
     public BigDecimal clientBudget; // Client's budget amount (set when lost reason is "Budget")
     @JsonProperty("won_at")
     public LocalDateTime wonAt; // When the deal was marked as WON (null if not won or later changed to LOST/IN_PROGRESS)
+    @JsonProperty("lost_at")
+    public LocalDateTime lostAt; // When the deal was marked as LOST (null if not lost or later changed to WON/IN_PROGRESS)
     public CreatedByType createdBy; // USER or BOT - who created the deal
     public Long createdByUserId; // User ID if created by USER
     public String createdByName; // User name if created by USER

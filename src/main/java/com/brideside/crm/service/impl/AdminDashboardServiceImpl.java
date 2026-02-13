@@ -257,8 +257,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         Map<Long, Map<Integer, MonthlyAggregate>> aggregates = new HashMap<>();
 
         for (Deal deal : lostDeals) {
-            LocalDateTime reference =
-                    deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
+            // Use lost_at (when deal was marked LOST); fallback to updated_at/created_at for legacy data
+            LocalDateTime reference = deal.getLostAt() != null ? deal.getLostAt()
+                    : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
             if (reference == null || reference.getYear() != year) {
                 continue;
             }
@@ -364,10 +365,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 continue;
             }
 
-            // For WON use won_at; for LOST/IN_PROGRESS use updated_at/created_at
+            // For WON use won_at; for LOST use lost_at; for IN_PROGRESS use updated_at/created_at
             LocalDateTime reference;
             if (deal.getStatus() == DealStatus.WON) {
                 reference = deal.getWonAt() != null ? deal.getWonAt()
+                        : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+            } else if (deal.getStatus() == DealStatus.LOST) {
+                reference = deal.getLostAt() != null ? deal.getLostAt()
                         : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
             } else {
                 reference = deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
@@ -729,10 +733,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
             // ---- Yearly/monthly breakdown ----
             if (deal.getStatus() != null) {
-                // For WON use won_at; for LOST/IN_PROGRESS use updated_at/created_at
+                // For WON use won_at; for LOST use lost_at; for IN_PROGRESS use updated_at/created_at
                 LocalDateTime reference;
                 if (deal.getStatus() == DealStatus.WON) {
                     reference = deal.getWonAt() != null ? deal.getWonAt()
+                            : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+                } else if (deal.getStatus() == DealStatus.LOST) {
+                    reference = deal.getLostAt() != null ? deal.getLostAt()
                             : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
                 } else {
                     reference = deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt();
