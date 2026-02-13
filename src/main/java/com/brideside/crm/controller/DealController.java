@@ -315,6 +315,7 @@ public class DealController {
         r.lostReason = d.getLostReason() != null ? d.getLostReason().toDisplayString() : null;
         r.clientBudget = d.getClientBudget();
         r.wonAt = d.getWonAt();
+        r.lostAt = d.getLostAt();
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();

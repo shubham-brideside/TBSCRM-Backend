@@ -129,6 +129,9 @@ public class DealDtos {
         /** optional: When the deal was marked WON (ISO-8601 date-time e.g. 2026-01-15T10:30:00, or date 2026-01-15). Only meaningful for WON deals. */
         @JsonProperty("won_at")
         public String wonAt;
+        /** optional: When the deal was marked LOST (ISO-8601 date-time e.g. 2026-01-15T10:30:00, or date 2026-01-15). Only meaningful for LOST deals. */
+        @JsonProperty("lost_at")
+        public String lostAt;
     }
 
     public static class ListResponse {

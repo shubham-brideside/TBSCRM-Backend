@@ -158,6 +158,13 @@ public class DealServiceImpl implements DealService {
         deal.setLegacyWon(deal.getStatus() == DealStatus.WON);
         if (deal.getStatus() == DealStatus.WON) {
             deal.setWonAt(LocalDateTime.now());
+            deal.setLostAt(null);
+        } else if (deal.getStatus() == DealStatus.LOST) {
+            deal.setLostAt(LocalDateTime.now());
+            deal.setWonAt(null);
+        } else {
+            deal.setWonAt(null);
+            deal.setLostAt(null);
         }
         if (request.commissionAmount != null) {
             deal.setCommissionAmount(request.commissionAmount);
@@ -451,8 +458,13 @@ public class DealServiceImpl implements DealService {
             deal.setLegacyWon(request.status == DealStatus.WON);
             if (request.status == DealStatus.WON) {
                 deal.setWonAt(LocalDateTime.now());
+                deal.setLostAt(null);
+            } else if (request.status == DealStatus.LOST) {
+                deal.setLostAt(LocalDateTime.now());
+                deal.setWonAt(null);
             } else {
                 deal.setWonAt(null);
+                deal.setLostAt(null);
             }
         }
         if (request.commissionAmount != null) {
@@ -495,6 +507,18 @@ public class DealServiceImpl implements DealService {
                     deal.setWonAt(LocalDate.parse(s).atStartOfDay());
                 } else {
                     deal.setWonAt(LocalDateTime.parse(s));
+                }
+            } catch (Exception e) {
+                // Ignore parse errors
+            }
+        }
+        if (request.lostAt != null && !request.lostAt.isBlank()) {
+            try {
+                String s = request.lostAt.trim().replace(" ", "T");
+                if (s.length() <= 10) {
+                    deal.setLostAt(LocalDate.parse(s).atStartOfDay());
+                } else {
+                    deal.setLostAt(LocalDateTime.parse(s));
                 }
             } catch (Exception e) {
                 // Ignore parse errors
@@ -1444,8 +1468,13 @@ public class DealServiceImpl implements DealService {
         deal.setLegacyWon(status == DealStatus.WON);
         if (status == DealStatus.WON) {
             deal.setWonAt(LocalDateTime.now());
+            deal.setLostAt(null);
+        } else if (status == DealStatus.LOST) {
+            deal.setLostAt(LocalDateTime.now());
+            deal.setWonAt(null);
         } else {
             deal.setWonAt(null);
+            deal.setLostAt(null);
         }
         deal.setUpdatedAt(LocalDateTime.now());
         Deal saved = dealRepository.save(deal);
