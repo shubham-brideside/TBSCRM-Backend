@@ -22,12 +22,14 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:false}
+    open-in-view: ${JPA_OPEN_IN_VIEW:true}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
-        use_sql_comments: true
+        format_sql: ${JPA_FORMAT_SQL:false}
+        use_sql_comments: ${JPA_USE_SQL_COMMENTS:false}
+        default_batch_fetch_size: ${JPA_DEFAULT_BATCH_FETCH_SIZE:50}
         # Force VARCHAR instead of ENUM for string enums
         globally_quoted_identifiers: false
 
@@ -90,8 +92,8 @@ springdoc:
 
 logging:
   level:
-    org.springframework.security: DEBUG
-    com.brideside.crm: DEBUG
+    org.springframework.security: ${LOG_SECURITY_LEVEL:INFO}
+    com.brideside.crm: ${LOG_APP_LEVEL:INFO}
 
 google:
   calendar:

@@ -71,6 +71,12 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Deal d SET d.isDeleted = true, d.organization = null WHERE d.organization.id = :organizationId")
     int softDeleteDealsByOrganizationId(@Param("organizationId") Long organizationId);
+
+    /**
+     * Efficiently fetch distinct person IDs for a list of deal IDs without triggering N+1 lazy loads.
+     */
+    @Query("select distinct d.person.id from Deal d where d.id in :dealIds and d.person is not null")
+    List<Long> findDistinctPersonIdsByDealIds(@Param("dealIds") List<Long> dealIds);
 }
 
 

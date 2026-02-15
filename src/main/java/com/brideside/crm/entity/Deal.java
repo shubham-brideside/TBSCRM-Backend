@@ -3,7 +3,10 @@ package com.brideside.crm.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
@@ -137,6 +140,8 @@ public class Deal {
         joinColumns = @JoinColumn(name = "deal_id"),
         inverseJoinColumns = @JoinColumn(name = "label_id")
     )
+    @BatchSize(size = 50)
+    @Fetch(FetchMode.SUBSELECT)
     private Set<Label> labels = new HashSet<>(); // Multiple labels from labels table
 
     @Convert(converter = com.brideside.crm.converter.DealSourceConverter.class)

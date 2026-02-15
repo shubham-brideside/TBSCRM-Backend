@@ -62,6 +62,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -660,6 +661,7 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Deal get(Long id) {
         // Use findByIdWithLabel to eagerly fetch the label relationship
         Deal deal = dealRepository.findByIdWithLabel(id)
@@ -668,6 +670,8 @@ public class DealServiceImpl implements DealService {
         if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
             throw new ResourceNotFoundException("Deal not found");
         }
+        // Ensure API-required relationships are initialized within a transaction
+        initializeForApi(List.of(deal));
         return deal;
     }
 
@@ -732,6 +736,7 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<Deal> list(Long pipelineId, String status, Long organizationId, Long categoryId,
                            Long managerId, String dateFrom, String dateTo, String search, String source,
                            String sortField, String sortDirection, Integer limit, Integer offset, Long stageId) {
@@ -745,36 +750,10 @@ public class DealServiceImpl implements DealService {
         log.debug("Deal list: Applied filters - pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}", 
             pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
 
-        // Load deals with specification
-        // Note: We can't use JOIN FETCH directly with Specifications in a simple way,
-        // so we'll load the deals and then eagerly access the relationships
+        // Load deals with specification.
+        // NOTE: Sorting/pagination semantics are implemented in Java to preserve existing behavior.
         List<Deal> deals = dealRepository.findAll(spec);
         log.debug("Deal list: Found {} deals after applying filters", deals.size());
-        
-        // Eagerly load Person, Organization, Pipeline, Labels, and related entities to avoid lazy loading issues
-        // This ensures all data is loaded in a single transaction
-        deals.forEach(deal -> {
-            if (deal.getPerson() != null) {
-                deal.getPerson().getName();
-                if (deal.getPerson().getOwner() != null) {
-                    deal.getPerson().getOwner().getFirstName();
-                    deal.getPerson().getOwner().getLastName();
-                }
-            }
-            if (deal.getOrganization() != null) {
-                deal.getOrganization().getName();
-            }
-            if (deal.getPipeline() != null) {
-                deal.getPipeline().getName();
-            }
-            if (deal.getDealCategory() != null) {
-                deal.getDealCategory().getName();
-            }
-            // Eagerly load labels to avoid N+1 queries
-            if (deal.getLabels() != null) {
-                deal.getLabels().forEach(label -> label.getId());
-            }
-        });
         
         // Normalize sort field and direction
         String normalizedField = normalizeSortField(sortField);
@@ -786,31 +765,117 @@ public class DealServiceImpl implements DealService {
                 ". Supported fields: nextActivity, name, value, personName, organizationName, eventDate, createdAt, updatedAt, completedActivitiesCount, pendingActivitiesCount, productsCount, ownerName");
         }
         
+        // Determine pagination bounds up-front (used for partial sorting optimization)
+        int totalSize = deals.size();
+        int limitValue = (limit != null && limit > 0) ? limit : 100; // Default limit: 100
+        int offsetValue = (offset != null && offset >= 0) ? offset : 0; // Default offset: 0
+
+        if (totalSize == 0 || offsetValue >= totalSize) {
+            return new ArrayList<>();
+        }
+
         // Pre-load activities only if needed for sorting (performance optimization)
         Map<Long, List<com.brideside.crm.entity.Activity>> activitiesByDealId = null;
         if (normalizedField.equals("nextActivity") || 
             normalizedField.equals("completedActivitiesCount") || 
             normalizedField.equals("pendingActivitiesCount")) {
-            activitiesByDealId = loadActivitiesByDealId();
+            Set<Long> dealIds = deals.stream()
+                .map(Deal::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+            activitiesByDealId = loadActivitiesByDealId(dealIds);
         }
         
-        // Sort deals based on the field
-        Comparator<Deal> comparator = getComparator(normalizedField, ascending, activitiesByDealId);
-        deals.sort(comparator);
-        
-        // Apply pagination after sorting
-        int totalSize = deals.size();
-        int limitValue = (limit != null && limit > 0) ? limit : 100; // Default limit: 100
-        int offsetValue = (offset != null && offset >= 0) ? offset : 0; // Default offset: 0
-        
-        // Calculate pagination bounds
-        int fromIndex = Math.min(offsetValue, totalSize);
-        int toIndex = Math.min(offsetValue + limitValue, totalSize);
-        
-        // Apply pagination
-        List<Deal> paginatedDeals = (fromIndex < toIndex) 
-            ? deals.subList(fromIndex, toIndex) 
-            : new ArrayList<>();
+        // Sort deals based on the field (stable) and apply pagination.
+        // Optimization: for large datasets and small pages, avoid sorting the full list.
+        //
+        // Also: precompute activity-based sort keys to avoid repeatedly scanning activities during comparisons.
+        Comparator<Deal> comparator;
+        if ("nextActivity".equals(normalizedField) && activitiesByDealId != null) {
+            Map<Long, LocalDateTime> nextByDealId = new HashMap<>(Math.max(16, deals.size() * 2));
+            for (Deal d : deals) {
+                Long id = d != null ? d.getId() : null;
+                if (id == null) continue;
+                List<com.brideside.crm.entity.Activity> acts = activitiesByDealId.get(id);
+                LocalDateTime next = null;
+                if (acts != null) {
+                    for (com.brideside.crm.entity.Activity a : acts) {
+                        if (a == null) continue;
+                        if (a.isDone() || a.getStatus() == com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED) {
+                            continue;
+                        }
+                        LocalDateTime dt = parseActivityDate(a);
+                        if (dt == null) continue;
+                        if (next == null || dt.isBefore(next)) {
+                            next = dt;
+                        }
+                    }
+                }
+                nextByDealId.put(id, next);
+            }
+            Comparator<Deal> base = Comparator.comparing(
+                d -> d != null ? nextByDealId.get(d.getId()) : null,
+                Comparator.nullsLast(Comparator.naturalOrder())
+            );
+            comparator = ascending ? base : base.reversed();
+        } else if ("completedActivitiesCount".equals(normalizedField) && activitiesByDealId != null) {
+            Map<Long, Integer> completedByDealId = new HashMap<>(Math.max(16, deals.size() * 2));
+            for (Deal d : deals) {
+                Long id = d != null ? d.getId() : null;
+                if (id == null) continue;
+                List<com.brideside.crm.entity.Activity> acts = activitiesByDealId.get(id);
+                int count = 0;
+                if (acts != null) {
+                    for (com.brideside.crm.entity.Activity a : acts) {
+                        if (a == null) continue;
+                        if (a.isDone() || a.getStatus() == com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED) {
+                            count++;
+                        }
+                    }
+                }
+                completedByDealId.put(id, count);
+            }
+            Comparator<Deal> base = Comparator.comparing(
+                d -> {
+                    if (d == null || d.getId() == null) return 0;
+                    return completedByDealId.getOrDefault(d.getId(), 0);
+                },
+                Comparator.nullsLast(Comparator.naturalOrder())
+            );
+            comparator = ascending ? base : base.reversed();
+        } else if ("pendingActivitiesCount".equals(normalizedField) && activitiesByDealId != null) {
+            Map<Long, Integer> pendingByDealId = new HashMap<>(Math.max(16, deals.size() * 2));
+            for (Deal d : deals) {
+                Long id = d != null ? d.getId() : null;
+                if (id == null) continue;
+                List<com.brideside.crm.entity.Activity> acts = activitiesByDealId.get(id);
+                int count = 0;
+                if (acts != null) {
+                    for (com.brideside.crm.entity.Activity a : acts) {
+                        if (a == null) continue;
+                        if (!a.isDone() && a.getStatus() != com.brideside.crm.entity.Activity.ActivityStatus.COMPLETED) {
+                            count++;
+                        }
+                    }
+                }
+                pendingByDealId.put(id, count);
+            }
+            Comparator<Deal> base = Comparator.comparing(
+                d -> {
+                    if (d == null || d.getId() == null) return 0;
+                    return pendingByDealId.getOrDefault(d.getId(), 0);
+                },
+                Comparator.nullsLast(Comparator.naturalOrder())
+            );
+            comparator = ascending ? base : base.reversed();
+        } else {
+            comparator = getComparator(normalizedField, ascending, activitiesByDealId);
+        }
+        List<Deal> paginatedDeals = selectStablePage(deals, comparator, offsetValue, limitValue);
+
+        // Initialize relationships needed by API response mapping (controller) to avoid lazy-loading
+        // outside this transactional context (production-ready even with open-in-view disabled).
+        initializeForApi(paginatedDeals);
         
         log.debug("Deal list: Returning {} deals (page: offset={}, limit={}) out of {} total deals after sorting by {} {}", 
             paginatedDeals.size(), offsetValue, limitValue, totalSize, normalizedField, sortDirection);
@@ -818,6 +883,7 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public long count(Long pipelineId, String status, Long organizationId, Long categoryId,
                       Long managerId, String dateFrom, String dateTo, String search, String source, Long stageId) {
         log.debug("Deal count requested with filters: pipelineId={}, status={}, organizationId={}, categoryId={}, managerId={}, dateFrom={}, dateTo={}, search={}, source={}, stageId={}", 
@@ -967,6 +1033,7 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<com.brideside.crm.dto.PersonDTO> getPersonsByDealIds(List<Long> dealIds) {
         if (dealIds == null || dealIds.isEmpty()) {
             return Collections.emptyList();
@@ -974,13 +1041,8 @@ public class DealServiceImpl implements DealService {
         
         log.debug("Fetching persons for {} deals using JOIN", dealIds.size());
         
-        // Fetch deals to get person IDs, then fetch persons with JOINs
-        // Using a subquery approach: get person IDs from deals, then fetch persons with their relations
-        List<Deal> deals = dealRepository.findAllById(dealIds);
-        Set<Long> personIds = deals.stream()
-            .filter(d -> d.getPerson() != null)
-            .map(d -> d.getPerson().getId())
-            .collect(Collectors.toSet());
+        // Efficiently fetch distinct person IDs without triggering N+1 lazy loads
+        Set<Long> personIds = new HashSet<>(dealRepository.findDistinctPersonIdsByDealIds(dealIds));
         
         if (personIds.isEmpty()) {
             return Collections.emptyList();
@@ -1011,6 +1073,7 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<com.brideside.crm.dto.ActivityDTO> getActivitiesByDealIds(List<Long> dealIds) {
         if (dealIds == null || dealIds.isEmpty()) {
             return Collections.emptyList();
@@ -1040,12 +1103,119 @@ public class DealServiceImpl implements DealService {
             .collect(Collectors.toList());
     }
     
-    private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId() {
-        // Load all activities once and group by dealId
-        List<com.brideside.crm.entity.Activity> allActivities = activityRepository.findAll();
-        return allActivities.stream()
-            .filter(a -> a.getDealId() != null)
-            .collect(Collectors.groupingBy(com.brideside.crm.entity.Activity::getDealId));
+    private Map<Long, List<com.brideside.crm.entity.Activity>> loadActivitiesByDealId(Set<Long> dealIds) {
+        if (dealIds == null || dealIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // Fetch only activities belonging to the candidate deals (instead of loading the entire activities table).
+        // Chunking avoids overly-large IN clauses.
+        final int CHUNK_SIZE = 1000;
+        List<Long> ids = new ArrayList<>(dealIds);
+        Map<Long, List<com.brideside.crm.entity.Activity>> grouped = new HashMap<>();
+
+        for (int i = 0; i < ids.size(); i += CHUNK_SIZE) {
+            List<Long> chunk = ids.subList(i, Math.min(i + CHUNK_SIZE, ids.size()));
+            Specification<com.brideside.crm.entity.Activity> spec = (root, query, cb) ->
+                root.get("dealId").in(chunk);
+
+            List<com.brideside.crm.entity.Activity> activities = activityRepository.findAll(spec);
+            for (com.brideside.crm.entity.Activity a : activities) {
+                if (a.getDealId() == null) continue;
+                grouped.computeIfAbsent(a.getDealId(), __ -> new ArrayList<>()).add(a);
+            }
+        }
+
+        return grouped;
+    }
+
+    /**
+     * Selects a page from a list using the provided comparator, preserving the behavior of a stable sort.
+     * This avoids sorting the entire list when only a small window is needed.
+     */
+    private List<Deal> selectStablePage(List<Deal> deals, Comparator<Deal> comparator, int offset, int limit) {
+        int totalSize = deals.size();
+        int fromIndex = Math.max(0, offset);
+        int toIndexExclusive = Math.min(totalSize, fromIndex + Math.max(0, limit));
+        if (fromIndex >= toIndexExclusive) {
+            return new ArrayList<>();
+        }
+
+        // Stable sort tie-breaker: original index (matches TimSort stability used by List.sort()).
+        record IndexedDeal(int index, Deal deal) {}
+
+        Comparator<IndexedDeal> stableComparator = (a, b) -> {
+            int c = comparator.compare(a.deal(), b.deal());
+            if (c != 0) return c;
+            return Integer.compare(a.index(), b.index());
+        };
+
+        int k = Math.min(totalSize, toIndexExclusive);
+        PriorityQueue<IndexedDeal> heap = new PriorityQueue<>(k, stableComparator.reversed()); // max-heap of best k
+
+        for (int i = 0; i < totalSize; i++) {
+            IndexedDeal item = new IndexedDeal(i, deals.get(i));
+            if (heap.size() < k) {
+                heap.add(item);
+            } else if (stableComparator.compare(item, heap.peek()) < 0) {
+                heap.poll();
+                heap.add(item);
+            }
+        }
+
+        ArrayList<IndexedDeal> bestK = new ArrayList<>(heap);
+        bestK.sort(stableComparator);
+
+        // Now bestK is equivalent to deals sorted stably and truncated to the first k elements.
+        List<Deal> page = new ArrayList<>(toIndexExclusive - fromIndex);
+        for (int i = fromIndex; i < toIndexExclusive; i++) {
+            page.add(bestK.get(i).deal());
+        }
+        return page;
+    }
+
+    private void initializeForApi(List<Deal> deals) {
+        if (deals == null || deals.isEmpty()) return;
+
+        for (Deal deal : deals) {
+            if (deal == null) continue;
+
+            if (deal.getPerson() != null) {
+                deal.getPerson().getName();
+                if (deal.getPerson().getOwner() != null) {
+                    deal.getPerson().getOwner().getFirstName();
+                    deal.getPerson().getOwner().getLastName();
+                }
+            }
+            if (deal.getOrganization() != null) {
+                deal.getOrganization().getName();
+            }
+            if (deal.getPipeline() != null) {
+                deal.getPipeline().getName();
+            }
+            if (deal.getStage() != null) {
+                deal.getStage().getName();
+            }
+            if (deal.getSource() != null) {
+                // Source entity doesn't have getName(); touching an attribute forces initialization
+                deal.getSource().getType();
+            }
+            if (deal.getDealCategory() != null) {
+                deal.getDealCategory().getName();
+            }
+            if (deal.getReferencedDeal() != null) {
+                deal.getReferencedDeal().getId();
+            }
+            if (deal.getReferencedPipeline() != null) {
+                deal.getReferencedPipeline().getId();
+            }
+            if (deal.getSourcePipeline() != null) {
+                deal.getSourcePipeline().getId();
+            }
+            if (deal.getLabels() != null) {
+                deal.getLabels().forEach(label -> label.getId());
+            }
+        }
     }
     
     private String normalizeSortField(String sortField) {
