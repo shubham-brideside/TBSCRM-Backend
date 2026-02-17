@@ -18,7 +18,7 @@
         }
         .sidebar {
             width: 250px;
-            background-color: #27ae60;
+            background-color: #2c3e50;
             color: white;
             padding: 20px;
             box-shadow: 2px 0 5px rgba(0,0,0,0.1);
@@ -45,7 +45,7 @@
             transition: background-color 0.3s;
         }
         .sidebar-nav a:hover, .sidebar-nav a.active {
-            background-color: #229954;
+            background-color: #34495e;
         }
         .main-content {
             flex: 1;
@@ -61,7 +61,7 @@
         }
         .header h1 {
             margin: 0;
-            color: #27ae60;
+            color: #2c3e50;
         }
         .user-info {
             display: flex;
@@ -78,6 +78,13 @@
             cursor: pointer;
             font-size: 14px;
             transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2980b9;
         }
         .btn-danger {
             background-color: #e74c3c;
@@ -107,7 +114,7 @@
         .stat-card .value {
             font-size: 32px;
             font-weight: bold;
-            color: #27ae60;
+            color: #2c3e50;
         }
         .content-section {
             background: white;
@@ -117,7 +124,74 @@
         }
         .content-section h2 {
             margin-top: 0;
-            color: #27ae60;
+            color: #2c3e50;
+        }
+        .content-section h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #34495e;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        table th, table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        table th {
+            background-color: #f8f9fa;
+            color: #555;
+            font-weight: 600;
+        }
+        table tr:hover {
+            background-color: #f8f9fa;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .org-filter {
+            margin-bottom: 20px;
+        }
+        .org-filter select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .org-details {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            display: none;
+        }
+        .org-details.active {
+            display: block;
+        }
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .month-cell {
+            padding: 5px;
+            text-align: center;
+            font-size: 11px;
+            border: 1px solid #e0e0e0;
+            border-radius: 3px;
+        }
+        .month-cell.won {
+            background-color: #d4edda;
+        }
+        .month-cell.lost {
+            background-color: #f8d7da;
+        }
+        .month-cell.in-progress {
+            background-color: #fff3cd;
         }
     </style>
 </head>
@@ -126,9 +200,9 @@
         <div class="sidebar">
             <h2>Brideside CRM</h2>
             <ul class="sidebar-nav">
-                <li><a href="#" class="active">Dashboard</a></li>
-                <li><a href="#">My Team</a></li>
-                <li><a href="#">Reports</a></li>
+                <li><a href="#" class="active" onclick="showSection('dashboard')">Dashboard</a></li>
+                <li><a href="users.html">Users Management</a></li>
+                <li><a href="#" onclick="showSection('settings')">Settings</a></li>
             </ul>
         </div>
         
@@ -141,36 +215,89 @@
                 </div>
             </div>
             
-            <div class="dashboard-stats">
-                <div class="stat-card">
-                    <h3>Managers Under Me</h3>
-                    <div class="value" id="managersCount">-</div>
+            <div id="dashboardSection">
+                <div class="dashboard-stats">
+                    <div class="stat-card">
+                        <h3>Sales Managers</h3>
+                        <div class="value" id="salesManagersCount">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Presales</h3>
+                        <div class="value" id="presalesCount">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Team Size</h3>
+                        <div class="value" id="totalTeamSize">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Won Deals</h3>
+                        <div class="value" id="totalWonDeals">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Lost Deals</h3>
+                        <div class="value" id="totalLostDeals">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>In Progress</h3>
+                        <div class="value" id="totalInProgressDeals">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Total Revenue</h3>
+                        <div class="value" id="totalWonValue">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Revenue (YTD)</h3>
+                        <div class="value" id="totalWonValueYtd">-</div>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <h3>Salesreps Under Me</h3>
-                    <div class="value" id="salesrepsCount">-</div>
+                
+                <div class="content-section">
+                    <h2>Welcome to Category Manager Dashboard</h2>
+                    <p>As a Category Manager, you have access to view and manage data for your team hierarchy.</p>
+                    <ul>
+                        <li>View team statistics and performance metrics</li>
+                        <li>Monitor deals and revenue for your Sales managers and Presales</li>
+                        <li>Track won, lost, and in-progress deals</li>
+                        <li>Analyze revenue by category, user, and pipeline</li>
+                        <li>Access reports for your team</li>
+                    </ul>
+                    <p><a href="users.html" class="btn btn-primary">Go to Users Management</a></p>
                 </div>
-                <div class="stat-card">
-                    <h3>Total Team Size</h3>
-                    <div class="value" id="teamSize">-</div>
+
+                <div class="content-section">
+                    <h2>Deal Status by Organization</h2>
+                    <div class="org-filter">
+                        <label for="orgYear">Year: </label>
+                        <select id="orgYear" onchange="loadOrganizationData()">
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                            <option value="2023">2023</option>
+                        </select>
+                    </div>
+                    <div id="orgLoading" style="display: none; padding: 20px; color: #7f8c8d;">Loading organization data...</div>
+                    <div id="orgError" style="display: none; padding: 20px; color: #e74c3c;"></div>
+                    <table id="orgTable" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Organization</th>
+                                <th>Category</th>
+                                <th>Owner</th>
+                                <th class="text-right">Won (All Time)</th>
+                                <th class="text-right">Lost (All Time)</th>
+                                <th class="text-right">In Progress</th>
+                                <th class="text-right">Total Value (Won)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orgTableBody"></tbody>
+                    </table>
                 </div>
             </div>
             
-            <div class="content-section">
-                <h2>Welcome, Category Manager!</h2>
-                <p>As a Category Manager, you can view and manage data for:</p>
-                <ul>
-                    <li>Your own data and activities</li>
-                    <li>All Managers reporting to you</li>
-                    <li>All Salesreps under your Managers</li>
-                </ul>
-                <h3>Your Role Permissions:</h3>
-                <ul>
-                    <li>View your own dashboard and reports</li>
-                    <li>Monitor team performance</li>
-                    <li>Access reports for your category</li>
-                    <li>View data for Managers and Salesreps in your hierarchy</li>
-                </ul>
+            <div id="settingsSection" style="display: none;">
+                <div class="content-section">
+                    <h2>Settings</h2>
+                    <p>System settings and configuration options will be available here.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -188,16 +315,108 @@
             document.getElementById('userName').textContent = `${user.firstName} ${user.lastName} (${user.role})`;
         }
         
-        // Load dashboard stats (sample data)
-        function loadStats() {
-            // This would normally fetch from API based on user's team
-            document.getElementById('managersCount').textContent = '0';
-            document.getElementById('salesrepsCount').textContent = '0';
-            document.getElementById('teamSize').textContent = '0';
+        // Format currency helper
+        function formatCurrency(val) {
+            if (val == null || val === undefined) return '-';
+            const n = typeof val === 'number' ? val : parseFloat(val);
+            return isNaN(n) ? '-' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
         
+        // Load dashboard stats
+        async function loadStats() {
+            try {
+                showLoader('Loading dashboard...');
+                const response = await authenticatedFetch(`${API_BASE_URL}/category-manager/dashboard/summary`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.data) {
+                        const stats = data.data;
+                        document.getElementById('salesManagersCount').textContent = stats.salesManagersCount || 0;
+                        document.getElementById('presalesCount').textContent = stats.presalesCount || 0;
+                        document.getElementById('totalTeamSize').textContent = stats.totalTeamSize || 0;
+                        document.getElementById('totalWonDeals').textContent = stats.totalWonDeals || 0;
+                        document.getElementById('totalLostDeals').textContent = stats.totalLostDeals || 0;
+                        document.getElementById('totalInProgressDeals').textContent = stats.totalInProgressDeals || 0;
+                        document.getElementById('totalWonValue').textContent = formatCurrency(stats.totalWonValue);
+                        document.getElementById('totalWonValueYtd').textContent = formatCurrency(stats.totalWonValueYtd);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            } finally {
+                hideLoader();
+            }
+        }
+        
+        function showSection(section) {
+            document.getElementById('dashboardSection').style.display = section === 'dashboard' ? 'block' : 'none';
+            document.getElementById('settingsSection').style.display = section === 'settings' ? 'block' : 'none';
+            
+            // Update active nav
+            document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Load organization deal status data
+        async function loadOrganizationData() {
+            const year = document.getElementById('orgYear').value;
+            const orgLoading = document.getElementById('orgLoading');
+            const orgError = document.getElementById('orgError');
+            const orgTable = document.getElementById('orgTable');
+            const orgTableBody = document.getElementById('orgTableBody');
+
+            orgLoading.style.display = 'block';
+            orgError.style.display = 'none';
+            orgTable.style.display = 'none';
+            orgTableBody.innerHTML = '';
+
+            try {
+                const response = await authenticatedFetch(`${API_BASE_URL}/category-manager/dashboard/organization-deals-status?year=${year}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.data && data.data.organizations) {
+                        const orgs = data.data.organizations;
+                        if (orgs.length === 0) {
+                            orgError.textContent = 'No organization data available for the selected year.';
+                            orgError.style.display = 'block';
+                        } else {
+                            orgs.forEach(org => {
+                                const row = document.createElement('tr');
+                                row.innerHTML = `
+                                    <td><strong>${org.organizationName || '-'}</strong></td>
+                                    <td>${org.organizationCategory || '-'}</td>
+                                    <td>${org.ownerName || org.ownerEmail || '-'}</td>
+                                    <td class="text-right">${org.wonCountAll || 0}</td>
+                                    <td class="text-right">${org.lostCountAll || 0}</td>
+                                    <td class="text-right">${org.inProgressCountAll || 0}</td>
+                                    <td class="text-right">${formatCurrency(org.wonValueAll)}</td>
+                                `;
+                                orgTableBody.appendChild(row);
+                            });
+                            orgTable.style.display = 'table';
+                        }
+                    } else {
+                        orgError.textContent = 'No organization data available.';
+                        orgError.style.display = 'block';
+                    }
+                } else {
+                    const errorData = await response.json().catch(() => ({ message: 'Failed to load organization data' }));
+                    orgError.textContent = errorData.message || 'Failed to load organization data';
+                    orgError.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading organization data:', error);
+                orgError.textContent = 'Error loading organization data. Please try again.';
+                orgError.style.display = 'block';
+            } finally {
+                orgLoading.style.display = 'none';
+            }
+        }
+        
+        // Set default year to current year
+        document.getElementById('orgYear').value = new Date().getFullYear();
         loadStats();
+        loadOrganizationData();
     </script>
 </body>
 </html>
-

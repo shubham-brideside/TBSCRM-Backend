@@ -176,6 +176,47 @@ public class AdminDashboardDtos {
     }
 
     /**
+     * Deal status monthly summary grouped by sales user (user-first view).
+     * Each user has 12 months of won/lost/in-progress counts and values.
+     */
+    public static class DealStatusMonthlyByUserResponse {
+        public Integer year;
+        public java.util.List<DealStatusMonthlyByUserRow> users;
+    }
+
+    public static class DealStatusMonthlyByUserRow {
+        public Long userId;
+        public String userName;
+        public String email;
+        public java.util.List<DealStatusMonthlyUserMonthRow> months;
+    }
+
+    public static class DealStatusMonthlyUserMonthRow {
+        public Integer month; // 1-12
+        public Long wonCount;
+        public BigDecimal wonValue;
+        public Long lostCount;
+        public BigDecimal lostValue;
+        public Long inProgressCount;
+        public BigDecimal inProgressValue;
+    }
+
+    /**
+     * Deal status monthly summary grouped by pipeline (pipeline-first view).
+     * Each pipeline has 12 months of won/lost/in-progress counts and values.
+     */
+    public static class DealStatusMonthlyByPipelineResponse {
+        public Integer year;
+        public java.util.List<DealStatusMonthlyByPipelineRow> pipelines;
+    }
+
+    public static class DealStatusMonthlyByPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
+        public java.util.List<DealStatusMonthlyUserMonthRow> months;
+    }
+
+    /**
      * Monthly activity summary per user (for admin dashboard).
      */
     public static class UserActivityMonthlySummaryResponse {
@@ -229,6 +270,43 @@ public class AdminDashboardDtos {
     }
 
     /**
+     * Lost reasons grouped by pipeline (each pipeline has its own reason breakdown).
+     */
+    public static class LostReasonsByPipelineResponse {
+        /**
+         * Optional organization category filter applied. Null if none.
+         */
+        public String category;
+        public java.util.List<LostReasonsByPipelineRow> pipelines;
+    }
+
+    public static class LostReasonsByPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
+        public Long totalLostDeals;
+        public java.util.List<LostReasonRow> reasons;
+    }
+
+    /**
+     * Lost reasons grouped by sales user (each user has their own reason breakdown).
+     */
+    public static class LostReasonsByUserResponse {
+        /**
+         * Optional organization category filter applied. Null if none.
+         */
+        public String category;
+        public java.util.List<LostReasonsByUserRow> users;
+    }
+
+    public static class LostReasonsByUserRow {
+        public Long userId;
+        public String userName;
+        public String email;
+        public Long totalLostDeals;
+        public java.util.List<LostReasonRow> reasons;
+    }
+
+    /**
      * Deal status summary per organization (all time + per month for a year).
      */
     public static class OrganizationDealStatusSummaryResponse {
@@ -265,6 +343,26 @@ public class AdminDashboardDtos {
         public BigDecimal lostValue;
         public Long inProgressCount;
         public BigDecimal inProgressValue;
+    }
+
+    /**
+     * Sales users and the pipelines they own (via organization -> owner).
+     * Used by dashboards to populate filters like "Sales → Pipelines".
+     */
+    public static class SalesPipelinesResponse {
+        public java.util.List<SalesPipelinesRow> users;
+    }
+
+    public static class SalesPipelinesRow {
+        public Long userId;
+        public String userName;
+        public String email;
+        public java.util.List<PipelineRef> pipelines;
+    }
+
+    public static class PipelineRef {
+        public Long pipelineId;
+        public String pipelineName;
     }
 
     /**
