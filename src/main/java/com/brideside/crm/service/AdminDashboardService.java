@@ -70,5 +70,11 @@ public interface AdminDashboardService {
             java.time.LocalDate dateFrom,
             java.time.LocalDate dateTo
     );
+
+    /**
+     * Deal divert report: all WON diverted deals with diverted-from pipeline, diverted-to pipeline, and owner.
+     * Returns all-time totals + optional monthly breakdown if year provided.
+     */
+    AdminDashboardDtos.DealDivertReportResponse getDealDivertReport(Integer year);
 }
 

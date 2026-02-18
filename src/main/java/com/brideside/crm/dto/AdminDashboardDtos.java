@@ -366,6 +366,63 @@ public class AdminDashboardDtos {
     }
 
     /**
+     * Deal divert report: all WON diverted deals with from/to pipeline and owner.
+     * Supports time filtering: all-time totals + optional monthly breakdown by year.
+     */
+    public static class DealDivertReportResponse {
+        /** All-time totals (all diverted deals). */
+        public DealDivertReportAllTime allTime;
+        /** Optional monthly breakdown (if year parameter provided). */
+        public DealDivertReportMonthly monthly;
+    }
+
+    public static class DealDivertReportAllTime {
+        public java.util.List<DealDivertReportRow> deals;
+        public Long totalCount;
+        public BigDecimal totalValue;
+    }
+
+    public static class DealDivertReportMonthly {
+        public Integer year;
+        public java.util.List<DealDivertReportMonthRow> months;
+    }
+
+    public static class DealDivertReportMonthRow {
+        public Integer month; // 1-12
+        public java.util.List<DealDivertReportRow> deals;
+        public Long count;
+        public BigDecimal value;
+    }
+
+    public static class DealDivertReportRow {
+        public Long dealId;
+        public String dealName;
+        public BigDecimal dealValue;
+        public java.time.LocalDateTime wonAt;
+        /** Pipeline from which the deal was diverted (source). */
+        public Long divertedFromPipelineId;
+        public String divertedFromPipelineName;
+        /** Pipeline to which the deal was diverted (current pipeline). */
+        public Long divertedToPipelineId;
+        public String divertedToPipelineName;
+        /** Owner of the deal (current pipeline's organization owner). */
+        public Long ownerId;
+        public String ownerName;
+        public String ownerEmail;
+        public String organizationName;
+        /** Original deal ID if this deal was created by diversion. */
+        public Long referencedDealId;
+        /** User who diverted the deal (creator of the diverted deal). */
+        public Long divertedByUserId;
+        public String divertedByUserName;
+        public String divertedByUserEmail;
+        /** User who receives the diverted deal (current pipeline's organization owner). */
+        public Long divertedToUserId;
+        public String divertedToUserName;
+        public String divertedToUserEmail;
+    }
+
+    /**
      * Revenue summary over a time range (for admin dashboard).
      * Uses WON, non-deleted deals only.
      */

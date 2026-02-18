@@ -235,5 +235,20 @@ public class AdminController {
                 ApiResponse.success("Lost reason summary fetched", data)
         );
     }
+
+    @GetMapping("/dashboard/deal-divert-report")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Deal divert report",
+            description = "Returns all WON diverted deals with details: diverted-from pipeline, diverted-to pipeline, "
+                    + "and owner of the deal (current pipeline's organization owner). "
+                    + "Returns all-time totals + optional monthly breakdown if year parameter provided.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.DealDivertReportResponse>> getDealDivertReport(
+            @RequestParam(value = "year", required = false) Integer year) {
+        AdminDashboardDtos.DealDivertReportResponse data = adminDashboardService.getDealDivertReport(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Deal divert report fetched", data)
+        );
+    }
 }
 
