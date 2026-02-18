@@ -3,6 +3,7 @@ package com.brideside.crm.service.impl;
 import com.brideside.crm.dto.AdminDashboardDtos;
 import com.brideside.crm.entity.Activity;
 import com.brideside.crm.entity.Deal;
+import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Role;
@@ -1014,6 +1015,138 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         response.pipelines = pipelineRows;
 
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminDashboardDtos.DealDivertReportResponse getDealDivertReport(Integer year) {
+        List<Deal> allDeals = dealRepository.findWonDivertedDealsForReport(DealStatus.WON, DealSource.DIVERT);
+        
+        // Build all-time totals
+        List<AdminDashboardDtos.DealDivertReportRow> allTimeRows = new ArrayList<>();
+        BigDecimal allTimeTotalValue = BigDecimal.ZERO;
+        
+        // Build monthly breakdown if year provided
+        Map<Integer, List<AdminDashboardDtos.DealDivertReportRow>> dealsByMonth = new HashMap<>();
+        Map<Integer, BigDecimal> valueByMonth = new HashMap<>();
+        
+        for (Deal deal : allDeals) {
+            AdminDashboardDtos.DealDivertReportRow row = buildDealDivertReportRow(deal);
+            allTimeRows.add(row);
+            allTimeTotalValue = allTimeTotalValue.add(row.dealValue);
+            
+            // Group by month if year filter provided
+            if (year != null && deal.getWonAt() != null) {
+                LocalDateTime wonAt = deal.getWonAt();
+                if (wonAt.getYear() == year) {
+                    int month = wonAt.getMonthValue();
+                    dealsByMonth.computeIfAbsent(month, m -> new ArrayList<>()).add(row);
+                    valueByMonth.merge(month, row.dealValue, BigDecimal::add);
+                }
+            }
+        }
+        
+        AdminDashboardDtos.DealDivertReportResponse response = new AdminDashboardDtos.DealDivertReportResponse();
+        
+        // All-time totals
+        AdminDashboardDtos.DealDivertReportAllTime allTime = new AdminDashboardDtos.DealDivertReportAllTime();
+        allTime.deals = allTimeRows;
+        allTime.totalCount = (long) allTimeRows.size();
+        allTime.totalValue = allTimeTotalValue;
+        response.allTime = allTime;
+        
+        // Monthly breakdown (if year provided)
+        if (year != null) {
+            AdminDashboardDtos.DealDivertReportMonthly monthly = new AdminDashboardDtos.DealDivertReportMonthly();
+            monthly.year = year;
+            monthly.months = new ArrayList<>();
+            
+            for (int m = 1; m <= 12; m++) {
+                AdminDashboardDtos.DealDivertReportMonthRow monthRow = new AdminDashboardDtos.DealDivertReportMonthRow();
+                monthRow.month = m;
+                List<AdminDashboardDtos.DealDivertReportRow> monthDeals = dealsByMonth.get(m);
+                if (monthDeals != null) {
+                    monthRow.deals = monthDeals;
+                    monthRow.count = (long) monthDeals.size();
+                    monthRow.value = valueByMonth.getOrDefault(m, BigDecimal.ZERO);
+                } else {
+                    monthRow.deals = new ArrayList<>();
+                    monthRow.count = 0L;
+                    monthRow.value = BigDecimal.ZERO;
+                }
+                monthly.months.add(monthRow);
+            }
+            response.monthly = monthly;
+        }
+        
+        return response;
+    }
+    
+    private AdminDashboardDtos.DealDivertReportRow buildDealDivertReportRow(Deal deal) {
+        AdminDashboardDtos.DealDivertReportRow row = new AdminDashboardDtos.DealDivertReportRow();
+        row.dealId = deal.getId();
+        row.dealName = deal.getName();
+        row.dealValue = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+        row.wonAt = deal.getWonAt();
+
+        // Diverted to = current pipeline
+        if (deal.getPipeline() != null) {
+            row.divertedToPipelineId = deal.getPipeline().getId();
+            row.divertedToPipelineName = deal.getPipeline().getName();
+        }
+
+        // Diverted from = referencedPipeline, or referencedDeal's pipeline
+        Deal refDeal = deal.getReferencedDeal();
+        if (deal.getReferencedPipeline() != null) {
+            row.divertedFromPipelineId = deal.getReferencedPipeline().getId();
+            row.divertedFromPipelineName = deal.getReferencedPipeline().getName();
+        } else if (refDeal != null && refDeal.getPipeline() != null) {
+            row.divertedFromPipelineId = refDeal.getPipeline().getId();
+            row.divertedFromPipelineName = refDeal.getPipeline().getName();
+        }
+        if (refDeal != null) {
+            row.referencedDealId = refDeal.getId();
+        }
+
+        // Owner = current pipeline's organization owner (any role)
+        User owner = null;
+        if (deal.getPipeline() != null && deal.getPipeline().getOrganization() != null) {
+            owner = deal.getPipeline().getOrganization().getOwner();
+        }
+        if (owner != null) {
+            row.ownerId = owner.getId();
+            row.ownerName = (owner.getFirstName() != null ? owner.getFirstName() : "") + " "
+                    + (owner.getLastName() != null ? owner.getLastName() : "");
+            row.ownerName = row.ownerName.trim();
+            row.ownerEmail = owner.getEmail();
+
+            // Diverted-to user = owner who receives the diverted deal
+            row.divertedToUserId = owner.getId();
+            row.divertedToUserName = row.ownerName;
+            row.divertedToUserEmail = owner.getEmail();
+        }
+        if (deal.getOrganization() != null) {
+            row.organizationName = deal.getOrganization().getName();
+        }
+
+        // Diverted-by user = creator of the diverted deal (createdByUser / createdBy info)
+        User divertedBy = deal.getCreatedByUser();
+        if (divertedBy != null) {
+            row.divertedByUserId = divertedBy.getId();
+            String firstName = divertedBy.getFirstName() != null ? divertedBy.getFirstName() : "";
+            String lastName = divertedBy.getLastName() != null ? divertedBy.getLastName() : "";
+            row.divertedByUserName = (firstName + " " + lastName).trim();
+            row.divertedByUserEmail = divertedBy.getEmail();
+        } else {
+            if (deal.getCreatedByUserId() != null) {
+                row.divertedByUserId = deal.getCreatedByUserId();
+            }
+            if (deal.getCreatedByName() != null) {
+                row.divertedByUserName = deal.getCreatedByName();
+            }
+        }
+        
+        return row;
     }
 
     private User resolveSalesOwnerFromPipelineOrganization(Deal deal) {

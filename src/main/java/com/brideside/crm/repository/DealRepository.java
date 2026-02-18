@@ -1,6 +1,7 @@
 package com.brideside.crm.repository;
 
 import com.brideside.crm.entity.Deal;
+import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.entity.DealStatus;
@@ -77,6 +78,18 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
      */
     @Query("select distinct d.person.id from Deal d where d.id in :dealIds and d.person is not null")
     List<Long> findDistinctPersonIdsByDealIds(@Param("dealIds") List<Long> dealIds);
+
+    /** WON, non-deleted deals that are diverted (isDiverted=true or dealSource=DIVERT), with pipeline/refPipeline/refDeal/org/owner loaded. */
+    @Query("SELECT DISTINCT d FROM Deal d " +
+            "LEFT JOIN FETCH d.pipeline " +
+            "LEFT JOIN FETCH d.referencedPipeline " +
+            "LEFT JOIN FETCH d.referencedDeal rd " +
+            "LEFT JOIN FETCH rd.pipeline " +
+            "LEFT JOIN FETCH d.organization o " +
+            "LEFT JOIN FETCH o.owner " +
+            "WHERE d.status = :status AND (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND (d.isDiverted = true OR d.dealSource = :divertSource)")
+    List<Deal> findWonDivertedDealsForReport(@Param("status") DealStatus status, @Param("divertSource") DealSource divertSource);
 }
 
 
