@@ -267,14 +267,79 @@ public class TargetServiceImpl implements TargetService {
                         .getOrDefault(category, Collections.emptyList());
 
                 List<TargetDtos.TargetRow> rows = new ArrayList<>();
+                Set<Long> usersWithTargets = new HashSet<>();
+                
+                // Add rows for users who have targets
                 for (SalesTarget categoryTarget : categoryTargets) {
-                    rows.add(toTargetRow(
-                            categoryTarget,
-                            computation.achievedMap,
+                    Long userId = categoryTarget.getUser() != null ? categoryTarget.getUser().getId() : null;
+                    if (userId != null) {
+                        usersWithTargets.add(userId);
+                        rows.add(toTargetRow(
+                                categoryTarget,
+                                computation.achievedMap,
+                                computation.presalesAllCategoryMap,
+                                ym,
+                                category));
+                    }
+                }
+                
+                // Add rows for Pre-sales users who don't have targets but have deals
+                // IMPORTANT: Only show Pre-sales users in a category table if their manager (Sales user) 
+                // has deals in that specific category. This ensures category filtering works correctly.
+                Map<Long, DealAggregate> presalesDeals = computation.presalesAllCategoryMap != null
+                        ? computation.presalesAllCategoryMap.getOrDefault(ym, Collections.emptyMap())
+                        : Collections.emptyMap();
+                
+                Set<Long> accessibleUserIds = getAccessibleUserIdsForTargets();
+                
+                // Get the manager IDs (Sales users) who have deals in this specific category
+                Map<Long, DealAggregate> categoryDeals = computation.achievedMap != null
+                        ? computation.achievedMap.getOrDefault(ym, Collections.emptyMap())
+                                .getOrDefault(category, Collections.emptyMap())
+                        : Collections.emptyMap();
+                Set<Long> managerIdsWithCategoryDeals = categoryDeals.keySet();
+                
+                for (Map.Entry<Long, DealAggregate> entry : presalesDeals.entrySet()) {
+                    Long presalesUserId = entry.getKey();
+                    DealAggregate aggregate = entry.getValue();
+                    
+                    // Skip if already added (has target) or if no deals
+                    if (usersWithTargets.contains(presalesUserId) 
+                            || aggregate == null 
+                            || aggregate.dealsCount == 0
+                            || !accessibleUserIds.contains(presalesUserId)) {
+                        continue;
+                    }
+                    
+                    User presalesUser = userRepository.findById(presalesUserId).orElse(null);
+                    if (presalesUser == null 
+                            || presalesUser.getRole() == null 
+                            || presalesUser.getRole().getName() != Role.RoleName.PRESALES) {
+                        continue;
+                    }
+                    
+                    // Only show Pre-sales user in this category if their manager has deals in this category
+                    User manager = presalesUser.getManager();
+                    if (manager == null || manager.getId() == null) {
+                        continue;
+                    }
+                    
+                    Long managerId = manager.getId();
+                    if (!managerIdsWithCategoryDeals.contains(managerId)) {
+                        // Manager doesn't have deals in this category, skip this Pre-sales user
+                        continue;
+                    }
+                    
+                    // Create a virtual target row for this Pre-sales user
+                    // Note: We still use presalesAllCategoryMap for the data (all deals) because
+                    // Pre-sales incentive is calculated from all deals, not category-specific deals
+                    rows.add(toTargetRowForPresalesWithoutTarget(
+                            presalesUser,
                             computation.presalesAllCategoryMap,
                             ym,
                             category));
                 }
+                
                 table.rows = rows;
                 block.categories.add(table);
             }
@@ -343,36 +408,137 @@ public class TargetServiceImpl implements TargetService {
             List<SalesTarget> categoryTargets = computation.targetsByMonth
                     .getOrDefault(ym, Collections.emptyMap())
                     .getOrDefault(category, Collections.emptyList());
-            List<TargetDtos.TargetRow> users = categoryTargets.stream()
-                    .map(target -> toTargetRow(
+            
+            Set<Long> usersWithTargets = new HashSet<>();
+            List<TargetDtos.TargetRow> users = new ArrayList<>();
+            
+            // Add rows for users who have targets
+            for (SalesTarget target : categoryTargets) {
+                Long userId = target.getUser() != null ? target.getUser().getId() : null;
+                if (userId != null) {
+                    usersWithTargets.add(userId);
+                    users.add(toTargetRow(
                             target,
                             computation.achievedMap,
                             computation.presalesAllCategoryMap,
                             ym,
-                            category))
-                    .collect(Collectors.toList());
+                            category));
+                }
+            }
+            
+            // Add rows for Pre-sales users who don't have targets but have deals
+            // IMPORTANT: Only show Pre-sales users in a category table if their manager (Sales user) 
+            // has deals in that specific category. This ensures category filtering works correctly.
+            Map<Long, DealAggregate> presalesDeals = computation.presalesAllCategoryMap != null
+                    ? computation.presalesAllCategoryMap.getOrDefault(ym, Collections.emptyMap())
+                    : Collections.emptyMap();
+            
+            Set<Long> accessibleUserIds = getAccessibleUserIdsForTargets();
+            
+            // Get the manager IDs (Sales users) who have deals in this specific category
+            Map<Long, DealAggregate> categoryDeals = computation.achievedMap != null
+                    ? computation.achievedMap.getOrDefault(ym, Collections.emptyMap())
+                            .getOrDefault(category, Collections.emptyMap())
+                    : Collections.emptyMap();
+            Set<Long> managerIdsWithCategoryDeals = categoryDeals.keySet();
+            
+            for (Map.Entry<Long, DealAggregate> entry : presalesDeals.entrySet()) {
+                Long presalesUserId = entry.getKey();
+                DealAggregate aggregate = entry.getValue();
+                
+                // Skip if already added (has target) or if no deals
+                if (usersWithTargets.contains(presalesUserId) 
+                        || aggregate == null 
+                        || aggregate.dealsCount == 0
+                        || !accessibleUserIds.contains(presalesUserId)) {
+                    continue;
+                }
+                
+                User presalesUser = userRepository.findById(presalesUserId).orElse(null);
+                if (presalesUser == null 
+                        || presalesUser.getRole() == null 
+                        || presalesUser.getRole().getName() != Role.RoleName.PRESALES) {
+                    continue;
+                }
+                
+                // Only show Pre-sales user in this category if their manager has deals in this category
+                User manager = presalesUser.getManager();
+                if (manager == null || manager.getId() == null) {
+                    continue;
+                }
+                
+                Long managerId = manager.getId();
+                if (!managerIdsWithCategoryDeals.contains(managerId)) {
+                    // Manager doesn't have deals in this category, skip this Pre-sales user
+                    continue;
+                }
+                
+                // Create a virtual target row for this Pre-sales user
+                // Note: We still use presalesAllCategoryMap for the data (all deals) because
+                // Pre-sales incentive is calculated from all deals, not category-specific deals
+                users.add(toTargetRowForPresalesWithoutTarget(
+                        presalesUser,
+                        computation.presalesAllCategoryMap,
+                        ym,
+                        category));
+            }
 
-            BigDecimal monthTarget = users.stream()
-                    .map(row -> safeValue(row.totalTarget))
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal monthAchieved = users.stream()
-                    .map(row -> safeValue(row.achieved))
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            int monthDeals = users.stream()
-                    .map(row -> row.totalDeals != null ? row.totalDeals : 0)
-                    .reduce(0, Integer::sum);
-
-            BigDecimal achievementPercent = calculateAchievementPercent(monthAchieved, monthTarget);
-            BigDecimal incentivePercent = calculateIncentive(achievementPercent);
-            BigDecimal incentiveAmount = monthAchieved.compareTo(BigDecimal.ZERO) == 0
-                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                    : incentivePercent.multiply(monthAchieved)
-                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            // Check if all users are Pre-sales (for Pre-sales-only monthly totals)
+            boolean allPresales = !users.isEmpty() && users.stream()
+                    .allMatch(u -> "PRESALES".equals(u.userRole));
+            
+            BigDecimal monthTarget;
+            BigDecimal monthAchieved;
+            int monthDeals;
+            BigDecimal achievementPercent;
+            BigDecimal incentivePercent;
+            BigDecimal incentiveAmount;
+            int monthDirectDeals = 0;
+            int monthDiversionDeals = 0;
+            
+            if (allPresales) {
+                // Pre-sales: sum up individual incentives, direct deals, and diversion deals
+                monthTarget = null; // No target for Pre-sales
+                monthDeals = users.stream()
+                        .map(row -> row.totalDeals != null ? row.totalDeals : 0)
+                        .reduce(0, Integer::sum);
+                monthDirectDeals = users.stream()
+                        .map(row -> row.directDeals != null ? row.directDeals : 0)
+                        .reduce(0, Integer::sum);
+                monthDiversionDeals = users.stream()
+                        .map(row -> row.diversionDeals != null ? row.diversionDeals : 0)
+                        .reduce(0, Integer::sum);
+                monthAchieved = BigDecimal.valueOf(monthDeals); // Total deals as achieved
+                achievementPercent = null; // No achievement % for Pre-sales
+                incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+                // Pre-sales incentive: 500 * direct + 1000 * divert
+                incentiveAmount = BigDecimal.valueOf(500L)
+                        .multiply(BigDecimal.valueOf(monthDirectDeals))
+                        .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(monthDiversionDeals)))
+                        .setScale(2, RoundingMode.HALF_UP);
+            } else {
+                // Sales or mixed: use original calculation
+                monthTarget = users.stream()
+                        .map(row -> safeValue(row.totalTarget))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                monthAchieved = users.stream()
+                        .map(row -> safeValue(row.achieved))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                monthDeals = users.stream()
+                        .map(row -> row.totalDeals != null ? row.totalDeals : 0)
+                        .reduce(0, Integer::sum);
+                achievementPercent = calculateAchievementPercent(monthAchieved, monthTarget);
+                incentivePercent = calculateIncentive(achievementPercent);
+                incentiveAmount = monthAchieved.compareTo(BigDecimal.ZERO) == 0
+                        ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                        : incentivePercent.multiply(monthAchieved)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            }
 
             TargetDtos.CategoryMonthlyRow row = new TargetDtos.CategoryMonthlyRow();
             row.month = ym.getMonthValue();
             row.year = ym.getYear();
-            row.totalTarget = monthTarget.setScale(2, RoundingMode.HALF_UP);
+            row.totalTarget = monthTarget != null ? monthTarget.setScale(2, RoundingMode.HALF_UP) : null;
             row.achieved = monthAchieved.setScale(2, RoundingMode.HALF_UP);
             row.achievementPercent = achievementPercent;
             row.totalDeals = monthDeals;
@@ -381,21 +547,42 @@ public class TargetServiceImpl implements TargetService {
             row.users = users;
             monthRows.add(row);
 
-            totalTarget = totalTarget.add(monthTarget);
+            if (monthTarget != null) {
+                totalTarget = totalTarget.add(monthTarget);
+            }
             totalAchieved = totalAchieved.add(monthAchieved);
             totalDeals += monthDeals;
         }
 
+        // Check if all months are Pre-sales-only (for totals calculation)
+        boolean allMonthsPresales = !monthRows.isEmpty() && monthRows.stream()
+                .allMatch(mr -> mr.totalTarget == null);
+
         TargetDtos.CategoryMonthlyTotals totals = new TargetDtos.CategoryMonthlyTotals();
-        totals.totalTarget = totalTarget.setScale(2, RoundingMode.HALF_UP);
-        totals.achieved = totalAchieved.setScale(2, RoundingMode.HALF_UP);
-        totals.totalDeals = totalDeals;
-        totals.achievementPercent = calculateAchievementPercent(totalAchieved, totalTarget);
-        totals.incentivePercent = calculateIncentive(totals.achievementPercent);
-        totals.incentiveAmount = totalAchieved.compareTo(BigDecimal.ZERO) == 0
-                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                : totals.incentivePercent.multiply(totalAchieved)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        if (allMonthsPresales) {
+            // Pre-sales totals: no target, incentive is sum of individual incentives
+            totals.totalTarget = null;
+            totals.achieved = totalAchieved.setScale(2, RoundingMode.HALF_UP);
+            totals.totalDeals = totalDeals;
+            totals.achievementPercent = null;
+            totals.incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            // Sum all individual Pre-sales incentives from month rows
+            totals.incentiveAmount = monthRows.stream()
+                    .map(mr -> safeValue(mr.incentiveAmount))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+        } else {
+            // Sales or mixed totals: use original calculation
+            totals.totalTarget = totalTarget.setScale(2, RoundingMode.HALF_UP);
+            totals.achieved = totalAchieved.setScale(2, RoundingMode.HALF_UP);
+            totals.totalDeals = totalDeals;
+            totals.achievementPercent = calculateAchievementPercent(totalAchieved, totalTarget);
+            totals.incentivePercent = calculateIncentive(totals.achievementPercent);
+            totals.incentiveAmount = totalAchieved.compareTo(BigDecimal.ZERO) == 0
+                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                    : totals.incentivePercent.multiply(totalAchieved)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        }
 
         response.months = monthRows;
         response.totals = totals;
@@ -1219,47 +1406,25 @@ public class TargetServiceImpl implements TargetService {
                 : BigDecimal.ZERO;
 
         if (roleName == Role.RoleName.PRESALES) {
-            // PRESALES: target represents number of diverted deals to be won
+            // PRESALES: no target. Incentive is calculated purely from number of won deals by deal source.
             int diversionDeals = presalesAllAggregate != null ? presalesAllAggregate.diversionDeals : 0;
             int totalDeals = presalesAllAggregate != null ? presalesAllAggregate.dealsCount : 0;
             int directDeals = presalesAllAggregate != null ? presalesAllAggregate.directDeals : 0;
 
-            int targetCount = rawTargetAmount.intValue();
-            int achievedCount = diversionDeals;
-
-            row.totalTarget = BigDecimal.valueOf(targetCount);
-            row.achieved = BigDecimal.valueOf(achievedCount);
-            // Total deals should include all won deals (all sources).
+            row.totalTarget = null; // Target is not set for Pre-sales
+            row.achieved = BigDecimal.valueOf(totalDeals); // Total won deals
             row.totalDeals = totalDeals;
+            row.achievementPercent = null; // No target, so no achievement %
 
-            // Achievement % based on diverted deals vs target (counts)
-            BigDecimal achievedBd = BigDecimal.valueOf(achievedCount);
-            BigDecimal targetBd = BigDecimal.valueOf(targetCount);
-            row.achievementPercent = calculateAchievementPercent(achievedBd, targetBd);
-
-            // Incentive for PRESALES: based on direct/diversion deal counts and target attainment
-            BigDecimal baseIncentive = BigDecimal.valueOf(500L)
+            // Incentive for PRESALES: 500 per direct deal + 1000 per divert deal (no target, no multiplier)
+            BigDecimal incentiveAmount = BigDecimal.valueOf(500L)
                     .multiply(BigDecimal.valueOf(directDeals))
                     .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)));
 
-            BigDecimal multiplier = BigDecimal.ZERO;
-            if (baseIncentive.compareTo(BigDecimal.ZERO) > 0) {
-                if (targetCount > 0) {
-                    if (achievedCount > targetCount) {
-                        multiplier = BigDecimal.valueOf(1.15); // 115%
-                    } else if (achievedCount == targetCount) {
-                        multiplier = BigDecimal.ONE; // 100%
-                    } else {
-                        multiplier = BigDecimal.valueOf(0.75); // 75%
-                    }
-                } else {
-                    // No target configured – treat as neutral (100%)
-                    multiplier = BigDecimal.ONE;
-                }
-            }
-
             row.incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-            row.incentiveAmount = baseIncentive.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+            row.incentiveAmount = incentiveAmount.setScale(2, RoundingMode.HALF_UP);
+            row.directDeals = directDeals;
+            row.diversionDeals = diversionDeals;
         } else {
             // SALES (or default): original value-based incentive logic
             row.totalTarget = rawTargetAmount;
@@ -1272,6 +1437,55 @@ public class TargetServiceImpl implements TargetService {
             row.incentiveAmount = row.incentivePercent.multiply(achieved)
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         }
+
+        return row;
+    }
+
+    /**
+     * Creates a TargetRow for a Pre-sales user who doesn't have a target set.
+     * Used to show Pre-sales users in category tables even when they don't have targets.
+     */
+    private TargetDtos.TargetRow toTargetRowForPresalesWithoutTarget(
+            User presalesUser,
+            Map<YearMonth, Map<Long, DealAggregate>> presalesAllCategoryMap,
+            YearMonth month,
+            TargetCategory category) {
+        TargetDtos.TargetRow row = new TargetDtos.TargetRow();
+        Long userId = presalesUser != null ? presalesUser.getId() : null;
+
+        row.userId = userId;
+        row.userName = presalesUser != null
+                ? (presalesUser.getFirstName() + " " + presalesUser.getLastName()).trim()
+                : null;
+        row.userRole = presalesUser != null && presalesUser.getRole() != null
+                ? presalesUser.getRole().getName().name()
+                : null;
+
+        // Get deal aggregates for this Pre-sales user (all categories)
+        DealAggregate presalesAllAggregate = presalesAllCategoryMap != null
+                ? presalesAllCategoryMap
+                        .getOrDefault(month, Collections.emptyMap())
+                        .get(userId)
+                : null;
+
+        int diversionDeals = presalesAllAggregate != null ? presalesAllAggregate.diversionDeals : 0;
+        int totalDeals = presalesAllAggregate != null ? presalesAllAggregate.dealsCount : 0;
+        int directDeals = presalesAllAggregate != null ? presalesAllAggregate.directDeals : 0;
+
+        row.totalTarget = null; // Target is not set for Pre-sales
+        row.achieved = BigDecimal.valueOf(totalDeals); // Total won deals
+        row.totalDeals = totalDeals;
+        row.achievementPercent = null; // No target, so no achievement %
+
+        // Incentive for PRESALES: 500 per direct deal + 1000 per divert deal (no target, no multiplier)
+        BigDecimal incentiveAmount = BigDecimal.valueOf(500L)
+                .multiply(BigDecimal.valueOf(directDeals))
+                .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)));
+
+        row.incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        row.incentiveAmount = incentiveAmount.setScale(2, RoundingMode.HALF_UP);
+        row.directDeals = directDeals;
+        row.diversionDeals = diversionDeals;
 
         return row;
     }
@@ -1816,25 +2030,34 @@ public class TargetServiceImpl implements TargetService {
                 continue;
             }
 
+            // IMPORTANT: Apply ALL filters before adding to either userDeals or monthlyDeals.
+            // This ensures monthly aggregates match the Won Deals table count exactly.
+            
+            // 1. Check category first
+            TargetCategory dealCategory = TargetCategory.fromDeal(deal);
+            if (dealCategory == null) {
+                continue; // Skip deals without categories
+            }
+            
+            // 2. Check reference date and year (required for monthly aggregates)
+            LocalDateTime reference = getDealWonReference(deal);
+            if (reference == null) {
+                continue; // Skip deals without reference date
+            }
+            YearMonth ym = YearMonth.from(reference);
+            if (ym.getYear() != year) {
+                continue; // Skip deals not in the requested year
+            }
+            
+            // 3. Only if deal passes all checks, add to both userDeals and monthlyDeals
             // Build per-deal summary attributed to the current user:
             // - SALES: attribute to the sales owner (existing behaviour)
             // - PRESALES: attribute to the presales user so frontend receives
             //   deals keyed by the presales userId.
-            TargetCategory dealCategory = TargetCategory.fromDeal(deal);
-            if (dealCategory != null) {
-                TargetDtos.DealSummary summary = (userRole == Role.RoleName.SALES)
-                        ? toDealSummary(deal, owner, dealCategory)
-                        : toDealSummary(deal, user, dealCategory);
-                userDeals.add(summary);
-            }
-            LocalDateTime reference = getDealWonReference(deal);
-            if (reference == null) {
-                continue;
-            }
-            YearMonth ym = YearMonth.from(reference);
-            if (ym.getYear() != year) {
-                continue;
-            }
+            TargetDtos.DealSummary summary = (userRole == Role.RoleName.SALES)
+                    ? toDealSummary(deal, owner, dealCategory)
+                    : toDealSummary(deal, user, dealCategory);
+            userDeals.add(summary);
             
             MonthlyDealAggregate aggregate = monthlyDeals.computeIfAbsent(ym, key -> new MonthlyDealAggregate());
 
@@ -1906,46 +2129,19 @@ public class TargetServiceImpl implements TargetService {
                 int totalDeals = aggregate != null ? aggregate.totalDeals : 0;
                 int directDeals = totalDeals - diversionDeals;
 
-                int targetCount = targetValue != null ? targetValue.intValue() : 0;
-                int achievedCount = diversionDeals;
+                // Target is not set for Pre-sales; incentive is based only on won deals by deal source
+                breakdown.target = null;
+                breakdown.achieved = BigDecimal.valueOf(totalDeals).setScale(2, RoundingMode.HALF_UP);
+                breakdown.achievementPercent = null;
 
-                BigDecimal targetBd = targetCount > 0
-                        ? BigDecimal.valueOf(targetCount).setScale(2, RoundingMode.HALF_UP)
-                        : null;
-                BigDecimal achievedBd = BigDecimal.valueOf(achievedCount).setScale(2, RoundingMode.HALF_UP);
-
-                breakdown.target = targetBd;
-                breakdown.achieved = achievedBd;
-
-                if (targetCount > 0) {
-                    breakdown.achievementPercent = calculateAchievementPercent(achievedBd, BigDecimal.valueOf(targetCount));
-                } else {
-                    breakdown.achievementPercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-                }
-
-                // Incentive for PRESALES
-                BigDecimal baseIncentive = BigDecimal.valueOf(500L)
+                // Incentive: 500 per direct deal + 1000 per divert deal (no target, no multiplier)
+                breakdown.incentive = BigDecimal.valueOf(500L)
                         .multiply(BigDecimal.valueOf(directDeals))
-                        .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)));
-
-                BigDecimal multiplier = BigDecimal.ZERO;
-                if (baseIncentive.compareTo(BigDecimal.ZERO) > 0) {
-                    if (targetCount > 0) {
-                        if (achievedCount > targetCount) {
-                            multiplier = BigDecimal.valueOf(1.15); // 115%
-                        } else if (achievedCount == targetCount) {
-                            multiplier = BigDecimal.ONE; // 100%
-                        } else {
-                            multiplier = BigDecimal.valueOf(0.75); // 75%
-                        }
-                    } else {
-                        // No target configured – treat as neutral (100%)
-                        multiplier = BigDecimal.ONE;
-                    }
-                }
-                breakdown.incentive = baseIncentive.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+                        .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)))
+                        .setScale(2, RoundingMode.HALF_UP);
 
                 breakdown.totalDeals = totalDeals;
+                breakdown.directDeals = directDeals;
                 breakdown.diversionDeals = diversionDeals;
                 breakdown.instaDeals = aggregate != null ? aggregate.instaDeals : 0;
                 breakdown.referenceDeals = aggregate != null ? aggregate.referenceDeals : 0;

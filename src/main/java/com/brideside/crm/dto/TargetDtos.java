@@ -160,6 +160,10 @@ public class TargetDtos {
         public BigDecimal achieved;
         public BigDecimal achievementPercent;
         public Integer totalDeals;
+        /** For PRESALES: count of won deals from direct source (includes DIRECT, REFERENCE, PLANNER). Null for SALES. */
+        public Integer directDeals;
+        /** For PRESALES: count of won deals from divert source. Null for SALES. */
+        public Integer diversionDeals;
         public BigDecimal incentivePercent;
         public BigDecimal incentiveAmount;
     }
@@ -274,6 +278,8 @@ public class TargetDtos {
         public BigDecimal achievementPercent;
         public Integer totalDeals;
         public BigDecimal incentive;
+        /** For PRESALES: count of won deals from direct source (DIRECT, REFERENCE, PLANNER). directDeals + diversionDeals = totalDeals. */
+        public Integer directDeals;
         public Integer diversionDeals;
         public Integer instaDeals; // Count of deals with source=Direct and subSource=Instagram
         public Integer referenceDeals; // Count of deals with source=Reference
