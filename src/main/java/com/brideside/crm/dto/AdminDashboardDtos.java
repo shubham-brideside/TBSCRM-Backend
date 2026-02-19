@@ -423,6 +423,43 @@ public class AdminDashboardDtos {
     }
 
     /**
+     * Admin dashboard: ranking of users by number of deals they have diverted (most to least).
+     * Optionally includes month-wise breakdown when year is provided.
+     */
+    public static class DivertCountByUserResponse {
+        /** List of users with their divert count, ordered by divertCount descending (most to least). */
+        public java.util.List<DivertCountByUserRow> users;
+        /** Total number of diverted deals across all users. */
+        public Long totalDivertedDeals;
+        /** Optional month-wise breakdown (present when year query param is provided). */
+        public DivertCountByUserMonthly monthly;
+    }
+
+    /** Month-wise breakdown for a given year: 12 months, each with ranked users. */
+    public static class DivertCountByUserMonthly {
+        public Integer year;
+        public java.util.List<DivertCountByUserMonthRow> months;
+    }
+
+    public static class DivertCountByUserMonthRow {
+        /** Month 1-12. */
+        public Integer month;
+        /** Users ranked by divert count for this month (most to least). */
+        public java.util.List<DivertCountByUserRow> users;
+        public Long totalDivertedDeals;
+    }
+
+    public static class DivertCountByUserRow {
+        public Long userId;
+        public String userName;
+        public String userEmail;
+        /** Number of deals this user has diverted. */
+        public Long divertCount;
+        /** 1-based rank (1 = most diverts). */
+        public Integer rank;
+    }
+
+    /**
      * Revenue summary over a time range (for admin dashboard).
      * Uses WON, non-deleted deals only.
      */

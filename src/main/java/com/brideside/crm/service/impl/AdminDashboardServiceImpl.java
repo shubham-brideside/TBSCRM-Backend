@@ -1149,6 +1149,88 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return row;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public AdminDashboardDtos.DivertCountByUserResponse getDivertCountByUser(Integer year) {
+        List<Object[]> rows = dealRepository.countDivertedDealsByDivertedByUser(DealSource.DIVERT);
+        List<AdminDashboardDtos.DivertCountByUserRow> userRows = new ArrayList<>();
+        long totalDivertedDeals = 0L;
+        int rank = 1;
+        for (Object[] row : rows) {
+            Long userId = row[0] != null ? ((Number) row[0]).longValue() : null;
+            String firstName = row[1] != null ? (String) row[1] : "";
+            String lastName = row[2] != null ? (String) row[2] : "";
+            String email = row[3] != null ? (String) row[3] : "";
+            Long count = row[4] != null ? ((Number) row[4]).longValue() : 0L;
+            if (userId == null) {
+                continue;
+            }
+            AdminDashboardDtos.DivertCountByUserRow r = new AdminDashboardDtos.DivertCountByUserRow();
+            r.userId = userId;
+            r.userName = (firstName + " " + lastName).trim();
+            if (r.userName.isEmpty()) {
+                r.userName = email;
+            }
+            r.userEmail = email;
+            r.divertCount = count;
+            r.rank = rank++;
+            userRows.add(r);
+            totalDivertedDeals += count;
+        }
+        AdminDashboardDtos.DivertCountByUserResponse response = new AdminDashboardDtos.DivertCountByUserResponse();
+        response.users = userRows;
+        response.totalDivertedDeals = totalDivertedDeals;
+
+        if (year != null) {
+            List<Object[]> monthlyRows = dealRepository.countDivertedDealsByDivertedByUserMonthly(DealSource.DIVERT, year);
+            Map<Integer, List<AdminDashboardDtos.DivertCountByUserRow>> usersByMonth = new HashMap<>();
+            Map<Integer, Long> totalByMonth = new HashMap<>();
+            for (Object[] row : monthlyRows) {
+                Long userId = row[0] != null ? ((Number) row[0]).longValue() : null;
+                String firstName = row[1] != null ? (String) row[1] : "";
+                String lastName = row[2] != null ? (String) row[2] : "";
+                String email = row[3] != null ? (String) row[3] : "";
+                Integer month = row[4] != null ? ((Number) row[4]).intValue() : null;
+                Long count = row[5] != null ? ((Number) row[5]).longValue() : 0L;
+                if (userId == null || month == null || month < 1 || month > 12) {
+                    continue;
+                }
+                AdminDashboardDtos.DivertCountByUserRow r = new AdminDashboardDtos.DivertCountByUserRow();
+                r.userId = userId;
+                r.userName = (firstName + " " + lastName).trim();
+                if (r.userName.isEmpty()) {
+                    r.userName = email;
+                }
+                r.userEmail = email;
+                r.divertCount = count;
+                usersByMonth.computeIfAbsent(month, m -> new ArrayList<>()).add(r);
+                totalByMonth.merge(month, count, Long::sum);
+            }
+            AdminDashboardDtos.DivertCountByUserMonthly monthly = new AdminDashboardDtos.DivertCountByUserMonthly();
+            monthly.year = year;
+            monthly.months = new ArrayList<>();
+            for (int m = 1; m <= 12; m++) {
+                AdminDashboardDtos.DivertCountByUserMonthRow monthRow = new AdminDashboardDtos.DivertCountByUserMonthRow();
+                monthRow.month = m;
+                List<AdminDashboardDtos.DivertCountByUserRow> monthUsers = usersByMonth.get(m);
+                if (monthUsers != null) {
+                    for (int i = 0; i < monthUsers.size(); i++) {
+                        monthUsers.get(i).rank = i + 1;
+                    }
+                    monthRow.users = monthUsers;
+                    monthRow.totalDivertedDeals = totalByMonth.getOrDefault(m, 0L);
+                } else {
+                    monthRow.users = new ArrayList<>();
+                    monthRow.totalDivertedDeals = 0L;
+                }
+                monthly.months.add(monthRow);
+            }
+            response.monthly = monthly;
+        }
+
+        return response;
+    }
+
     private User resolveSalesOwnerFromPipelineOrganization(Deal deal) {
         if (deal == null || deal.getPipeline() == null) {
             return null;
