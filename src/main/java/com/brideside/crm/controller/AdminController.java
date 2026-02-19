@@ -250,5 +250,20 @@ public class AdminController {
                 ApiResponse.success("Deal divert report fetched", data)
         );
     }
+
+    @GetMapping("/dashboard/divert-count-by-user")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Who diverts deals most to least",
+            description = "Returns a ranking of users by the number of deals they have diverted (created as diverted deals), "
+                    + "ordered from most to least. Uses non-deleted deals where isDiverted=true or dealSource=Divert. "
+                    + "Optional query param 'year': when provided, response includes month-wise breakdown for that year.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.DivertCountByUserResponse>> getDivertCountByUser(
+            @RequestParam(value = "year", required = false) Integer year) {
+        AdminDashboardDtos.DivertCountByUserResponse data = adminDashboardService.getDivertCountByUser(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Divert count by user fetched", data)
+        );
+    }
 }
 

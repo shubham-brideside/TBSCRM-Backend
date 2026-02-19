@@ -76,5 +76,12 @@ public interface AdminDashboardService {
      * Returns all-time totals + optional monthly breakdown if year provided.
      */
     AdminDashboardDtos.DealDivertReportResponse getDealDivertReport(Integer year);
+
+    /**
+     * Ranking of users by number of deals they have diverted (most to least).
+     * Uses non-deleted deals where isDiverted=true or dealSource=DIVERT, grouped by createdByUser.
+     * When year is provided, response includes month-wise breakdown for that year.
+     */
+    AdminDashboardDtos.DivertCountByUserResponse getDivertCountByUser(Integer year);
 }
 

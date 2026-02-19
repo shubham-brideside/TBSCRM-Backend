@@ -90,6 +90,33 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "WHERE d.status = :status AND (d.isDeleted = false OR d.isDeleted IS NULL) " +
             "AND (d.isDiverted = true OR d.dealSource = :divertSource)")
     List<Deal> findWonDivertedDealsForReport(@Param("status") DealStatus status, @Param("divertSource") DealSource divertSource);
+
+    /**
+     * Count diverted deals (non-deleted, isDiverted=true or dealSource=DIVERT) grouped by createdByUser,
+     * ordered by count descending (most to least). Returns [userId, firstName, lastName, email, count].
+     * Excludes deals with no createdByUser.
+     */
+    @Query("SELECT d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, COUNT(d) " +
+            "FROM Deal d INNER JOIN d.createdByUser " +
+            "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND (d.isDiverted = true OR d.dealSource = :divertSource) " +
+            "GROUP BY d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email " +
+            "ORDER BY COUNT(d) DESC")
+    List<Object[]> countDivertedDealsByDivertedByUser(@Param("divertSource") DealSource divertSource);
+
+    /**
+     * Count diverted deals by createdByUser and month for a given year (using createdAt).
+     * Returns [userId, firstName, lastName, email, month, count] ordered by month, then count descending.
+     */
+    @Query("SELECT d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, " +
+            "FUNCTION('MONTH', d.createdAt), COUNT(d) " +
+            "FROM Deal d INNER JOIN d.createdByUser " +
+            "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND (d.isDiverted = true OR d.dealSource = :divertSource) " +
+            "AND FUNCTION('YEAR', d.createdAt) = :year " +
+            "GROUP BY d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, FUNCTION('MONTH', d.createdAt) " +
+            "ORDER BY FUNCTION('MONTH', d.createdAt), COUNT(d) DESC")
+    List<Object[]> countDivertedDealsByDivertedByUserMonthly(@Param("divertSource") DealSource divertSource, @Param("year") Integer year);
 }
 
 
