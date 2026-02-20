@@ -280,5 +280,19 @@ public class AdminController {
                 ApiResponse.success("Divert count by user fetched", data)
         );
     }
+
+    @GetMapping("/dashboard/instagram-deals-by-organization")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Instagram deals grouped by organization",
+            description = "Returns all deals with subsource=Instagram grouped by organization. "
+                    + "Returns all-time totals + optional monthly breakdown if year parameter provided.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.InstagramDealsByOrganizationResponse>> getInstagramDealsByOrganization(
+            @RequestParam(value = "year", required = false) Integer year) {
+        AdminDashboardDtos.InstagramDealsByOrganizationResponse data = adminDashboardService.getInstagramDealsByOrganization(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("Instagram deals by organization fetched", data)
+        );
+    }
 }
 

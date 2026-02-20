@@ -493,5 +493,53 @@ public class AdminDashboardDtos {
         public Long totalDeals;
         public BigDecimal totalDealValue;
     }
+
+    /**
+     * Instagram deals report grouped by organization with all-time totals and monthly breakdown.
+     */
+    public static class InstagramDealsByOrganizationResponse {
+        /** All-time totals across all organizations. */
+        public InstagramDealsAllTime allTime;
+        /** Optional monthly breakdown (if year parameter provided). */
+        public InstagramDealsMonthly monthly;
+    }
+
+    public static class InstagramDealsAllTime {
+        public java.util.List<InstagramDealsOrganizationRow> organizations;
+        public Long totalCount;
+        public BigDecimal totalValue;
+        public Long totalWonDeals;
+        public BigDecimal totalWonValue;
+        public Long totalLostDeals;
+        public BigDecimal totalLostValue;
+    }
+
+    public static class InstagramDealsMonthly {
+        public Integer year;
+        public java.util.List<InstagramDealsMonthRow> months;
+    }
+
+    public static class InstagramDealsMonthRow {
+        public Integer month; // 1-12
+        public java.util.List<InstagramDealsOrganizationRow> organizations;
+        public Long totalCount;
+        public BigDecimal totalValue;
+        public Long totalWonDeals;
+        public BigDecimal totalWonValue;
+        public Long totalLostDeals;
+        public BigDecimal totalLostValue;
+    }
+
+    public static class InstagramDealsOrganizationRow {
+        public Long organizationId;
+        public String organizationName;
+        public String organizationCategory;
+        public Long totalDeals;
+        public BigDecimal totalValue;
+        public Long totalWonDeals;
+        public BigDecimal totalWonValue;
+        public Long totalLostDeals;
+        public BigDecimal totalLostValue;
+    }
 }
 
