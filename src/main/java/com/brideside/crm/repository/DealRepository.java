@@ -91,6 +91,18 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "AND (d.isDiverted = true OR d.dealSource = :divertSource)")
     List<Deal> findWonDivertedDealsForReport(@Param("status") DealStatus status, @Param("divertSource") DealSource divertSource);
 
+    /** All diverted deals (any status), non-deleted, with pipeline/refPipeline/refDeal/org/owner loaded. */
+    @Query("SELECT DISTINCT d FROM Deal d " +
+            "LEFT JOIN FETCH d.pipeline " +
+            "LEFT JOIN FETCH d.referencedPipeline " +
+            "LEFT JOIN FETCH d.referencedDeal rd " +
+            "LEFT JOIN FETCH rd.pipeline " +
+            "LEFT JOIN FETCH d.organization o " +
+            "LEFT JOIN FETCH o.owner " +
+            "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND (d.isDiverted = true OR d.dealSource = :divertSource)")
+    List<Deal> findAllDivertedDealsForReport(@Param("divertSource") DealSource divertSource);
+
     /**
      * Count diverted deals (non-deleted, isDiverted=true or dealSource=DIVERT) grouped by createdByUser,
      * ordered by count descending (most to least). Returns [userId, firstName, lastName, email, count].

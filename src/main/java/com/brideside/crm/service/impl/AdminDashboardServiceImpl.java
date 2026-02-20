@@ -1081,6 +1081,74 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         
         return response;
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminDashboardDtos.DealDivertReportResponse getAllDivertedDealsReport(Integer year) {
+        List<Deal> allDeals = dealRepository.findAllDivertedDealsForReport(DealSource.DIVERT);
+
+        // Build all-time totals
+        List<AdminDashboardDtos.DealDivertReportRow> allTimeRows = new ArrayList<>();
+        BigDecimal allTimeTotalValue = BigDecimal.ZERO;
+
+        // Build monthly breakdown if year provided
+        Map<Integer, List<AdminDashboardDtos.DealDivertReportRow>> dealsByMonth = new HashMap<>();
+        Map<Integer, BigDecimal> valueByMonth = new HashMap<>();
+
+        for (Deal deal : allDeals) {
+            AdminDashboardDtos.DealDivertReportRow row = buildDealDivertReportRow(deal);
+            allTimeRows.add(row);
+            allTimeTotalValue = allTimeTotalValue.add(row.dealValue);
+
+            // Group by month if year filter provided
+            if (year != null) {
+                LocalDateTime reference = deal.getWonAt();
+                if (reference == null) {
+                    reference = deal.getCreatedAt() != null ? deal.getCreatedAt() : deal.getUpdatedAt();
+                }
+                if (reference != null && reference.getYear() == year) {
+                    int month = reference.getMonthValue();
+                    dealsByMonth.computeIfAbsent(month, m -> new ArrayList<>()).add(row);
+                    valueByMonth.merge(month, row.dealValue, BigDecimal::add);
+                }
+            }
+        }
+
+        AdminDashboardDtos.DealDivertReportResponse response = new AdminDashboardDtos.DealDivertReportResponse();
+
+        // All-time totals
+        AdminDashboardDtos.DealDivertReportAllTime allTime = new AdminDashboardDtos.DealDivertReportAllTime();
+        allTime.deals = allTimeRows;
+        allTime.totalCount = (long) allTimeRows.size();
+        allTime.totalValue = allTimeTotalValue;
+        response.allTime = allTime;
+
+        // Monthly breakdown (if year provided)
+        if (year != null) {
+            AdminDashboardDtos.DealDivertReportMonthly monthly = new AdminDashboardDtos.DealDivertReportMonthly();
+            monthly.year = year;
+            monthly.months = new ArrayList<>();
+
+            for (int m = 1; m <= 12; m++) {
+                AdminDashboardDtos.DealDivertReportMonthRow monthRow = new AdminDashboardDtos.DealDivertReportMonthRow();
+                monthRow.month = m;
+                List<AdminDashboardDtos.DealDivertReportRow> monthDeals = dealsByMonth.get(m);
+                if (monthDeals != null) {
+                    monthRow.deals = monthDeals;
+                    monthRow.count = (long) monthDeals.size();
+                    monthRow.value = valueByMonth.getOrDefault(m, BigDecimal.ZERO);
+                } else {
+                    monthRow.deals = new ArrayList<>();
+                    monthRow.count = 0L;
+                    monthRow.value = BigDecimal.ZERO;
+                }
+                monthly.months.add(monthRow);
+            }
+            response.monthly = monthly;
+        }
+
+        return response;
+    }
     
     private AdminDashboardDtos.DealDivertReportRow buildDealDivertReportRow(Deal deal) {
         AdminDashboardDtos.DealDivertReportRow row = new AdminDashboardDtos.DealDivertReportRow();

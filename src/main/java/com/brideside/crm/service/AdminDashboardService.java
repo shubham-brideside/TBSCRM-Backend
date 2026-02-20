@@ -78,6 +78,12 @@ public interface AdminDashboardService {
     AdminDashboardDtos.DealDivertReportResponse getDealDivertReport(Integer year);
 
     /**
+     * Deal divert report: all diverted deals (any status) with diverted-from pipeline, diverted-to pipeline, and owner.
+     * Returns all-time totals + optional monthly breakdown if year provided.
+     */
+    AdminDashboardDtos.DealDivertReportResponse getAllDivertedDealsReport(Integer year);
+
+    /**
      * Ranking of users by number of deals they have diverted (most to least).
      * Uses non-deleted deals where isDiverted=true or dealSource=DIVERT, grouped by createdByUser.
      * When year is provided, response includes month-wise breakdown for that year.
