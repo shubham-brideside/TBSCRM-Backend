@@ -251,6 +251,21 @@ public class AdminController {
         );
     }
 
+    @GetMapping("/dashboard/deal-divert-report/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Deal divert report (all diverted deals)",
+            description = "Returns all diverted deals (any status) with details: diverted-from pipeline, diverted-to pipeline, "
+                    + "and owner of the deal (current pipeline's organization owner). "
+                    + "Returns all-time totals + optional monthly breakdown if year parameter provided.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.DealDivertReportResponse>> getAllDivertedDealsReport(
+            @RequestParam(value = "year", required = false) Integer year) {
+        AdminDashboardDtos.DealDivertReportResponse data = adminDashboardService.getAllDivertedDealsReport(year);
+        return ResponseEntity.ok(
+                ApiResponse.success("All diverted deals report fetched", data)
+        );
+    }
+
     @GetMapping("/dashboard/divert-count-by-user")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(
