@@ -5,6 +5,7 @@ import com.brideside.crm.entity.Activity;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealSource;
 import com.brideside.crm.entity.DealStatus;
+import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
@@ -1297,6 +1298,180 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         }
 
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AdminDashboardDtos.InstagramDealsByOrganizationResponse getInstagramDealsByOrganization(Integer year) {
+        List<Deal> allDeals = dealRepository.findByDealSubSource(DealSubSource.INSTAGRAM);
+
+        // Build all-time totals grouped by organization
+        Map<Long, AdminDashboardDtos.InstagramDealsOrganizationRow> orgMap = new HashMap<>();
+        BigDecimal allTimeTotalValue = BigDecimal.ZERO;
+        long allTimeTotalCount = 0L;
+        BigDecimal allTimeTotalWonValue = BigDecimal.ZERO;
+        long allTimeTotalWonCount = 0L;
+        BigDecimal allTimeTotalLostValue = BigDecimal.ZERO;
+        long allTimeTotalLostCount = 0L;
+
+        // Build monthly breakdown if year provided
+        // month -> (orgId -> aggregate)
+        Map<Integer, Map<Long, OrgMonthlyAggregate>> monthlyAggregates = new HashMap<>();
+
+        for (Deal deal : allDeals) {
+            Organization org = deal.getOrganization();
+            if (org == null || org.getId() == null) {
+                continue; // Skip deals without organization
+            }
+
+            Long orgId = org.getId();
+            BigDecimal dealValue = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+            boolean isWon = deal.getStatus() == DealStatus.WON;
+            boolean isLost = deal.getStatus() == DealStatus.LOST;
+
+            // All-time aggregation
+            AdminDashboardDtos.InstagramDealsOrganizationRow orgRow = orgMap.computeIfAbsent(orgId, id -> {
+                AdminDashboardDtos.InstagramDealsOrganizationRow row = new AdminDashboardDtos.InstagramDealsOrganizationRow();
+                row.organizationId = orgId;
+                row.organizationName = org.getName();
+                row.organizationCategory = org.getCategory() != null ? org.getCategory().getDbValue() : null;
+                row.totalDeals = 0L;
+                row.totalValue = BigDecimal.ZERO;
+                row.totalWonDeals = 0L;
+                row.totalWonValue = BigDecimal.ZERO;
+                row.totalLostDeals = 0L;
+                row.totalLostValue = BigDecimal.ZERO;
+                return row;
+            });
+            orgRow.totalDeals = orgRow.totalDeals + 1;
+            orgRow.totalValue = orgRow.totalValue.add(dealValue);
+            allTimeTotalCount++;
+            allTimeTotalValue = allTimeTotalValue.add(dealValue);
+
+            if (isWon) {
+                orgRow.totalWonDeals = orgRow.totalWonDeals + 1;
+                orgRow.totalWonValue = orgRow.totalWonValue.add(dealValue);
+                allTimeTotalWonCount++;
+                allTimeTotalWonValue = allTimeTotalWonValue.add(dealValue);
+            }
+            if (isLost) {
+                orgRow.totalLostDeals = orgRow.totalLostDeals + 1;
+                orgRow.totalLostValue = orgRow.totalLostValue.add(dealValue);
+                allTimeTotalLostCount++;
+                allTimeTotalLostValue = allTimeTotalLostValue.add(dealValue);
+            }
+
+            // Monthly aggregation if year provided
+            if (year != null) {
+                LocalDateTime reference = deal.getCreatedAt() != null ? deal.getCreatedAt() : deal.getUpdatedAt();
+                if (reference != null && reference.getYear() == year) {
+                    int month = reference.getMonthValue();
+                    Map<Long, OrgMonthlyAggregate> monthOrgs = monthlyAggregates.computeIfAbsent(month, m -> new HashMap<>());
+                    OrgMonthlyAggregate monthAgg = monthOrgs.computeIfAbsent(orgId, id -> {
+                        OrgMonthlyAggregate agg = new OrgMonthlyAggregate();
+                        agg.orgId = orgId;
+                        agg.orgName = org.getName();
+                        agg.orgCategory = org.getCategory() != null ? org.getCategory().getDbValue() : null;
+                        return agg;
+                    });
+                    monthAgg.totalDeals = monthAgg.totalDeals + 1;
+                    monthAgg.totalValue = monthAgg.totalValue.add(dealValue);
+                    if (isWon) {
+                        monthAgg.totalWonDeals = monthAgg.totalWonDeals + 1;
+                        monthAgg.totalWonValue = monthAgg.totalWonValue.add(dealValue);
+                    }
+                    if (isLost) {
+                        monthAgg.totalLostDeals = monthAgg.totalLostDeals + 1;
+                        monthAgg.totalLostValue = monthAgg.totalLostValue.add(dealValue);
+                    }
+                }
+            }
+        }
+
+        AdminDashboardDtos.InstagramDealsByOrganizationResponse response = new AdminDashboardDtos.InstagramDealsByOrganizationResponse();
+
+        // All-time totals
+        AdminDashboardDtos.InstagramDealsAllTime allTime = new AdminDashboardDtos.InstagramDealsAllTime();
+        allTime.organizations = new ArrayList<>(orgMap.values());
+        allTime.totalCount = allTimeTotalCount;
+        allTime.totalValue = allTimeTotalValue;
+        allTime.totalWonDeals = allTimeTotalWonCount;
+        allTime.totalWonValue = allTimeTotalWonValue;
+        allTime.totalLostDeals = allTimeTotalLostCount;
+        allTime.totalLostValue = allTimeTotalLostValue;
+        response.allTime = allTime;
+
+        // Monthly breakdown (if year provided)
+        if (year != null) {
+            AdminDashboardDtos.InstagramDealsMonthly monthly = new AdminDashboardDtos.InstagramDealsMonthly();
+            monthly.year = year;
+            monthly.months = new ArrayList<>();
+
+            for (int m = 1; m <= 12; m++) {
+                AdminDashboardDtos.InstagramDealsMonthRow monthRow = new AdminDashboardDtos.InstagramDealsMonthRow();
+                monthRow.month = m;
+                Map<Long, OrgMonthlyAggregate> monthOrgs = monthlyAggregates.get(m);
+                if (monthOrgs != null && !monthOrgs.isEmpty()) {
+                    List<AdminDashboardDtos.InstagramDealsOrganizationRow> orgRows = new ArrayList<>();
+                    BigDecimal monthTotalValue = BigDecimal.ZERO;
+                    long monthTotalCount = 0L;
+                    BigDecimal monthTotalWonValue = BigDecimal.ZERO;
+                    long monthTotalWonCount = 0L;
+                    BigDecimal monthTotalLostValue = BigDecimal.ZERO;
+                    long monthTotalLostCount = 0L;
+                    for (OrgMonthlyAggregate agg : monthOrgs.values()) {
+                        AdminDashboardDtos.InstagramDealsOrganizationRow orgRow = new AdminDashboardDtos.InstagramDealsOrganizationRow();
+                        orgRow.organizationId = agg.orgId;
+                        orgRow.organizationName = agg.orgName;
+                        orgRow.organizationCategory = agg.orgCategory;
+                        orgRow.totalDeals = agg.totalDeals;
+                        orgRow.totalValue = agg.totalValue;
+                        orgRow.totalWonDeals = agg.totalWonDeals;
+                        orgRow.totalWonValue = agg.totalWonValue;
+                        orgRow.totalLostDeals = agg.totalLostDeals;
+                        orgRow.totalLostValue = agg.totalLostValue;
+                        orgRows.add(orgRow);
+                        monthTotalCount += agg.totalDeals;
+                        monthTotalValue = monthTotalValue.add(agg.totalValue);
+                        monthTotalWonCount += agg.totalWonDeals;
+                        monthTotalWonValue = monthTotalWonValue.add(agg.totalWonValue);
+                        monthTotalLostCount += agg.totalLostDeals;
+                        monthTotalLostValue = monthTotalLostValue.add(agg.totalLostValue);
+                    }
+                    monthRow.organizations = orgRows;
+                    monthRow.totalCount = monthTotalCount;
+                    monthRow.totalValue = monthTotalValue;
+                    monthRow.totalWonDeals = monthTotalWonCount;
+                    monthRow.totalWonValue = monthTotalWonValue;
+                    monthRow.totalLostDeals = monthTotalLostCount;
+                    monthRow.totalLostValue = monthTotalLostValue;
+                } else {
+                    monthRow.organizations = new ArrayList<>();
+                    monthRow.totalCount = 0L;
+                    monthRow.totalValue = BigDecimal.ZERO;
+                    monthRow.totalWonDeals = 0L;
+                    monthRow.totalWonValue = BigDecimal.ZERO;
+                    monthRow.totalLostDeals = 0L;
+                    monthRow.totalLostValue = BigDecimal.ZERO;
+                }
+                monthly.months.add(monthRow);
+            }
+            response.monthly = monthly;
+        }
+
+        return response;
+    }
+
+    private static class OrgMonthlyAggregate {
+        Long orgId;
+        String orgName;
+        String orgCategory;
+        Long totalDeals = 0L;
+        BigDecimal totalValue = BigDecimal.ZERO;
+        Long totalWonDeals = 0L;
+        BigDecimal totalWonValue = BigDecimal.ZERO;
+        Long totalLostDeals = 0L;
+        BigDecimal totalLostValue = BigDecimal.ZERO;
     }
 
     private User resolveSalesOwnerFromPipelineOrganization(Deal deal) {

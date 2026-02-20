@@ -2,6 +2,7 @@ package com.brideside.crm.repository;
 
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealSource;
+import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.entity.DealStatus;
@@ -129,6 +130,13 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "GROUP BY d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, FUNCTION('MONTH', d.createdAt) " +
             "ORDER BY FUNCTION('MONTH', d.createdAt), COUNT(d) DESC")
     List<Object[]> countDivertedDealsByDivertedByUserMonthly(@Param("divertSource") DealSource divertSource, @Param("year") Integer year);
+
+    /** All non-deleted deals with specific subsource, with organization loaded. */
+    @Query("SELECT DISTINCT d FROM Deal d " +
+            "LEFT JOIN FETCH d.organization o " +
+            "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND d.dealSubSource = :subSource")
+    List<Deal> findByDealSubSource(@Param("subSource") DealSubSource subSource);
 }
 
 

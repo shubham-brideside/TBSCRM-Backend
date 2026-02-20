@@ -89,5 +89,11 @@ public interface AdminDashboardService {
      * When year is provided, response includes month-wise breakdown for that year.
      */
     AdminDashboardDtos.DivertCountByUserResponse getDivertCountByUser(Integer year);
+
+    /**
+     * Instagram deals report grouped by organization.
+     * Returns all-time totals + optional monthly breakdown if year provided.
+     */
+    AdminDashboardDtos.InstagramDealsByOrganizationResponse getInstagramDealsByOrganization(Integer year);
 }
 
