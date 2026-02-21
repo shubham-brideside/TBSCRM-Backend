@@ -342,6 +342,12 @@ public class DealController {
         int days = dealStageHistoryService.getDaysInCurrentStage(dealId);
         return ResponseEntity.ok(days);
     }
+
+    @GetMapping("/average-deal-timeline")
+    @Operation(summary = "Get average deal timeline per month", description = "Returns the average time (in days) deals spend in each stage, grouped by month and stage name. Each month is the year-month when deals exited that stage (yyyy-MM). Only completed stage visits are included.")
+    public ResponseEntity<DealDtos.AverageDealTimelinePerMonthResponse> getAverageDealTimeline() {
+        return ResponseEntity.ok(dealStageHistoryService.getAverageDealTimelinePerMonth());
+    }
     
     /**
      * Parses eventDates JSON string to a list of date strings.
