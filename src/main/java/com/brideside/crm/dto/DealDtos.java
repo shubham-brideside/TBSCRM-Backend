@@ -196,6 +196,50 @@ public class DealDtos {
     }
 
     /**
+     * Average time (in days) deals spend in each stage, grouped by stage name.
+     */
+    public static class AverageDealTimelineItem {
+        public String stageName;
+        public Double avgDaysInStage;
+        public Long visitCount;
+
+        public AverageDealTimelineItem(String stageName, Double avgDaysInStage, Long visitCount) {
+            this.stageName = stageName;
+            this.avgDaysInStage = avgDaysInStage;
+            this.visitCount = visitCount;
+        }
+    }
+
+    public static class AverageDealTimelineResponse {
+        public List<AverageDealTimelineItem> byStageName;
+
+        public AverageDealTimelineResponse(List<AverageDealTimelineItem> byStageName) {
+            this.byStageName = byStageName;
+        }
+    }
+
+    /**
+     * Average deal timeline for one month (year-month when deals exited the stage).
+     */
+    public static class AverageDealTimelinePerMonth {
+        public String month;
+        public List<AverageDealTimelineItem> byStageName;
+
+        public AverageDealTimelinePerMonth(String month, List<AverageDealTimelineItem> byStageName) {
+            this.month = month;
+            this.byStageName = byStageName;
+        }
+    }
+
+    public static class AverageDealTimelinePerMonthResponse {
+        public List<AverageDealTimelinePerMonth> byMonth;
+
+        public AverageDealTimelinePerMonthResponse(List<AverageDealTimelinePerMonth> byMonth) {
+            this.byMonth = byMonth;
+        }
+    }
+
+    /**
      * Revenue calculation response
      */
     public static class RevenueResponse {

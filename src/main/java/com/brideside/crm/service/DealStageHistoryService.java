@@ -1,5 +1,6 @@
 package com.brideside.crm.service;
 
+import com.brideside.crm.dto.DealDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStageHistory;
 import com.brideside.crm.entity.Stage;
@@ -11,10 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 @Service
 @RequiredArgsConstructor
@@ -140,6 +143,46 @@ public class DealStageHistoryService {
         }
 
         return durations;
+    }
+
+    /**
+     * Get average deal timeline: average days a deal spends in each stage (by stage name).
+     * Uses only completed stage visits (deals that have left the stage).
+     */
+    public DealDtos.AverageDealTimelineResponse getAverageDealTimeline() {
+        List<Object[]> rows = historyRepository.findAverageDaysPerStageName();
+        List<DealDtos.AverageDealTimelineItem> items = new ArrayList<>();
+        for (Object[] row : rows) {
+            String stageName = (String) row[0];
+            Number avgNum = (Number) row[1];
+            Double avgDays = avgNum != null ? avgNum.doubleValue() : null;
+            Long visitCount = row[2] instanceof Number ? ((Number) row[2]).longValue() : 0L;
+            items.add(new DealDtos.AverageDealTimelineItem(stageName, avgDays, visitCount));
+        }
+        return new DealDtos.AverageDealTimelineResponse(items);
+    }
+
+    /**
+     * Get average deal timeline per month: for each month (yyyy-MM), average days in each stage (by stage name).
+     * Month is the year-month when the deal exited the stage.
+     */
+    public DealDtos.AverageDealTimelinePerMonthResponse getAverageDealTimelinePerMonth() {
+        List<Object[]> rows = historyRepository.findAverageDaysPerStageNamePerMonth();
+        Map<String, List<DealDtos.AverageDealTimelineItem>> byMonth = new TreeMap<>();
+        for (Object[] row : rows) {
+            String month = (String) row[0];
+            String stageName = (String) row[1];
+            Number avgNum = (Number) row[2];
+            Double avgDays = avgNum != null ? avgNum.doubleValue() : null;
+            Long visitCount = row[3] instanceof Number ? ((Number) row[3]).longValue() : 0L;
+            byMonth.computeIfAbsent(month, k -> new ArrayList<>())
+                .add(new DealDtos.AverageDealTimelineItem(stageName, avgDays, visitCount));
+        }
+        List<DealDtos.AverageDealTimelinePerMonth> result = new ArrayList<>();
+        for (Map.Entry<String, List<DealDtos.AverageDealTimelineItem>> e : byMonth.entrySet()) {
+            result.add(new DealDtos.AverageDealTimelinePerMonth(e.getKey(), e.getValue()));
+        }
+        return new DealDtos.AverageDealTimelinePerMonthResponse(result);
     }
 }
 
