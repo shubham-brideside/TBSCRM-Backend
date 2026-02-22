@@ -72,6 +72,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/create-admin").permitAll()
                         .requestMatchers("/api/admin/activate-admin").permitAll()
                         .requestMatchers("/api/admin/test-email").permitAll() // Added for email testing
+                        .requestMatchers("/api/admin/reports/daily/test-send").permitAll() // Added for daily report testing
                         .requestMatchers("/api/persons/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/api/activities/**").permitAll() // Temporarily open for testing
                         .requestMatchers("/api/custom-filters/**").permitAll() // Temporarily open for testing

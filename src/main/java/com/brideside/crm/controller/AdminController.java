@@ -7,6 +7,7 @@ import com.brideside.crm.dto.UserResponse;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.service.AdminDashboardService;
 import com.brideside.crm.service.AuthService;
+import com.brideside.crm.service.DailyOpsReportService;
 import com.brideside.crm.service.EmailService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,6 +34,9 @@ public class AdminController {
 
     @Autowired
     private EmailService emailService;
+
+    @Autowired
+    private DailyOpsReportService dailyOpsReportService;
 
     @PostMapping("/create-admin")
     @Operation(summary = "Create first admin user", description = "Create the first admin user. This endpoint is only accessible before any admin exists.")
@@ -63,6 +67,28 @@ public class AdminController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Failed to send test email: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/reports/daily/test-send")
+    @Operation(
+            summary = "Send daily ops report (test)",
+            description = "Sends the daily ops report email for the previous day to the provided email. Intended for testing.")
+    public ResponseEntity<ApiResponse<String>> testSendDailyOpsReport(
+            @RequestParam String toEmail,
+            @RequestParam(value = "reportDate", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate
+    ) {
+        try {
+            if (reportDate == null) {
+                dailyOpsReportService.sendDailyReportTo(toEmail);
+            } else {
+                dailyOpsReportService.sendDailyReportTo(toEmail, reportDate);
+            }
+            return ResponseEntity.ok(ApiResponse.success("Daily report email sent successfully to: " + toEmail));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Failed to send daily report email: " + e.getMessage()));
         }
     }
 

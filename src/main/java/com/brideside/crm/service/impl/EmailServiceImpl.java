@@ -59,6 +59,32 @@ public class EmailServiceImpl implements EmailService {
         sendEmail(toEmail, subject, message, true);
     }
 
+    @Override
+    public void sendHtmlEmail(String toEmail, String subject, String html, String plainTextFallback) {
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+            helper.setFrom(fromEmail, fromName);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+
+            String plain = plainTextFallback != null ? plainTextFallback : "";
+            String safeHtml = html != null ? html : "";
+            helper.setText(plain, safeHtml);
+
+            mailSender.send(mimeMessage);
+            logger.info("HTML email sent successfully to: {}", toEmail);
+        } catch (MessagingException e) {
+            String errorMessage = "Failed to send email to: " + toEmail;
+            logger.error(errorMessage, e);
+            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Failed to send email to: {}", toEmail, e);
+            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+        }
+    }
+
     private void sendEmail(String toEmail, String subject, String text, boolean throwOnError) {
         try {
             MimeMessage mimeMessage = mailSender.createMimeMessage();

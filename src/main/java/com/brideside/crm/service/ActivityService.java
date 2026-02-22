@@ -31,6 +31,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Instant;
+
 @Service
 @Transactional(readOnly = true)
 @Slf4j
@@ -113,6 +115,7 @@ public class ActivityService {
     public ActivityDTO markDone(Long id, boolean done, Integer durationMinutes) {
         Activity e = repository.findById(id).orElseThrow(() -> new IllegalArgumentException("Activity not found: " + id));
         e.setDone(done);
+        e.setCompletedAt(done ? Instant.now() : null);
         
         // Save duration only if:
         // 1. Marking as done (done = true)

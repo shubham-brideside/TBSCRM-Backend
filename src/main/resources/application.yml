@@ -70,6 +70,15 @@ app:
   email:
     from: ${MAIL_FROM:shubham@acceltancy.in}
     from-name: ${MAIL_FROM_NAME:Brideside CRM}
+  reports:
+    timezone: ${REPORT_TZ:Asia/Kolkata}
+    daily:
+      enabled: ${DAILY_REPORT_ENABLED:false}
+      # Cron format: second minute hour day-of-month month day-of-week
+      # Example 9:00 AM daily: "0 0 9 * * *"
+      cron: ${DAILY_REPORT_CRON:0 0 9 * * *}
+      # Comma-separated list of recipients for scheduled sends
+      recipients: ${DAILY_REPORT_RECIPIENTS:}
 
 springdoc:
   api-docs:

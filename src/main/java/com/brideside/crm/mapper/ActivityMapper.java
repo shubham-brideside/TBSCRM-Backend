@@ -48,6 +48,7 @@ public class ActivityMapper {
         d.setDateTime(e.getDateTime());
         d.setServiceCategory(e.getServiceCategory());
         d.setDurationMinutes(e.getDurationMinutes());
+        d.setCompletedAt(e.getCompletedAt());
         d.setAttachmentUrl(e.getAttachmentUrl());
         return d;
     }

@@ -35,6 +35,7 @@ import jakarta.validation.constraints.NotBlank;
         "phone",
         "status",
         "done",
+        "completedAt",
         "serviceCategory",
         "durationMinutes",
         "attachmentUrl"
@@ -120,6 +121,11 @@ public class ActivityDTO {
             defaultValue = "false", type = "boolean", accessMode = Schema.AccessMode.READ_ONLY)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Boolean done = false;
+
+    @Schema(description = "When the activity was marked completed (set by POST /api/activities/{id}/done). Null when not done.",
+            type = "string", format = "date-time", accessMode = Schema.AccessMode.READ_ONLY)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private java.time.Instant completedAt;
     
     @Schema(description = "Service category (PHOTOGRAPHY, MAKEUP, PLANNING_DECOR). Optional/future", allowableValues = {"PHOTOGRAPHY", "MAKEUP", "PLANNING_DECOR"})
     private String serviceCategory;
@@ -217,6 +223,9 @@ public class ActivityDTO {
     
     public Boolean getDone() { return done; }
     public void setDone(Boolean done) { this.done = done; }
+
+    public java.time.Instant getCompletedAt() { return completedAt; }
+    public void setCompletedAt(java.time.Instant completedAt) { this.completedAt = completedAt; }
     
     public String getServiceCategory() { return serviceCategory; }
     public void setServiceCategory(String serviceCategory) { this.serviceCategory = serviceCategory; }

@@ -117,6 +117,10 @@ public class Activity {
     // Duration in minutes (for Call tab)
     private Integer durationMinutes;
 
+    // When the activity was marked completed (set via /api/activities/{id}/done)
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
     // Attachment URL (for Call tab - future file upload support)
     private String attachmentUrl;
 
@@ -191,6 +195,8 @@ public class Activity {
     public void setServiceCategory(String serviceCategory) { this.serviceCategory = serviceCategory; }
     public Integer getDurationMinutes() { return durationMinutes; }
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
+    public Instant getCompletedAt() { return completedAt; }
+    public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
     public String getAttachmentUrl() { return attachmentUrl; }
     public void setAttachmentUrl(String attachmentUrl) { this.attachmentUrl = attachmentUrl; }
     public Long getOrganizationId() { return organizationId; }
