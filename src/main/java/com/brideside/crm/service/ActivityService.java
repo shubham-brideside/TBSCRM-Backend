@@ -1145,7 +1145,18 @@ public class ActivityService {
      */
     private Specification<Activity> withDealFetch() {
         return (root, query, cb) -> {
-            root.fetch("dealRef", JoinType.LEFT);
+            // Fetch deal + person to allow ActivityDTO.phone to be derived from Person.phone without N+1.
+            var dealFetch = root.fetch("dealRef", JoinType.LEFT);
+            try {
+                dealFetch.fetch("person", JoinType.LEFT);
+            } catch (Exception ignored) {
+                // If mapping changes, still keep deal fetch.
+            }
+            // Also fetch direct personRef when activity has person_id but no deal_id.
+            try {
+                root.fetch("personRef", JoinType.LEFT);
+            } catch (Exception ignored) {
+            }
             return cb.conjunction(); // Always true, just using this to add the fetch
         };
     }

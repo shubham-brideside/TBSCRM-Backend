@@ -41,7 +41,14 @@ public class ActivityMapper {
             d.setDealName(e.getDealName());
         }
         d.setInstagramId(e.getInstagramId());
-        d.setPhone(e.getPhone());
+        // Always expose phone from Person (source of truth)
+        String personPhone = null;
+        if (e.getPersonRef() != null && e.getPersonRef().getPhone() != null) {
+            personPhone = e.getPersonRef().getPhone();
+        } else if (e.getDealRef() != null && e.getDealRef().getPerson() != null && e.getDealRef().getPerson().getPhone() != null) {
+            personPhone = e.getDealRef().getPerson().getPhone();
+        }
+        d.setPhone(personPhone);
         d.setDueDate(e.getDueDate());
         d.setStatus(e.getStatus());
         d.setDealId(e.getDealId());
@@ -74,7 +81,7 @@ public class ActivityMapper {
         if (d.getCategory() != null) e.setCategory(d.getCategory());
         if (d.getDealName() != null) e.setDealName(d.getDealName());
         if (d.getInstagramId() != null) e.setInstagramId(d.getInstagramId());
-        if (d.getPhone() != null) e.setPhone(d.getPhone());
+        // phone is derived from Person; ignore request payload
         if (d.getDueDate() != null) e.setDueDate(d.getDueDate());
         if (d.getStatus() != null) e.setStatus(d.getStatus());
         if (d.getDealId() != null) e.setDealId(d.getDealId());
@@ -104,7 +111,7 @@ public class ActivityMapper {
         if (d.getCategory() != null) e.setCategory(d.getCategory());
         if (d.getDealName() != null) e.setDealName(d.getDealName());
         if (d.getInstagramId() != null) e.setInstagramId(d.getInstagramId());
-        if (d.getPhone() != null) e.setPhone(d.getPhone());
+        // phone is derived from Person; ignore request payload
         if (d.getDueDate() != null) e.setDueDate(d.getDueDate());
         if (d.getStatus() != null) e.setStatus(d.getStatus());
         if (d.getDealId() != null) e.setDealId(d.getDealId());

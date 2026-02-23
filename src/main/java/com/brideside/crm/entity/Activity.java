@@ -75,7 +75,12 @@ public class Activity {
     private String notes;
 
     // Temporarily optional while person module integration is finalized
+    @Column(name = "person_id")
     private Long personId; // Person this activity belongs to
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "person_id", insertable = false, updatable = false)
+    private Person personRef;
 
     private String organization; // redundant for quick filtering in list view
     private boolean done = false;
@@ -165,6 +170,8 @@ public class Activity {
     public void setNotes(String notes) { this.notes = notes; }
     public Long getPersonId() { return personId; }
     public void setPersonId(Long personId) { this.personId = personId; }
+    public Person getPersonRef() { return personRef; }
+    public void setPersonRef(Person personRef) { this.personRef = personRef; }
     public String getOrganization() { return organization; }
     public void setOrganization(String organization) { this.organization = organization; }
     public boolean isDone() { return done; }
