@@ -3,8 +3,8 @@ package com.brideside.crm.service;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -49,8 +49,10 @@ public class DailyOpsReportService {
         Objects.requireNonNull(toEmail, "toEmail");
         Objects.requireNonNull(reportDate, "reportDate");
 
-        Timestamp start = Timestamp.valueOf(reportDate.atStartOfDay());
-        Timestamp end = Timestamp.valueOf(reportDate.plusDays(1).atStartOfDay());
+        // IMPORTANT: use LocalDateTime for MySQL DATETIME comparisons to avoid timezone shifts
+        // (DATETIME has no timezone; binding Timestamp can introduce conversion depending on JVM/driver timezone).
+        LocalDateTime start = reportDate.atStartOfDay();
+        LocalDateTime end = reportDate.plusDays(1).atStartOfDay();
 
         String subject = "Brideside CRM - Daily Ops Report (" + reportDate + ")";
         String plain = buildPlainText(reportDate, start, end);
@@ -58,7 +60,7 @@ public class DailyOpsReportService {
         emailService.sendHtmlEmail(toEmail, subject, html, plain);
     }
 
-    private String buildPlainText(LocalDate reportDate, Timestamp start, Timestamp end) {
+    private String buildPlainText(LocalDate reportDate, LocalDateTime start, LocalDateTime end) {
         StringBuilder sb = new StringBuilder();
         sb.append("Hi\n\n");
         sb.append("Daily report for: ").append(reportDate).append("\n");
@@ -91,7 +93,7 @@ public class DailyOpsReportService {
         return sb.toString();
     }
 
-    private String buildHtml(LocalDate reportDate, Timestamp start, Timestamp end) {
+    private String buildHtml(LocalDate reportDate, LocalDateTime start, LocalDateTime end) {
         List<Map<String, Object>> newDeals = queryNewDealsPerOrg(start, end);
         List<Map<String, Object>> botVsManual = queryBotVsManualPresalesPerOrg(start, end);
         List<Map<String, Object>> wonLost = queryWonLostPerOrg(start, end);
@@ -163,7 +165,7 @@ public class DailyOpsReportService {
         return wrapHtml(reportDate, start, end, content);
     }
 
-    private List<Map<String, Object>> queryNewDealsPerOrg(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryNewDealsPerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT *
                 FROM (
@@ -195,7 +197,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end, start, end);
     }
 
-    private long queryTotalNewDeals(Timestamp start, Timestamp end) {
+    private long queryTotalNewDeals(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT COUNT(*) AS total
                 FROM deals d
@@ -208,7 +210,7 @@ public class DailyOpsReportService {
         return Long.parseLong(String.valueOf(v));
     }
 
-    private List<Map<String, Object>> queryBotVsManualPresalesPerOrg(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryBotVsManualPresalesPerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
                   o.id AS organization_id,
@@ -235,7 +237,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end);
     }
 
-    private List<Map<String, Object>> queryWonLostPerOrg(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryWonLostPerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
                   o.id AS organization_id,
@@ -256,7 +258,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end, start, end, start, end, start, end);
     }
 
-    private List<Map<String, Object>> queryCallsPerRep(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryCallsPerRep(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
                   u.id AS user_id,
@@ -277,7 +279,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end);
     }
 
-    private List<Map<String, Object>> queryCityDistribution(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryCityDistribution(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
                   COALESCE(NULLIF(TRIM(d.city), ''), '(unknown)') AS city,
@@ -291,7 +293,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end);
     }
 
-    private List<Map<String, Object>> queryMovedQualifiedToContactMadePerOrg(Timestamp start, Timestamp end) {
+    private List<Map<String, Object>> queryMovedQualifiedToContactMadePerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 WITH hist AS (
                   SELECT
@@ -325,7 +327,7 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end);
     }
 
-    private List<Map<String, Object>> queryQualifiedRotting2to3DaysPerOrg(Timestamp asOf) {
+    private List<Map<String, Object>> queryQualifiedRotting2to3DaysPerOrg(LocalDateTime asOf) {
         String sql = """
                 SELECT
                   o.id AS organization_id,
@@ -368,7 +370,7 @@ public class DailyOpsReportService {
         return sum;
     }
 
-    private String wrapHtml(LocalDate reportDate, Timestamp start, Timestamp end, String inner) {
+    private String wrapHtml(LocalDate reportDate, LocalDateTime start, LocalDateTime end, String inner) {
         String title = "Brideside CRM - Daily Ops Report";
         String preheader = "Daily ops summary for " + reportDate.format(PRETTY_DATE);
         return "<!doctype html>"
@@ -391,7 +393,7 @@ public class DailyOpsReportService {
                 + "</body></html>";
     }
 
-    private String header(LocalDate reportDate, Timestamp start, Timestamp end) {
+    private String header(LocalDate reportDate, LocalDateTime start, LocalDateTime end) {
         String dateLabel = reportDate.format(PRETTY_DATE);
         return ""
                 + "<tr><td style=\"background:linear-gradient(135deg,#0b1220,#111827);border-radius:18px;padding:22px 22px 18px 22px;\">"
