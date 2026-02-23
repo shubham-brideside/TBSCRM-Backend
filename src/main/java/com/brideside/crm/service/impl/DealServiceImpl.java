@@ -2195,10 +2195,10 @@ public class DealServiceImpl implements DealService {
                 return;
             }
             
-            // 5. Calculate tomorrow's date in DD/MM/YYYY format
-            LocalDate tomorrow = LocalDate.now().plusDays(1);
+            // 5. Calculate today's date in DD/MM/YYYY format
+            LocalDate today = LocalDate.now();
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-            String tomorrowStr = tomorrow.format(formatter);
+            String todayStr = today.format(formatter);
             
             // 6. Create "Make first call" activity
             if (!hasMakeFirstCall) {
@@ -2212,7 +2212,7 @@ public class DealServiceImpl implements DealService {
                 makeFirstCall.setOrganization(organizationName);
                 makeFirstCall.setAssignedUser(assignedUserName);
                 makeFirstCall.setAssignedUserId(assignedUserId);
-                makeFirstCall.setDate(tomorrowStr);
+                makeFirstCall.setDate(todayStr);
                 makeFirstCall.setDone(false);
                 makeFirstCall.setDealName(freshDeal.getName());
                 if (person != null) {
@@ -2253,7 +2253,7 @@ public class DealServiceImpl implements DealService {
                 sendQuotes.setOrganization(organizationName);
                 sendQuotes.setAssignedUser(assignedUserName);
                 sendQuotes.setAssignedUserId(assignedUserId);
-                sendQuotes.setDate(tomorrowStr);
+                sendQuotes.setDate(todayStr);
                 sendQuotes.setDone(false);
                 sendQuotes.setDealName(freshDeal.getName());
                 if (person != null) {
