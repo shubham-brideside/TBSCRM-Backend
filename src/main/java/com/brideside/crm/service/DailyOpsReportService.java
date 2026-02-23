@@ -69,9 +69,13 @@ public class DailyOpsReportService {
         sb.append("1) Total number of new deals created per account\n");
         sb.append(formatOrgTable(queryNewDealsPerOrg(start, end), "new_deals")).append("\n\n");
 
-        sb.append("2) Deals created by BOT vs manual by PreSales (per account)\n");
-        sb.append(formatOrgMultiTable(queryBotVsManualPresalesPerOrg(start, end),
-                List.of("bot_deals", "manual_presales_deals"))).append("\n\n");
+        sb.append("2) Deals created by BOT vs manual (per account)\n");
+        sb.append(formatOrgMultiTable(queryBotVsManualPerOrg(start, end),
+                List.of("bot_deals", "manual_deals"))).append("\n\n");
+
+        sb.append("3) Deals created by user (created_by_name)\n");
+        sb.append(formatTable(List.of("created_by_name", "deals_created"), queryDealsCreatedByName(start, end)))
+                .append("\n\n");
 
         sb.append("3) Deals WON / LOST (per account)\n");
         sb.append(formatOrgMultiTable(queryWonLostPerOrg(start, end),
@@ -95,7 +99,8 @@ public class DailyOpsReportService {
 
     private String buildHtml(LocalDate reportDate, LocalDateTime start, LocalDateTime end) {
         List<Map<String, Object>> newDeals = queryNewDealsPerOrg(start, end);
-        List<Map<String, Object>> botVsManual = queryBotVsManualPresalesPerOrg(start, end);
+        List<Map<String, Object>> botVsManual = queryBotVsManualPerOrg(start, end);
+        List<Map<String, Object>> creators = queryDealsCreatedByName(start, end);
         List<Map<String, Object>> wonLost = queryWonLostPerOrg(start, end);
         List<Map<String, Object>> calls = queryCallsPerRep(start, end);
         List<Map<String, Object>> cities = queryCityDistribution(start, end);
@@ -104,14 +109,14 @@ public class DailyOpsReportService {
 
         long totalNewDeals = queryTotalNewDeals(start, end);
         long totalBotDeals = sumLong(botVsManual, "bot_deals");
-        long totalManualPresales = sumLong(botVsManual, "manual_presales_deals");
+        long totalManual = sumLong(botVsManual, "manual_deals");
         long totalWon = sumLong(wonLost, "won_count");
         long totalLost = sumLong(wonLost, "lost_count");
         long totalCalls = sumLong(calls, "calls_done");
         long totalCallMinutes = sumLong(calls, "total_call_minutes");
 
         String content = ""
-                + sectionKpis(totalNewDeals, totalBotDeals, totalManualPresales, totalWon, totalLost, totalCalls, totalCallMinutes)
+                + sectionKpis(totalNewDeals, totalBotDeals, totalManual, totalWon, totalLost, totalCalls, totalCallMinutes)
                 + section("1) New deals created per account",
                 "Total: " + fmt(totalNewDeals),
                 htmlTable(newDeals,
@@ -119,12 +124,19 @@ public class DailyOpsReportService {
                         List.of("new_deals"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("2) BOT vs manual (PreSales) per account",
-                "BOT: " + fmt(totalBotDeals) + " • Manual (PreSales): " + fmt(totalManualPresales),
+                + section("2) BOT vs manual per account",
+                "BOT: " + fmt(totalBotDeals) + " • Manual: " + fmt(totalManual),
                 htmlTable(botVsManual,
-                        List.of("organization_id", "organization_name", "bot_deals", "manual_presales_deals"),
-                        List.of("bot_deals", "manual_presales_deals"),
+                        List.of("organization_id", "organization_name", "bot_deals", "manual_deals"),
+                        List.of("bot_deals", "manual_deals"),
                         hideZeroRows,
+                        maxRowsPerTable))
+                + section("3) Deals created by user (created_by_name)",
+                "Counts by created_by_name (previous day only)",
+                htmlTable(creators,
+                        List.of("created_by_name", "deals_created"),
+                        List.of("deals_created"),
+                        true,
                         maxRowsPerTable))
                 + section("3) Deals WON / LOST per account",
                 "Won: " + fmt(totalWon) + " • Lost: " + fmt(totalLost),
@@ -163,6 +175,20 @@ public class DailyOpsReportService {
                         maxRowsPerTable));
 
         return wrapHtml(reportDate, start, end, content);
+    }
+
+    private List<Map<String, Object>> queryDealsCreatedByName(LocalDateTime start, LocalDateTime end) {
+        String sql = """
+                SELECT
+                  COALESCE(NULLIF(TRIM(d.created_by_name), ''), '(unknown)') AS created_by_name,
+                  COUNT(*) AS deals_created
+                FROM deals d
+                WHERE (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                  AND d.created_at >= ? AND d.created_at < ?
+                GROUP BY created_by_name
+                ORDER BY deals_created DESC, created_by_name ASC
+                """;
+        return jdbcTemplate.queryForList(sql, start, end);
     }
 
     private List<Map<String, Object>> queryNewDealsPerOrg(LocalDateTime start, LocalDateTime end) {
@@ -210,29 +236,26 @@ public class DailyOpsReportService {
         return Long.parseLong(String.valueOf(v));
     }
 
-    private List<Map<String, Object>> queryBotVsManualPresalesPerOrg(LocalDateTime start, LocalDateTime end) {
+    private List<Map<String, Object>> queryBotVsManualPerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
                   o.id AS organization_id,
                   o.name AS organization_name,
                   COALESCE(SUM(CASE
                     WHEN d.id IS NOT NULL
-                     AND (d.created_by = 'BOT' OR TRIM(UPPER(COALESCE(d.created_by_name,''))) = 'BOT')
+                     AND TRIM(UPPER(COALESCE(d.created_by_name,''))) = 'BOT'
                     THEN 1 ELSE 0 END), 0) AS bot_deals,
                   COALESCE(SUM(CASE
                     WHEN d.id IS NOT NULL
-                     AND (d.created_by = 'USER' OR d.created_by IS NULL)
-                     AND r.name = 'PRESALES'
-                    THEN 1 ELSE 0 END), 0) AS manual_presales_deals
+                     AND TRIM(UPPER(COALESCE(d.created_by_name,''))) <> 'BOT'
+                    THEN 1 ELSE 0 END), 0) AS manual_deals
                 FROM organizations o
                 LEFT JOIN deals d
                   ON d.organization_id = o.id
                  AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
                  AND d.created_at >= ? AND d.created_at < ?
-                LEFT JOIN users u ON u.id = d.created_by_user_id
-                LEFT JOIN roles r ON r.id = u.role_id
                 GROUP BY o.id, o.name
-                ORDER BY bot_deals DESC, manual_presales_deals DESC, o.name ASC
+                ORDER BY bot_deals DESC, manual_deals DESC, o.name ASC
                 """;
         return jdbcTemplate.queryForList(sql, start, end);
     }
@@ -421,7 +444,7 @@ public class DailyOpsReportService {
                 + "<tr>"
                 + kpiCard("New deals", fmt(totalNewDeals))
                 + kpiCard("BOT deals", fmt(totalBot))
-                + kpiCard("Manual (PreSales)", fmt(totalManual))
+                + kpiCard("Manual", fmt(totalManual))
                 + "</tr><tr>"
                 + kpiCard("Won", fmt(won))
                 + kpiCard("Lost", fmt(lost))
