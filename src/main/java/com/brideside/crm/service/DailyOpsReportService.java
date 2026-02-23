@@ -482,13 +482,6 @@ public class DailyOpsReportService {
         int nonZeroRows = filtered.size();
         List<Map<String, Object>> display = filtered.size() > maxRows ? filtered.subList(0, maxRows) : filtered;
 
-        String meta = "<div style=\"color:#6b7280;font-size:12px;margin:0 0 10px 0;\">"
-                + "Showing <b style=\"color:#111827;\">" + escape(String.valueOf(display.size())) + "</b>"
-                + " of <b style=\"color:#111827;\">" + escape(String.valueOf(nonZeroRows)) + "</b>"
-                + (hideZeros ? " non-zero" : "")
-                + (totalRows != nonZeroRows ? " (total rows: " + escape(String.valueOf(totalRows)) + ")" : "")
-                + "</div>";
-
         String thead = columns.stream()
                 .map(c -> {
                     String align = metricColumns.contains(c) ? "right" : "left";
@@ -512,8 +505,7 @@ public class DailyOpsReportService {
             tbody.append("</tr>");
         }
 
-        return meta
-                + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;border:1px solid #eef2f7;border-radius:14px;overflow:hidden;\">"
+        return "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;border:1px solid #eef2f7;border-radius:14px;overflow:hidden;\">"
                 + "<thead><tr style=\"background:#f3f4f6;\">" + thead + "</tr></thead>"
                 + "<tbody>" + tbody + "</tbody>"
                 + "</table>";
