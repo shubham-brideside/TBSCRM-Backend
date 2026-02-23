@@ -130,7 +130,7 @@ public class DailyOpsReportService {
                         List.of("organization_id", "organization_name", "bot_deals", "manual_deals"),
                         List.of("bot_deals", "manual_deals"),
                         hideZeroRows,
-                        maxRowsPerTable))
+                        1000))
                 + section("3) Deals created by user (created_by_name)",
                 "Counts by created_by_name (previous day only)",
                 htmlTable(creators,
@@ -238,26 +238,46 @@ public class DailyOpsReportService {
 
     private List<Map<String, Object>> queryBotVsManualPerOrg(LocalDateTime start, LocalDateTime end) {
         String sql = """
-                SELECT
-                  o.id AS organization_id,
-                  o.name AS organization_name,
-                  COALESCE(SUM(CASE
-                    WHEN d.id IS NOT NULL
-                     AND TRIM(UPPER(COALESCE(d.created_by_name,''))) = 'BOT'
-                    THEN 1 ELSE 0 END), 0) AS bot_deals,
-                  COALESCE(SUM(CASE
-                    WHEN d.id IS NOT NULL
-                     AND TRIM(UPPER(COALESCE(d.created_by_name,''))) <> 'BOT'
-                    THEN 1 ELSE 0 END), 0) AS manual_deals
-                FROM organizations o
-                LEFT JOIN deals d
-                  ON d.organization_id = o.id
-                 AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
-                 AND d.created_at >= ? AND d.created_at < ?
-                GROUP BY o.id, o.name
-                ORDER BY bot_deals DESC, manual_deals DESC, o.name ASC
+                SELECT *
+                FROM (
+                  SELECT
+                    o.id AS organization_id,
+                    o.name AS organization_name,
+                    COALESCE(SUM(CASE
+                      WHEN d.id IS NOT NULL
+                       AND TRIM(UPPER(COALESCE(d.created_by_name,''))) = 'BOT'
+                      THEN 1 ELSE 0 END), 0) AS bot_deals,
+                    COALESCE(SUM(CASE
+                      WHEN d.id IS NOT NULL
+                       AND TRIM(UPPER(COALESCE(d.created_by_name,''))) <> 'BOT'
+                      THEN 1 ELSE 0 END), 0) AS manual_deals
+                  FROM organizations o
+                  LEFT JOIN deals d
+                    ON d.organization_id = o.id
+                   AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                   AND d.created_at >= ? AND d.created_at < ?
+                  GROUP BY o.id, o.name
+
+                  UNION ALL
+
+                  SELECT
+                    0 AS organization_id,
+                    '(no organization)' AS organization_name,
+                    COALESCE(SUM(CASE
+                      WHEN TRIM(UPPER(COALESCE(d2.created_by_name,''))) = 'BOT'
+                      THEN 1 ELSE 0 END), 0) AS bot_deals,
+                    COALESCE(SUM(CASE
+                      WHEN TRIM(UPPER(COALESCE(d2.created_by_name,''))) <> 'BOT'
+                      THEN 1 ELSE 0 END), 0) AS manual_deals
+                  FROM deals d2
+                  LEFT JOIN organizations o2 ON o2.id = d2.organization_id
+                  WHERE (d2.is_deleted = 0 OR d2.is_deleted IS NULL)
+                    AND d2.created_at >= ? AND d2.created_at < ?
+                    AND o2.id IS NULL
+                ) t
+                ORDER BY bot_deals DESC, manual_deals DESC, organization_name ASC
                 """;
-        return jdbcTemplate.queryForList(sql, start, end);
+        return jdbcTemplate.queryForList(sql, start, end, start, end);
     }
 
     private List<Map<String, Object>> queryWonLostPerOrg(LocalDateTime start, LocalDateTime end) {
