@@ -6,6 +6,7 @@ import com.brideside.crm.entity.Activity;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.exception.BadRequestException;
+import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.mapper.ActivityMapper;
 import com.brideside.crm.repository.ActivityRepository;
 import jakarta.persistence.EntityManager;
@@ -23,11 +24,13 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import lombok.extern.slf4j.Slf4j;
 
@@ -89,6 +92,83 @@ public class ActivityService {
         }
     }
 
+    public ActivityDTO getById(Long id) {
+        if (id == null || id <= 0) {
+            throw new BadRequestException("Invalid activity id: " + id);
+        }
+
+        Specification<Activity> spec = buildSpecification(
+                null, null, null, null,
+                null, null, null, null, null,
+                null, null, null
+        );
+        spec = spec.and(withDealFetch());
+        spec = spec.and((root, q, cb) -> cb.equal(root.get("id"), id));
+
+        Activity e = repository.findOne(spec)
+                .orElseThrow(() -> new ResourceNotFoundException("Activity not found: " + id));
+        return ActivityMapper.toDto(e);
+    }
+
+    public ActivityDtos.JumpResponse jump(Long activityId,
+                                          int size,
+                                          List<String> sortParams,
+                                          Long personId,
+                                          String dateFrom,
+                                          String dateTo,
+                                          String assignedUser,
+                                          List<Long> organizationIds,
+                                          List<Long> assignedUserIds,
+                                          String category,
+                                          String status,
+                                          Boolean done,
+                                          String serviceCategoryCodes,
+                                          String organizationCategoryCodes,
+                                          Long dealId) {
+        if (activityId == null || activityId <= 0) {
+            throw new BadRequestException("Invalid activityId: " + activityId);
+        }
+        if (size <= 0) {
+            throw new BadRequestException("Invalid size: " + size);
+        }
+
+        // Build specification WITHOUT date filters (we'll filter dates in memory) - must match list()
+        List<Long> dealIds = dealId != null ? List.of(dealId) : null;
+        Specification<Activity> spec = buildSpecification(
+                personId, null, null, assignedUser,
+                organizationIds, assignedUserIds, category, status, done,
+                serviceCategoryCodes, organizationCategoryCodes, dealIds
+        );
+        spec = spec.and(withDealFetch());
+
+        Sort sort = parseSort(sortParams);
+        LocalDate fromDate = parseFilterDate(dateFrom);
+        LocalDate toDate = parseFilterDate(dateTo);
+        List<Activity> deduplicatedActivities = loadDedupedSortedActivities(spec, fromDate, toDate, sort);
+
+        int foundIndex = -1;
+        Activity foundActivity = null;
+        for (int i = 0; i < deduplicatedActivities.size(); i++) {
+            Activity a = deduplicatedActivities.get(i);
+            if (a.getId() != null && a.getId().equals(activityId)) {
+                foundIndex = i;
+                foundActivity = a;
+                break;
+            }
+        }
+
+        if (foundIndex < 0 || foundActivity == null) {
+            throw new ResourceNotFoundException("Activity not found in current filters: " + activityId);
+        }
+
+        ActivityDtos.JumpResponse res = new ActivityDtos.JumpResponse();
+        res.setPage(foundIndex / size);
+        res.setSize(size);
+        res.setIndexInPage(foundIndex % size);
+        res.setActivity(ActivityMapper.toDto(foundActivity));
+        return res;
+    }
+
     @Transactional
     public ActivityDTO update(Long id, ActivityDTO dto) {
         Activity e = repository.findById(id).orElseThrow(() -> new IllegalArgumentException("Activity not found: " + id));
@@ -144,56 +224,68 @@ public class ActivityService {
                                   String organizationCategoryCodes,
                                   Long dealId,
                                   Pageable pageable) {
-        // Build specification WITHOUT date filters (we'll filter dates in memory)
         List<Long> dealIds = dealId != null ? List.of(dealId) : null;
         Specification<Activity> spec = buildSpecification(
-                personId, null, null, assignedUser, // Pass null for dateFrom/dateTo
+                personId, null, null, assignedUser,
                 organizationIds, assignedUserIds, category, status, done,
                 serviceCategoryCodes, organizationCategoryCodes, dealIds
-        );
-        // Add fetch join for Deal to get deal name
-        spec = spec.and(withDealFetch());
+        ).and(withDealFetch());
 
-        // Parse date filters for in-memory filtering
-        LocalDate fromDate = null;
-        LocalDate toDate = null;
-        if (dateFrom != null && !dateFrom.isBlank()) {
-            try {
-                fromDate = LocalDate.parse(dateFrom.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-            } catch (Exception e) {
-                // Invalid date format, ignore
-            }
-        }
-        if (dateTo != null && !dateTo.isBlank()) {
-            try {
-                toDate = LocalDate.parse(dateTo.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-            } catch (Exception e) {
-                // Invalid date format, ignore
-            }
-        }
-        
-        final LocalDate finalFromDate = fromDate;
-        final LocalDate finalToDate = toDate;
-        final boolean hasDateFilter = finalFromDate != null || finalToDate != null;
+        LocalDate fromDate = parseFilterDate(dateFrom);
+        LocalDate toDate = parseFilterDate(dateTo);
 
-        Page<Activity> activities;
-        
-        if (hasDateFilter) {
-            // For date filtering, we need to:
-            // 1. Load ALL activities matching non-date filters (to get accurate count)
-            // 2. Filter by date in memory
-            // 3. Deduplicate by ID
-            // 4. Sort
-            // 5. Apply pagination
-            
-            // Load all activities matching non-date filters (without pagination)
-            log.debug("Loading activities with spec (before date filtering). ServiceCategory filter applied: {}", 
-                serviceCategoryCodes != null || organizationCategoryCodes != null);
-            List<Activity> allActivities = repository.findAll(spec);
-            log.debug("Loaded {} activities before date filtering", allActivities.size());
-            
-            // Force load organizationRef, owner, and dealRef to avoid lazy loading issues
-            allActivities.forEach(activity -> {
+        List<Activity> ordered = loadDedupedSortedActivities(spec, fromDate, toDate, pageable.getSort());
+
+        int page = pageable.getPageNumber();
+        int size = pageable.getPageSize();
+        int totalElements = ordered.size();
+        int start = page * size;
+        int end = Math.min(start + size, totalElements);
+
+        List<Activity> paginated = start < totalElements ? ordered.subList(start, end) : new ArrayList<>();
+        Page<Activity> activities = new PageImpl<>(paginated, pageable, totalElements);
+        return activities.map(ActivityMapper::toDto);
+    }
+
+    private Sort parseSort(List<String> sortParams) {
+        if (sortParams == null || sortParams.isEmpty()) {
+            return Sort.unsorted();
+        }
+        List<Sort.Order> orders = new ArrayList<>();
+        for (String raw : sortParams) {
+            if (raw == null || raw.isBlank()) continue;
+            String[] parts = raw.split(",");
+            String property = parts.length > 0 ? parts[0].trim() : "";
+            if (property.isEmpty()) continue;
+            Sort.Direction dir = Sort.Direction.ASC;
+            if (parts.length > 1) {
+                try {
+                    dir = Sort.Direction.fromString(parts[1].trim());
+                } catch (Exception ignored) {
+                }
+            }
+            orders.add(new Sort.Order(dir, property));
+        }
+        return orders.isEmpty() ? Sort.unsorted() : Sort.by(orders);
+    }
+
+    private LocalDate parseFilterDate(String date) {
+        if (date == null || date.isBlank()) return null;
+        try {
+            return LocalDate.parse(date.trim(), DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private List<Activity> loadDedupedSortedActivities(Specification<Activity> spec,
+                                                       LocalDate fromDate,
+                                                       LocalDate toDate,
+                                                       Sort sort) {
+        List<Activity> allActivities = repository.findAll(spec);
+
+        // Force load organizationRef, owner, and dealRef to avoid lazy loading issues
+        allActivities.forEach(activity -> {
             if (activity.getOrganizationRef() != null) {
                 activity.getOrganizationRef().getName();
                 if (activity.getOrganizationRef().getOwner() != null) {
@@ -201,192 +293,90 @@ public class ActivityService {
                 }
             }
             if (activity.getDealRef() != null) {
-                activity.getDealRef().getName(); // Force load deal name
+                activity.getDealRef().getName();
             }
         });
-            
-            // Filter by date in memory
-            List<Activity> filteredActivities = allActivities.stream()
-                .filter(activity -> matchesDateFilter(activity, finalFromDate, finalToDate))
-                .collect(java.util.stream.Collectors.toList());
-            log.debug("After date filtering: {} activities remain (from {} total)", filteredActivities.size(), allActivities.size());
-            
-            // Deduplicate by ID (in case of any duplicates from joins)
-            java.util.Map<Long, Activity> uniqueActivities = new java.util.LinkedHashMap<>();
-            for (Activity activity : filteredActivities) {
-                if (activity.getId() != null && !uniqueActivities.containsKey(activity.getId())) {
-                    uniqueActivities.put(activity.getId(), activity);
-                }
-            }
-            List<Activity> deduplicatedActivities = new ArrayList<>(uniqueActivities.values());
-            
-            // Apply sorting
-            if (pageable.getSort().isSorted()) {
-                pageable.getSort().forEach(order -> {
-                    String property = order.getProperty();
-                    boolean ascending = order.isAscending();
-                    
-                    deduplicatedActivities.sort((a1, a2) -> {
-                        int comparison = 0;
-                        try {
-                            switch (property) {
-                                case "dueDate":
-                                    comparison = compareDateStrings(a1.getDueDate(), a2.getDueDate());
-                                    break;
-                                case "date":
-                                    comparison = compareDateStrings(a1.getDate(), a2.getDate());
-                                    break;
-                                case "dateTime":
-                                    comparison = compareDateStrings(a1.getDateTime(), a2.getDateTime());
-                                    break;
-                                case "id":
-                                    comparison = Long.compare(
-                                        a1.getId() != null ? a1.getId() : 0L,
-                                        a2.getId() != null ? a2.getId() : 0L
-                                    );
-                                    break;
-                                case "subject":
-                                    comparison = (a1.getSubject() != null ? a1.getSubject() : "")
-                                        .compareToIgnoreCase(a2.getSubject() != null ? a2.getSubject() : "");
-                                    break;
-                                default:
-                                    comparison = 0;
-                            }
-                        } catch (Exception e) {
-                            comparison = 0;
-                        }
-                        return ascending ? comparison : -comparison;
-                    });
-                });
-            } else {
-                // Default sort: by dueDate desc, then id desc
-                deduplicatedActivities.sort((a1, a2) -> {
-                    int dateComparison = compareDateStrings(a1.getDueDate(), a2.getDueDate());
-                    if (dateComparison != 0) return -dateComparison; // desc
-                    return Long.compare(
-                        a2.getId() != null ? a2.getId() : 0L,
-                        a1.getId() != null ? a1.getId() : 0L
-                    ); // desc
-                });
-            }
-            
-            // Apply pagination
-            int page = pageable.getPageNumber();
-            int size = pageable.getPageSize();
-            int totalElements = deduplicatedActivities.size();
-            int start = page * size;
-            int end = Math.min(start + size, totalElements);
-            
-            List<Activity> paginatedActivities = start < totalElements 
-                ? deduplicatedActivities.subList(start, end)
-                : new ArrayList<>();
-            
-            // Create a new Page with filtered, deduplicated, sorted, and paginated results
-            // PageImpl automatically calculates totalPages from totalElements and size
-            activities = new PageImpl<>(
-                paginatedActivities,
-                pageable,
-                totalElements
-            );
-        } else {
-            // No date filter - still deduplicate and paginate to ensure totalElements/totalPages are accurate
-            log.debug("Loading activities with spec (no date filtering). ServiceCategory filter applied: {}", 
-                serviceCategoryCodes != null || organizationCategoryCodes != null);
-            List<Activity> allActivities = repository.findAll(spec);
-            log.debug("Loaded {} activities", allActivities.size());
 
-            // Force load organizationRef, owner, and dealRef to avoid lazy loading issues
-            allActivities.forEach(activity -> {
-                if (activity.getOrganizationRef() != null) {
-                    activity.getOrganizationRef().getName();
-                    if (activity.getOrganizationRef().getOwner() != null) {
-                        activity.getOrganizationRef().getOwner().getEmail();
-                    }
-                }
-                if (activity.getDealRef() != null) {
-                    activity.getDealRef().getName(); // Force load deal name
-                }
-            });
-
-            // Deduplicate by ID
-            java.util.Map<Long, Activity> uniqueActivities = new java.util.LinkedHashMap<>();
-            for (Activity activity : allActivities) {
-                if (activity.getId() != null && !uniqueActivities.containsKey(activity.getId())) {
-                    uniqueActivities.put(activity.getId(), activity);
-                }
-            }
-            List<Activity> deduplicatedActivities = new ArrayList<>(uniqueActivities.values());
-
-            // Apply sorting
-            if (pageable.getSort().isSorted()) {
-                pageable.getSort().forEach(order -> {
-                    String property = order.getProperty();
-                    boolean ascending = order.isAscending();
-
-                    deduplicatedActivities.sort((a1, a2) -> {
-                        int comparison = 0;
-                        try {
-                            switch (property) {
-                                case "dueDate":
-                                    comparison = compareDateStrings(a1.getDueDate(), a2.getDueDate());
-                                    break;
-                                case "date":
-                                    comparison = compareDateStrings(a1.getDate(), a2.getDate());
-                                    break;
-                                case "dateTime":
-                                    comparison = compareDateStrings(a1.getDateTime(), a2.getDateTime());
-                                    break;
-                                case "id":
-                                    comparison = Long.compare(
-                                        a1.getId() != null ? a1.getId() : 0L,
-                                        a2.getId() != null ? a2.getId() : 0L
-                                    );
-                                    break;
-                                case "subject":
-                                    comparison = (a1.getSubject() != null ? a1.getSubject() : "")
-                                        .compareToIgnoreCase(a2.getSubject() != null ? a2.getSubject() : "");
-                                    break;
-                                default:
-                                    comparison = 0;
-                            }
-                        } catch (Exception e) {
-                            comparison = 0;
-                        }
-                        return ascending ? comparison : -comparison;
-                    });
-                });
-            } else {
-                // Default sort: by dueDate desc, then id desc
-                deduplicatedActivities.sort((a1, a2) -> {
-                    int dateComparison = compareDateStrings(a1.getDueDate(), a2.getDueDate());
-                    if (dateComparison != 0) return -dateComparison; // desc
-                    return Long.compare(
-                        a2.getId() != null ? a2.getId() : 0L,
-                        a1.getId() != null ? a1.getId() : 0L
-                    ); // desc
-                });
-            }
-
-            // Apply pagination
-            int page = pageable.getPageNumber();
-            int size = pageable.getPageSize();
-            int totalElements = deduplicatedActivities.size();
-            int start = page * size;
-            int end = Math.min(start + size, totalElements);
-
-            List<Activity> paginatedActivities = start < totalElements
-                ? deduplicatedActivities.subList(start, end)
-                : new ArrayList<>();
-
-            // Create a new Page with deduplicated, sorted, paginated results
-            activities = new PageImpl<>(
-                paginatedActivities,
-                pageable,
-                totalElements
-            );
+        boolean hasDateFilter = fromDate != null || toDate != null;
+        List<Activity> filtered = allActivities;
+        if (hasDateFilter) {
+            filtered = allActivities.stream()
+                    .filter(a -> matchesDateFilter(a, fromDate, toDate))
+                    .collect(Collectors.toList());
         }
 
-        return activities.map(ActivityMapper::toDto);
+        // Deduplicate by ID (in case of duplicates from fetch joins)
+        java.util.Map<Long, Activity> uniqueActivities = new java.util.LinkedHashMap<>();
+        for (Activity activity : filtered) {
+            if (activity.getId() != null && !uniqueActivities.containsKey(activity.getId())) {
+                uniqueActivities.put(activity.getId(), activity);
+            }
+        }
+        List<Activity> deduped = new ArrayList<>(uniqueActivities.values());
+
+        Comparator<Activity> comparator = buildStableSortComparator(sort);
+        deduped.sort(comparator);
+        return deduped;
+    }
+
+    /**
+     * Build a stable comparator matching list() + jump() behavior.
+     * Important: Always appends id (desc) as a tie-breaker to keep pagination stable.
+     */
+    private Comparator<Activity> buildStableSortComparator(Sort sort) {
+        Sort effectiveSort = (sort != null && sort.isSorted())
+                ? sort
+                : Sort.by(Sort.Order.desc("dueDate"));
+
+        Comparator<Activity> cmp = null;
+        boolean sortContainsId = false;
+
+        for (Sort.Order order : effectiveSort) {
+            String property = order.getProperty();
+            if (property != null && property.equalsIgnoreCase("id")) {
+                sortContainsId = true;
+            }
+            Comparator<Activity> next = comparatorForProperty(property, order.isAscending());
+            cmp = (cmp == null) ? next : cmp.thenComparing(next);
+        }
+
+        if (!sortContainsId) {
+            // Always add a deterministic tie-breaker so /jump page matches /api/activities paging
+            cmp = (cmp == null ? comparatorForProperty("id", false) : cmp.thenComparing(comparatorForProperty("id", false)));
+        }
+
+        return cmp != null ? cmp : comparatorForProperty("id", false);
+    }
+
+    private Comparator<Activity> comparatorForProperty(String property, boolean ascending) {
+        Comparator<Activity> base;
+        if (property == null) property = "";
+
+        switch (property) {
+            case "dueDate":
+                base = (a1, a2) -> compareDateStrings(a1.getDueDate(), a2.getDueDate());
+                break;
+            case "date":
+                base = (a1, a2) -> compareDateStrings(a1.getDate(), a2.getDate());
+                break;
+            case "dateTime":
+                base = (a1, a2) -> compareDateStrings(a1.getDateTime(), a2.getDateTime());
+                break;
+            case "id":
+                base = (a1, a2) -> Long.compare(
+                        a1.getId() != null ? a1.getId() : 0L,
+                        a2.getId() != null ? a2.getId() : 0L
+                );
+                break;
+            case "subject":
+                base = (a1, a2) -> (a1.getSubject() != null ? a1.getSubject() : "")
+                        .compareToIgnoreCase(a2.getSubject() != null ? a2.getSubject() : "");
+                break;
+            default:
+                base = (a1, a2) -> 0;
+        }
+
+        return ascending ? base : base.reversed();
     }
 
     /**

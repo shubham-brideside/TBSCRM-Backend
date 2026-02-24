@@ -104,6 +104,48 @@ public class ActivityController {
                 category, status, done, serviceCategory, organizationCategory, dealId, pageable);
     }
 
+    @Operation(
+            summary = "Jump-to page for activity highlight",
+            description = "Given an activityId + the same filters/sort as GET /api/activities, returns the 0-based page number (and index in page) where the activity would appear. " +
+                    "This avoids fetching many pages to locate a single activity for highlighting."
+    )
+    @GetMapping("/jump")
+    public ResponseEntity<ActivityDtos.JumpResponse> jump(
+            @RequestParam(name = "activityId") Long activityId,
+            @RequestParam(name = "size") int size,
+            @RequestParam(name = "sort", required = false) List<String> sort,
+            @RequestParam(name = "personId", required = false) Long personId,
+            @RequestParam(name = "dateFrom", required = false) String dateFrom,
+            @RequestParam(name = "dateTo", required = false) String dateTo,
+            @RequestParam(name = "serviceCategory", required = false) String serviceCategory,
+            @RequestParam(name = "organizationCategory", required = false) String organizationCategory,
+            @RequestParam(name = "assignedUser", required = false) String assignedUser,
+            @RequestParam(name = "organizationId", required = false) List<Long> organizationIds,
+            @RequestParam(name = "assignedUserId", required = false) List<Long> assignedUserIds,
+            @RequestParam(name = "category", required = false) String category,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "done", required = false) Boolean done,
+            @RequestParam(name = "dealId", required = false) Long dealId
+    ) {
+        return ResponseEntity.ok(service.jump(
+                activityId, size, sort,
+                personId, dateFrom, dateTo,
+                assignedUser, organizationIds, assignedUserIds,
+                category, status, done,
+                serviceCategory, organizationCategory,
+                dealId
+        ));
+    }
+
+    @Operation(
+            summary = "Get activity by ID",
+            description = "Returns one activity in the same shape as list items. Visibility/auth rules match GET /api/activities (same role-based scoping)."
+    )
+    @GetMapping("/{id:[0-9]+}")
+    public ResponseEntity<ActivityDTO> getById(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(service.getById(id));
+    }
+
     @Operation(summary = "Get activities by deal IDs", description = "Returns all activities associated with the specified deal IDs. " +
             "Useful for fetching only the activities related to currently loaded deals. " +
             "Accepts comma-separated deal IDs (e.g., dealIds=1,2,3). Returns all activities without pagination limit for efficiency.")

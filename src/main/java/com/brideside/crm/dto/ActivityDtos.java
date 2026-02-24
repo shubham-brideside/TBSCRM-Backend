@@ -1,5 +1,6 @@
 package com.brideside.crm.dto;
 
+import com.brideside.crm.dto.ActivityDTO;
 import com.brideside.crm.entity.Activity;
 import com.brideside.crm.service.ActivityScopeService;
 
@@ -11,6 +12,45 @@ import java.util.stream.Collectors;
 public class ActivityDtos {
 
     private ActivityDtos() {}
+
+    public static class JumpResponse {
+        private int page;
+        private int size;
+        private int indexInPage;
+        private ActivityDTO activity;
+
+        public int getPage() {
+            return page;
+        }
+
+        public void setPage(int page) {
+            this.page = page;
+        }
+
+        public int getSize() {
+            return size;
+        }
+
+        public void setSize(int size) {
+            this.size = size;
+        }
+
+        public int getIndexInPage() {
+            return indexInPage;
+        }
+
+        public void setIndexInPage(int indexInPage) {
+            this.indexInPage = indexInPage;
+        }
+
+        public ActivityDTO getActivity() {
+            return activity;
+        }
+
+        public void setActivity(ActivityDTO activity) {
+            this.activity = activity;
+        }
+    }
 
     public static class CreateRequest {
         public Long dealId;
