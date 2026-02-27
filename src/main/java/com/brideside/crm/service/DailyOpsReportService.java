@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 public class DailyOpsReportService {
 
     private static final DateTimeFormatter PRETTY_DATE = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH);
+    private static final String STAGE_MEETING_SCHEDULED = "Meeting Scheduled";
+    private static final String STAGE_CONTRACT_SHARED = "Contract Shared";
 
     private final JdbcTemplate jdbcTemplate;
     private final EmailService emailService;
@@ -94,6 +96,28 @@ public class DailyOpsReportService {
         sb.append("7) Deals in Qualified (IN_PROGRESS) rotting for 2-3 days (per account)\n");
         sb.append(formatOrgTable(queryQualifiedRotting2to3DaysPerOrg(end), "rotting_2_to_3_days")).append("\n");
 
+        sb.append("\n8) Deals moved to ").append(STAGE_MEETING_SCHEDULED).append(" (by org + user)\n");
+        sb.append(formatTable(
+                List.of("organization_name", "deals_moved"),
+                queryMovedToStageByOrg(start, end, STAGE_MEETING_SCHEDULED)
+        )).append("\n\n");
+        sb.append("   Deal details\n");
+        sb.append(formatTable(
+                List.of("moved_at", "organization_name", "deal_id", "deal_name", "deal_value"),
+                queryMovedToStageDetails(start, end, STAGE_MEETING_SCHEDULED)
+        )).append("\n\n");
+
+        sb.append("9) Deals moved to ").append(STAGE_CONTRACT_SHARED).append(" (by org + user)\n");
+        sb.append(formatTable(
+                List.of("organization_name", "deals_moved"),
+                queryMovedToStageByOrg(start, end, STAGE_CONTRACT_SHARED)
+        )).append("\n\n");
+        sb.append("   Deal details\n");
+        sb.append(formatTable(
+                List.of("moved_at", "organization_name", "deal_id", "deal_name", "deal_value"),
+                queryMovedToStageDetails(start, end, STAGE_CONTRACT_SHARED)
+        )).append("\n");
+
         return sb.toString();
     }
 
@@ -106,6 +130,10 @@ public class DailyOpsReportService {
         List<Map<String, Object>> cities = queryCityDistribution(start, end);
         List<Map<String, Object>> moved = queryMovedQualifiedToContactMadePerOrg(start, end);
         List<Map<String, Object>> rotting = queryQualifiedRotting2to3DaysPerOrg(end);
+        List<Map<String, Object>> meetingSchedSummary = queryMovedToStageByOrg(start, end, STAGE_MEETING_SCHEDULED);
+        List<Map<String, Object>> meetingSchedDetails = queryMovedToStageDetails(start, end, STAGE_MEETING_SCHEDULED);
+        List<Map<String, Object>> contractSharedSummary = queryMovedToStageByOrg(start, end, STAGE_CONTRACT_SHARED);
+        List<Map<String, Object>> contractSharedDetails = queryMovedToStageDetails(start, end, STAGE_CONTRACT_SHARED);
 
         long totalNewDeals = queryTotalNewDeals(start, end);
         long totalBotDeals = sumLong(botVsManual, "bot_deals");
@@ -114,6 +142,8 @@ public class DailyOpsReportService {
         long totalLost = sumLong(wonLost, "lost_count");
         long totalCalls = sumLong(calls, "calls_done");
         long totalCallMinutes = sumLong(calls, "total_call_minutes");
+        long totalMeetingScheduled = queryTotalDealsMovedToStage(start, end, STAGE_MEETING_SCHEDULED);
+        long totalContractShared = queryTotalDealsMovedToStage(start, end, STAGE_CONTRACT_SHARED);
 
         String content = ""
                 + sectionKpis(totalNewDeals, totalBotDeals, totalManual, totalWon, totalLost, totalCalls, totalCallMinutes)
@@ -172,9 +202,86 @@ public class DailyOpsReportService {
                         List.of("organization_id", "organization_name", "rotting_2_to_3_days"),
                         List.of("rotting_2_to_3_days"),
                         hideZeroRows,
+                        maxRowsPerTable))
+                + section("8) Deals moved to " + STAGE_MEETING_SCHEDULED,
+                "Total deals moved: " + fmt(totalMeetingScheduled),
+                "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
+                        + htmlTable(meetingSchedSummary,
+                        List.of("organization_name", "deals_moved"),
+                        List.of("deals_moved"),
+                        true,
+                        maxRowsPerTable)
+                        + "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:12px 0 8px 0;\">Deal details</div>"
+                        + htmlTable(meetingSchedDetails,
+                        List.of("moved_at", "organization_name", "deal_id", "deal_name", "deal_value"),
+                        List.of("deal_value"),
+                        true,
+                        maxRowsPerTable))
+                + section("9) Deals moved to " + STAGE_CONTRACT_SHARED,
+                "Total deals moved: " + fmt(totalContractShared),
+                "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
+                        + htmlTable(contractSharedSummary,
+                        List.of("organization_name", "deals_moved"),
+                        List.of("deals_moved"),
+                        true,
+                        maxRowsPerTable)
+                        + "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:12px 0 8px 0;\">Deal details</div>"
+                        + htmlTable(contractSharedDetails,
+                        List.of("moved_at", "organization_name", "deal_id", "deal_name", "deal_value"),
+                        List.of("deal_value"),
+                        true,
                         maxRowsPerTable));
 
         return wrapHtml(reportDate, start, end, content);
+    }
+
+    private List<Map<String, Object>> queryMovedToStageByOrg(LocalDateTime start, LocalDateTime end, String stageName) {
+        String sql = """
+                SELECT
+                  COALESCE(o.name, '(no organization)') AS organization_name,
+                  COUNT(DISTINCT h.deal_id) AS deals_moved
+                FROM deal_stage_history h
+                JOIN stages s ON s.id = h.stage_id AND s.name = ?
+                JOIN deals d ON d.id = h.deal_id
+                 AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                LEFT JOIN organizations o ON o.id = d.organization_id
+                WHERE h.entered_at >= ? AND h.entered_at < ?
+                GROUP BY organization_name
+                ORDER BY deals_moved DESC, organization_name ASC
+                """;
+        return jdbcTemplate.queryForList(sql, stageName, start, end);
+    }
+
+    private List<Map<String, Object>> queryMovedToStageDetails(LocalDateTime start, LocalDateTime end, String stageName) {
+        String sql = """
+                SELECT
+                  h.entered_at AS moved_at,
+                  COALESCE(o.name, '(no organization)') AS organization_name,
+                  d.id AS deal_id,
+                  d.name AS deal_name,
+                  d.value AS deal_value
+                FROM deal_stage_history h
+                JOIN stages s ON s.id = h.stage_id AND s.name = ?
+                JOIN deals d ON d.id = h.deal_id
+                 AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                LEFT JOIN organizations o ON o.id = d.organization_id
+                WHERE h.entered_at >= ? AND h.entered_at < ?
+                ORDER BY moved_at DESC, organization_name ASC, deal_id DESC
+                """;
+        return jdbcTemplate.queryForList(sql, stageName, start, end);
+    }
+
+    private long queryTotalDealsMovedToStage(LocalDateTime start, LocalDateTime end, String stageName) {
+        String sql = """
+                SELECT COUNT(DISTINCT h.deal_id) AS total_moved
+                FROM deal_stage_history h
+                JOIN stages s ON s.id = h.stage_id AND s.name = ?
+                JOIN deals d ON d.id = h.deal_id
+                 AND (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                WHERE h.entered_at >= ? AND h.entered_at < ?
+                """;
+        Long n = jdbcTemplate.queryForObject(sql, Long.class, stageName, start, end);
+        return n != null ? n : 0L;
     }
 
     private List<Map<String, Object>> queryDealsCreatedByName(LocalDateTime start, LocalDateTime end) {
@@ -556,7 +663,23 @@ public class DailyOpsReportService {
     private String formatCell(Object v, boolean numeric) {
         if (v == null) return "";
         if (!numeric) return String.valueOf(v);
-        if (v instanceof Number n) return fmt(n.longValue());
+        if (v instanceof java.math.BigDecimal bd) {
+            try {
+                return String.format(Locale.US, "%,.2f", bd);
+            } catch (Exception ignored) {
+                return String.valueOf(v);
+            }
+        }
+        if (v instanceof Number n) {
+            // Keep existing behavior for count-like metrics
+            if (n instanceof Float || n instanceof Double) {
+                try {
+                    return String.format(Locale.US, "%,.2f", n.doubleValue());
+                } catch (Exception ignored) {
+                }
+            }
+            return fmt(n.longValue());
+        }
         try {
             return fmt(Long.parseLong(String.valueOf(v)));
         } catch (Exception ignored) {

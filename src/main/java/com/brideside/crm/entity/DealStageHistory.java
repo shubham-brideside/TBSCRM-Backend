@@ -40,6 +40,12 @@ public class DealStageHistory {
     @Column(name = "is_current", nullable = false)
     private Boolean isCurrent = false;
 
+    @Column(name = "moved_by_user_id")
+    private Long movedByUserId;
+
+    @Column(name = "moved_by_name", length = 255)
+    private String movedByName;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

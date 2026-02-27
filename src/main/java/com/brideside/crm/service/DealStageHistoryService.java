@@ -5,10 +5,14 @@ import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStageHistory;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.repository.DealStageHistoryRepository;
+import com.brideside.crm.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -25,6 +29,7 @@ import java.util.TreeMap;
 public class DealStageHistoryService {
 
     private final DealStageHistoryRepository historyRepository;
+    private final UserRepository userRepository;
 
     /**
      * Record when a deal enters a new stage
@@ -57,11 +62,41 @@ public class DealStageHistoryService {
         newEntry.setStage(newStage);
         newEntry.setEnteredAt(LocalDateTime.now());
         newEntry.setIsCurrent(true);
+        populateMovedBy(newEntry);
 
         historyRepository.save(newEntry);
 
         log.info("Recorded stage entry: Deal {} entered stage {} at {}",
             deal.getId(), newStage.getId(), newEntry.getEnteredAt());
+    }
+
+    private void populateMovedBy(DealStageHistory entry) {
+        try {
+            Authentication auth = SecurityContextHolder.getContext() != null
+                    ? SecurityContextHolder.getContext().getAuthentication()
+                    : null;
+            if (auth == null || !auth.isAuthenticated()) return;
+
+            Object principal = auth.getPrincipal();
+            String email = null;
+            if (principal instanceof UserDetails ud) {
+                email = ud.getUsername();
+            } else if (principal instanceof String s) {
+                email = s;
+            }
+
+            if (email == null || email.isBlank() || "anonymousUser".equalsIgnoreCase(email)) return;
+
+            userRepository.findByEmail(email).ifPresent(u -> {
+                entry.setMovedByUserId(u.getId());
+                String fullName = ((u.getFirstName() != null ? u.getFirstName() : "").trim()
+                        + " "
+                        + (u.getLastName() != null ? u.getLastName() : "").trim()).trim();
+                entry.setMovedByName(!fullName.isEmpty() ? fullName : u.getEmail());
+            });
+        } catch (Exception ignored) {
+            // Best-effort only; stage history should never fail due to missing auth context.
+        }
     }
 
     /**
