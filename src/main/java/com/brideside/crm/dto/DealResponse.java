@@ -27,6 +27,7 @@ public class DealResponse {
     public String venue;
     public String phoneNumber;
     public String city;
+    public String notes;
     public Boolean finalThankYouSent;
     public Boolean eventDateAsked;
     public Boolean contactNumberAsked;

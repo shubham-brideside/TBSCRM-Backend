@@ -192,6 +192,7 @@ public class DealServiceImpl implements DealService {
         }
         deal.setPhoneNumber(request.phoneNumber);
         deal.setCity(request.city);
+        deal.setNotes(request.notes);
         deal.setFinalThankYouSent(request.finalThankYouSent);
         deal.setEventDateAsked(request.eventDateAsked);
         deal.setContactNumberAsked(request.contactNumberAsked);
@@ -485,6 +486,9 @@ public class DealServiceImpl implements DealService {
         }
         if (request.city != null) {
             deal.setCity(request.city);
+        }
+        if (request.notes != null) {
+            deal.setNotes(request.notes);
         }
         if (request.finalThankYouSent != null) {
             deal.setFinalThankYouSent(request.finalThankYouSent);
