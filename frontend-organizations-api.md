@@ -29,7 +29,8 @@ Validation failures respond with HTTP `400` and `success: false`. Missing record
     "name": "Brideside Chicago",        // required, trimmed, max 255 chars
     "category": "PHOTOGRAPHY",          // required enum (PHOTOGRAPHY | MAKEUP | PLANNING_AND_DECOR)
     "ownerId": 5,                       // optional -> must be SALES or CATEGORY_MANAGER
-    "address": "123 Lake Shore Dr ..."  // optional, max 500 chars
+    "address": "123 Lake Shore Dr ...", // optional, max 500 chars
+    "email": "org@example.com"          // optional, valid email; used for brideside_vendors.email_id
   }
   ```
 - **Response (201 Created):**

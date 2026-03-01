@@ -1,8 +1,13 @@
 package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
+import com.brideside.crm.dto.BridesideVendorDtos;
 import com.brideside.crm.dto.OrganizationDtos;
+import com.brideside.crm.dto.OrganizationDetailsDtos;
+import com.brideside.crm.dto.VendorAssetDtos;
+import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.OrganizationService;
+import com.brideside.crm.service.VendorAssetService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,9 +26,15 @@ import java.util.List;
 public class OrganizationController {
 
     private final OrganizationService organizationService;
+    private final BridesideVendorService bridesideVendorService;
+    private final VendorAssetService vendorAssetService;
 
-    public OrganizationController(OrganizationService organizationService) {
+    public OrganizationController(OrganizationService organizationService,
+                                  BridesideVendorService bridesideVendorService,
+                                  VendorAssetService vendorAssetService) {
         this.organizationService = organizationService;
+        this.bridesideVendorService = bridesideVendorService;
+        this.vendorAssetService = vendorAssetService;
     }
 
     @PostMapping
@@ -67,6 +78,67 @@ public class OrganizationController {
     @Operation(summary = "Get organization by id")
     public ResponseEntity<ApiResponse<OrganizationDtos.OrganizationResponse>> get(@PathVariable("id") Long id) {
         return ResponseEntity.ok(ApiResponse.success("Organization fetched", organizationService.get(id)));
+    }
+
+    @GetMapping("/{id:\\d+}/with-details")
+    @Operation(summary = "Get organization with vendor details",
+            description = "Returns organization details along with vendors from brideside_vendors for the given organization id")
+    public ResponseEntity<ApiResponse<OrganizationDetailsDtos.OrganizationWithDetailsResponse>> getWithDetails(
+            @PathVariable("id") Long id) {
+        OrganizationDetailsDtos.OrganizationWithDetailsResponse data = new OrganizationDetailsDtos.OrganizationWithDetailsResponse();
+        data.setOrganization(organizationService.get(id));
+        data.setVendors(bridesideVendorService.listByOrganizationId(id));
+        return ResponseEntity.ok(ApiResponse.success("Organization details fetched", data));
+    }
+
+    @GetMapping("/{id}/vendors")
+    @Operation(summary = "List Brideside vendors for an organization",
+            description = "Returns vendors from brideside_vendors table for the given organization id")
+    public ResponseEntity<ApiResponse<List<BridesideVendorDtos.VendorResponse>>> listVendorsForOrganization(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Organization vendors fetched", bridesideVendorService.listByOrganizationId(id)));
+    }
+
+    @PostMapping("/{id:\\d+}/vendors")
+    @Operation(summary = "Create Brideside vendor entry for an organization",
+            description = "Creates a brideside_vendors row linked to the organization. If pipelineId is not provided and no pipeline exists for the org, a default pipeline is created.")
+    public ResponseEntity<ApiResponse<BridesideVendorDtos.VendorResponse>> createVendorForOrganization(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody(required = false) BridesideVendorDtos.VendorCreateRequest request) {
+        BridesideVendorDtos.VendorResponse created = bridesideVendorService.createVendorForOrganization(id, request);
+        return ResponseEntity.status(201).body(ApiResponse.success("Organization vendor created", created));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}")
+    @Operation(summary = "Update Brideside vendor details for an organization",
+            description = "Updates editable vendor fields (contact/location/email/onboarding/team/fee). Does not expose or update access_token.")
+    public ResponseEntity<ApiResponse<BridesideVendorDtos.VendorResponse>> updateVendorDetails(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @Valid @RequestBody BridesideVendorDtos.VendorUpdateRequest request) {
+        BridesideVendorDtos.VendorResponse updated = bridesideVendorService.updateVendorDetails(id, vendorId, request);
+        return ResponseEntity.ok(ApiResponse.success("Organization vendor updated", updated));
+    }
+
+    @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/assets")
+    @Operation(summary = "List vendor assets for an organization",
+            description = "Returns asset info (phone, SIM, etc.) for the given vendor")
+    public ResponseEntity<ApiResponse<List<VendorAssetDtos.AssetResponse>>> listVendorAssets(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        return ResponseEntity.ok(ApiResponse.success("Vendor assets fetched", vendorAssetService.listByVendor(id, vendorId)));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/assets/{assetId:\\d+}")
+    @Operation(summary = "Update vendor asset details",
+            description = "Updates phone model, phone issued by, SIM card, SIM issued by, issued on")
+    public ResponseEntity<ApiResponse<VendorAssetDtos.AssetResponse>> updateVendorAsset(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @PathVariable("assetId") Long assetId,
+            @Valid @RequestBody VendorAssetDtos.AssetUpdateRequest request) {
+        VendorAssetDtos.AssetResponse updated = vendorAssetService.update(id, vendorId, assetId, request);
+        return ResponseEntity.ok(ApiResponse.success("Vendor asset updated", updated));
     }
 
     @PutMapping("/{id}")

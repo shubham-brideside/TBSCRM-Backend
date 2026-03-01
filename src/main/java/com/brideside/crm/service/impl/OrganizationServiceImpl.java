@@ -13,6 +13,8 @@ import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.repository.VendorAssetRepository;
+import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.OrganizationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +34,8 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final DealRepository dealRepository;
     private final ActivityRepository activityRepository;
     private final PipelineRepository pipelineRepository;
+    private final BridesideVendorService bridesideVendorService;
+    private final VendorAssetRepository vendorAssetRepository;
     private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES =
             EnumSet.of(Role.RoleName.SALES, Role.RoleName.CATEGORY_MANAGER);
 
@@ -40,13 +44,17 @@ public class OrganizationServiceImpl implements OrganizationService {
                                    PersonRepository personRepository,
                                    DealRepository dealRepository,
                                    ActivityRepository activityRepository,
-                                   PipelineRepository pipelineRepository) {
+                                   PipelineRepository pipelineRepository,
+                                   BridesideVendorService bridesideVendorService,
+                                   VendorAssetRepository vendorAssetRepository) {
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
         this.personRepository = personRepository;
         this.dealRepository = dealRepository;
         this.activityRepository = activityRepository;
         this.pipelineRepository = pipelineRepository;
+        this.bridesideVendorService = bridesideVendorService;
+        this.vendorAssetRepository = vendorAssetRepository;
     }
 
     @Override
@@ -56,7 +64,11 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setOwner(resolveOwner(request.getOwnerId()));
         organization.setCategory(resolveCategory(request.getCategory()));
         organization.setAddress(trimmed(request.getAddress()));
-        return toResponse(organizationRepository.save(organization));
+        organization.setEmail(trimmed(request.getEmail()));
+        Organization saved = organizationRepository.save(organization);
+        // Ensure org always has a linked brideside_vendors entry and vendor_assets entry
+        bridesideVendorService.createVendorForOrganization(saved.getId(), null);
+        return toResponse(saved);
     }
 
     @Override
@@ -81,6 +93,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setOwner(resolveOwner(request.getOwnerId()));
         organization.setCategory(resolveCategory(request.getCategory()));
         organization.setAddress(trimmed(request.getAddress()));
+        organization.setEmail(trimmed(request.getEmail()));
         organization.setGoogleCalendarId(trimmed(request.getGoogleCalendarId()));
         return toResponse(organizationRepository.save(organization));
     }
@@ -106,6 +119,9 @@ public class OrganizationServiceImpl implements OrganizationService {
             }
             pipelineRepository.saveAll(pipelines);
         }
+
+        // Delete vendor_assets linked to this organization (before org delete due to FK)
+        vendorAssetRepository.deleteByOrganization_Id(id);
 
         // Now it's safe to delete the organization
         organizationRepository.delete(organization);
@@ -244,6 +260,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         response.setOwner(toOwnerSummary(organization.getOwner()));
         response.setCategory(organization.getCategory());
         response.setAddress(organization.getAddress());
+        response.setEmail(organization.getEmail());
         response.setGoogleCalendarId(organization.getGoogleCalendarId());
         response.setCreatedAt(organization.getCreatedAt());
         response.setUpdatedAt(organization.getUpdatedAt());

@@ -86,6 +86,9 @@ public class Organization {
     @Column(length = 500)
     private String address;
 
+    @Column(length = 255)
+    private String email;
+
     @Column(name = "google_calendar_id", length = 255)
     private String googleCalendarId;
 
@@ -117,6 +120,8 @@ public class Organization {
     public void setCategory(OrganizationCategory category) { this.category = category; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
     public String getGoogleCalendarId() { return googleCalendarId; }
     public void setGoogleCalendarId(String googleCalendarId) { this.googleCalendarId = googleCalendarId; }
     public Instant getCreatedAt() { return createdAt; }

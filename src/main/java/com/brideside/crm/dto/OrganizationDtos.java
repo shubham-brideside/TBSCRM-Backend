@@ -31,6 +31,10 @@ public final class OrganizationDtos {
         @Size(max = 500, message = "Address cannot exceed 500 characters")
         private String address;
 
+        @Email(message = "Email must be a valid email")
+        @Size(max = 255, message = "Email cannot exceed 255 characters")
+        private String email;
+
         @Email(message = "Google Calendar id must be a valid email")
         @Size(max = 255, message = "Google Calendar id cannot exceed 255 characters")
         private String googleCalendarId;
@@ -67,6 +71,14 @@ public final class OrganizationDtos {
             this.address = address;
         }
 
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+
         public String getGoogleCalendarId() {
             return googleCalendarId;
         }
@@ -82,6 +94,7 @@ public final class OrganizationDtos {
         private OwnerSummary owner;
         private OrganizationCategory category;
         private String address;
+        private String email;
         private String googleCalendarId;
         private Instant createdAt;
         private Instant updatedAt;
@@ -124,6 +137,14 @@ public final class OrganizationDtos {
 
         public void setAddress(String address) {
             this.address = address;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
         }
 
         public String getGoogleCalendarId() {
