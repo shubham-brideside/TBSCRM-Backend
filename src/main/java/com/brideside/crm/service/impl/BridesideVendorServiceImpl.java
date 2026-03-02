@@ -43,7 +43,6 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<BridesideVendorDtos.VendorResponse> listByOrganizationId(Long organizationId) {
         if (organizationId == null) {
             throw new ResourceNotFoundException("Organization id is required");
@@ -51,8 +50,16 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         if (!organizationRepository.existsById(organizationId)) {
             throw new ResourceNotFoundException("Organization not found with id " + organizationId);
         }
-        return bridesideVendorRepository.findByOrganization_Id(organizationId)
-                .stream()
+
+        List<BridesideVendor> vendors = bridesideVendorRepository.findByOrganization_Id(organizationId);
+
+        // If no vendor exists for this organization (legacy data), create a default one
+        if (vendors.isEmpty()) {
+            BridesideVendorDtos.VendorResponse created = createVendorForOrganization(organizationId, null);
+            return java.util.List.of(created);
+        }
+
+        return vendors.stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
