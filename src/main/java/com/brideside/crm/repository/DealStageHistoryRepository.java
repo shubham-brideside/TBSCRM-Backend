@@ -6,13 +6,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface DealStageHistoryRepository extends JpaRepository<DealStageHistory, Long> {
 
     // Find current stage history for a deal
-    Optional<DealStageHistory> findByDealIdAndIsCurrentTrue(Long dealId);
+    List<DealStageHistory> findByDealIdAndIsCurrentTrue(Long dealId);
 
     // Find all stage history for a deal, ordered by entered_at
     List<DealStageHistory> findByDealIdOrderByEnteredAtAsc(Long dealId);

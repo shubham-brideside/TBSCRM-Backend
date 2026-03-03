@@ -44,7 +44,7 @@ public class DealStageHistoryMigrationService {
             }
 
             // Check if deal already has stage history
-            if (historyRepository.findByDealIdAndIsCurrentTrue(deal.getId()).isPresent()) {
+            if (!historyRepository.findByDealIdAndIsCurrentTrue(deal.getId()).isEmpty()) {
                 log.debug("Deal {} already has stage history, skipping", deal.getId());
                 skippedCount++;
                 continue;
