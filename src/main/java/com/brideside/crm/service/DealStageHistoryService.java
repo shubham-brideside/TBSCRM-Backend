@@ -17,6 +17,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,22 +39,28 @@ public class DealStageHistoryService {
     @Transactional
     public void recordStageEntry(Deal deal, Stage newStage) {
         // Mark previous current stage as exited
-        Optional<DealStageHistory> previousCurrent =
+        List<DealStageHistory> currentEntries =
             historyRepository.findByDealIdAndIsCurrentTrue(deal.getId());
 
-        if (previousCurrent.isPresent()) {
-            DealStageHistory previous = previousCurrent.get();
+        if (!currentEntries.isEmpty()) {
             LocalDateTime now = LocalDateTime.now();
-            previous.setExitedAt(now);
-            previous.setIsCurrent(false);
 
-            // Calculate days in stage
-            if (previous.getEnteredAt() != null) {
-                long days = ChronoUnit.DAYS.between(previous.getEnteredAt(), now);
-                previous.setDaysInStage((int) days);
+            // Sort to have deterministic processing order (oldest first)
+            currentEntries.sort(Comparator
+                .comparing(DealStageHistory::getEnteredAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(DealStageHistory::getId, Comparator.nullsFirst(Comparator.naturalOrder())));
+
+            for (DealStageHistory previous : currentEntries) {
+                previous.setExitedAt(now);
+                previous.setIsCurrent(false);
+
+                if (previous.getEnteredAt() != null) {
+                    long days = ChronoUnit.DAYS.between(previous.getEnteredAt(), now);
+                    previous.setDaysInStage((int) days);
+                }
+
+                historyRepository.save(previous);
             }
-
-            historyRepository.save(previous);
         }
 
         // Create new entry for current stage
@@ -133,14 +140,19 @@ public class DealStageHistoryService {
      * Get days a deal has been in its current stage
      */
     public int getDaysInCurrentStage(Long dealId) {
-        Optional<DealStageHistory> current =
+        List<DealStageHistory> currentEntries =
             historyRepository.findByDealIdAndIsCurrentTrue(dealId);
 
-        if (current.isEmpty()) {
+        if (currentEntries.isEmpty()) {
             return 0;
         }
 
-        DealStageHistory currentHistory = current.get();
+        DealStageHistory currentHistory = currentEntries.stream()
+            .filter(h -> h.getEnteredAt() != null)
+            .max(Comparator.comparing(DealStageHistory::getEnteredAt)
+                .thenComparing(DealStageHistory::getId, Comparator.nullsFirst(Comparator.naturalOrder())))
+            .orElse(currentEntries.get(0));
+
         LocalDateTime enteredAt = currentHistory.getEnteredAt();
         LocalDateTime now = LocalDateTime.now();
         return (int) ChronoUnit.DAYS.between(enteredAt, now);
