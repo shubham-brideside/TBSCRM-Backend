@@ -349,6 +349,12 @@ public class DealController {
     public ResponseEntity<DealDtos.AverageDealTimelinePerMonthResponse> getAverageDealTimeline() {
         return ResponseEntity.ok(dealStageHistoryService.getAverageDealTimelinePerMonth());
     }
+
+    @GetMapping("/average-deal-timeline-diverted")
+    @Operation(summary = "Get average diverted deal timeline", description = "Returns the average time (in days) diverted deals spend in each stage, grouped by stage name. Only completed stage visits are included (deals that have left the stage). A diverted deal is identified via deal_source = 'DIVERT'.")
+    public ResponseEntity<DealDtos.AverageDealTimelineResponse> getAverageDealTimelineForDivertedDeals() {
+        return ResponseEntity.ok(dealStageHistoryService.getAverageDealTimelineForDivertedDeals());
+    }
     
     /**
      * Parses eventDates JSON string to a list of date strings.
@@ -506,6 +512,12 @@ public class DealController {
         DealDtos.RevenueResponse response = dealService.calculateRevenue(
                 pipelineId, status, organizationId, categoryId, managerId, dateFrom, dateTo, search, source, stageId);
         return ResponseEntity.ok(ApiResponse.success("Revenue calculated", response));
+    }
+
+    @GetMapping("/lost-by-stage")
+    @Operation(summary = "Get lost deals count per stage", description = "Returns total number of LOST, non-deleted deals in each stage.")
+    public ResponseEntity<DealDtos.LostDealsByStageResponse> getLostDealsByStage() {
+        return ResponseEntity.ok(dealService.getLostDealsByStage());
     }
 
     public static class SourceOption {

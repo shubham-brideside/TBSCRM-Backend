@@ -61,6 +61,11 @@ public interface DealService {
     DealDtos.RevenueResponse calculateRevenue(Long pipelineId, String status, Long organizationId, 
                                               Long categoryId, Long managerId, String dateFrom, 
                                               String dateTo, String search, String source, Long stageId);
+
+    /**
+     * Total LOST deals per stage (non-deleted deals only).
+     */
+    DealDtos.LostDealsByStageResponse getLostDealsByStage();
 }
 
 

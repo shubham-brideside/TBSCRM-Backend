@@ -55,11 +55,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
@@ -921,6 +923,84 @@ public class DealServiceImpl implements DealService {
         
         log.debug("Revenue calculation: Total revenue={}, Deal count={}", totalRevenue, dealCount);
         return new DealDtos.RevenueResponse(totalRevenue, dealCount);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DealDtos.LostDealsByStageResponse getLostDealsByStage() {
+        log.debug("Lost deals by stage requested");
+        // Overall lost count per stage
+        List<Object[]> rows = dealRepository.countLostDealsByStage();
+        Map<Long, DealDtos.LostDealsByStageItem> byStage = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            Long stageId = row[0] instanceof Number ? ((Number) row[0]).longValue() : null;
+            String stageName = (String) row[1];
+            Long lostCount = row[2] instanceof Number ? ((Number) row[2]).longValue() : 0L;
+            DealDtos.LostDealsByStageItem item = new DealDtos.LostDealsByStageItem(stageId, stageName, lostCount);
+            item.categories = new ArrayList<>();
+            if (stageId != null) {
+                byStage.put(stageId, item);
+            }
+        }
+
+        // Category-wise lost count per stage
+        List<Object[]> catRows = dealRepository.countLostDealsByStageAndCategory();
+        for (Object[] row : catRows) {
+            Long stageId = row[0] instanceof Number ? ((Number) row[0]).longValue() : null;
+            Object catEnum = row[2];
+            Long lostCount = row[3] instanceof Number ? ((Number) row[3]).longValue() : 0L;
+
+            if (stageId == null) {
+                continue;
+            }
+            DealDtos.LostDealsByStageItem parent = byStage.get(stageId);
+            if (parent == null) {
+                // In case stage wasn't present in overall query for some reason
+                String stageName = (String) row[1];
+                parent = new DealDtos.LostDealsByStageItem(stageId, stageName, 0L);
+                parent.categories = new ArrayList<>();
+                byStage.put(stageId, parent);
+            }
+
+            String categoryKey = null;
+            if (catEnum instanceof Organization.OrganizationCategory orgCat) {
+                categoryKey = orgCat.getDbValue();
+            }
+            parent.categories.add(new DealDtos.LostDealsByStageCategoryItem(categoryKey, lostCount));
+        }
+
+        // Average days from creation to LOST per stage
+        List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
+        Map<Long, long[]> durationAgg = new HashMap<>(); // stageId -> [sumDays, count]
+        for (Deal d : lostDeals) {
+            if (d.getStage() == null || d.getStage().getId() == null || d.getCreatedAt() == null) {
+                continue;
+            }
+            Long stageId = d.getStage().getId();
+            // Use lostAt if available; fallback to updatedAt/createdAt
+            LocalDateTime reference = d.getLostAt() != null
+                    ? d.getLostAt()
+                    : (d.getUpdatedAt() != null ? d.getUpdatedAt() : d.getCreatedAt());
+            if (reference == null) {
+                continue;
+            }
+            long days = ChronoUnit.DAYS.between(d.getCreatedAt(), reference);
+            long[] agg = durationAgg.computeIfAbsent(stageId, id -> new long[] {0L, 0L});
+            agg[0] += days;
+            agg[1] += 1;
+        }
+
+        for (Map.Entry<Long, long[]> e : durationAgg.entrySet()) {
+            Long stageId = e.getKey();
+            long sumDays = e.getValue()[0];
+            long count = e.getValue()[1];
+            DealDtos.LostDealsByStageItem item = byStage.get(stageId);
+            if (item != null && count > 0) {
+                item.avgDaysToLost = sumDays / (double) count;
+            }
+        }
+
+        return new DealDtos.LostDealsByStageResponse(new ArrayList<>(byStage.values()));
     }
 
     /**

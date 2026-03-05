@@ -210,6 +210,46 @@ public class DealStageHistoryService {
     }
 
     /**
+     * Get average deal timeline for diverted deals only: average days a diverted deal spends in each stage (by stage name).
+     * Uses only completed stage visits (deals that have left the stage) and filters deals where deal_source = 'DIVERT'.
+     */
+    public DealDtos.AverageDealTimelineResponse getAverageDealTimelineForDivertedDeals() {
+        // Overall averages per stage (all statuses combined)
+        List<Object[]> overallRows = historyRepository.findAverageDaysPerStageNameForDivertedDeals();
+        Map<String, DealDtos.AverageDealTimelineItem> byStage = new HashMap<>();
+        for (Object[] row : overallRows) {
+            String stageName = (String) row[0];
+            Number avgNum = (Number) row[1];
+            Double avgDays = avgNum != null ? avgNum.doubleValue() : null;
+            Long visitCount = row[2] instanceof Number ? ((Number) row[2]).longValue() : 0L;
+            DealDtos.AverageDealTimelineItem item =
+                new DealDtos.AverageDealTimelineItem(stageName, avgDays, visitCount);
+            item.byStatus = new ArrayList<>();
+            byStage.put(stageName, item);
+        }
+
+        // Per-status breakdown per stage
+        List<Object[]> statusRows = historyRepository.findAverageDaysPerStageNameForDivertedDealsByStatus();
+        for (Object[] row : statusRows) {
+            String stageName = (String) row[0];
+            String status = row[1] != null ? row[1].toString() : null;
+            Number avgNum = (Number) row[2];
+            Double avgDays = avgNum != null ? avgNum.doubleValue() : null;
+            Long visitCount = row[3] instanceof Number ? ((Number) row[3]).longValue() : 0L;
+
+            DealDtos.AverageDealTimelineItem parent = byStage.get(stageName);
+            if (parent == null) {
+                parent = new DealDtos.AverageDealTimelineItem(stageName, null, 0L);
+                parent.byStatus = new ArrayList<>();
+                byStage.put(stageName, parent);
+            }
+            parent.byStatus.add(new DealDtos.AverageDealTimelineStatusItem(status, avgDays, visitCount));
+        }
+
+        return new DealDtos.AverageDealTimelineResponse(new ArrayList<>(byStage.values()));
+    }
+
+    /**
      * Get average deal timeline per month: for each month (yyyy-MM), average days in each stage (by stage name).
      * Month is the year-month when the deal exited the stage.
      */

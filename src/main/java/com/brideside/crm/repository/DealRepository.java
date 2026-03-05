@@ -137,6 +137,33 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
             "AND d.dealSubSource = :subSource")
     List<Deal> findByDealSubSource(@Param("subSource") DealSubSource subSource);
+
+    /**
+     * Count LOST, non-deleted deals per stage.
+     * Returns [stageId, stageName, lostCount].
+     */
+    @Query("SELECT d.stage.id, d.stage.name, COUNT(d) " +
+            "FROM Deal d " +
+            "WHERE d.status = com.brideside.crm.entity.DealStatus.LOST " +
+            "AND (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND d.stage IS NOT NULL " +
+            "GROUP BY d.stage.id, d.stage.name " +
+            "ORDER BY d.stage.id")
+    List<Object[]> countLostDealsByStage();
+
+    /**
+     * Count LOST, non-deleted deals per stage and organization category.
+     * Returns [stageId, stageName, categoryEnum, lostCount].
+     */
+    @Query("SELECT d.stage.id, d.stage.name, o.category, COUNT(d) " +
+            "FROM Deal d " +
+            "LEFT JOIN d.organization o " +
+            "WHERE d.status = com.brideside.crm.entity.DealStatus.LOST " +
+            "AND (d.isDeleted = false OR d.isDeleted IS NULL) " +
+            "AND d.stage IS NOT NULL " +
+            "GROUP BY d.stage.id, d.stage.name, o.category " +
+            "ORDER BY d.stage.id")
+    List<Object[]> countLostDealsByStageAndCategory();
 }
 
 
