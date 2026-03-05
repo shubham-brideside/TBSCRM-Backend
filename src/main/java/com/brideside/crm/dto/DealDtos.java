@@ -204,9 +204,29 @@ public class DealDtos {
         public String stageName;
         public Double avgDaysInStage;
         public Long visitCount;
+        /**
+         * Optional breakdown by final deal status (e.g. WON, LOST, IN_PROGRESS) for this stage.
+         * Used by diverted-deals timeline endpoint.
+         */
+        public List<AverageDealTimelineStatusItem> byStatus;
 
         public AverageDealTimelineItem(String stageName, Double avgDaysInStage, Long visitCount) {
             this.stageName = stageName;
+            this.avgDaysInStage = avgDaysInStage;
+            this.visitCount = visitCount;
+        }
+    }
+
+    /**
+     * Average time (in days) diverted deals spend in a stage, broken down by final deal status.
+     */
+    public static class AverageDealTimelineStatusItem {
+        public String status; // e.g. "WON", "LOST", "IN_PROGRESS"
+        public Double avgDaysInStage;
+        public Long visitCount;
+
+        public AverageDealTimelineStatusItem(String status, Double avgDaysInStage, Long visitCount) {
+            this.status = status;
             this.avgDaysInStage = avgDaysInStage;
             this.visitCount = visitCount;
         }
@@ -238,6 +258,50 @@ public class DealDtos {
 
         public AverageDealTimelinePerMonthResponse(List<AverageDealTimelinePerMonth> byMonth) {
             this.byMonth = byMonth;
+        }
+    }
+
+    /**
+     * Total LOST deals per stage.
+     */
+    public static class LostDealsByStageItem {
+        public Long stageId;
+        public String stageName;
+        public Long lostCount;
+        /**
+         * Optional breakdown by organization category for this stage.
+         */
+        public List<LostDealsByStageCategoryItem> categories;
+        /**
+         * Average days from deal creation to being marked LOST, for deals that ended LOST in this stage.
+         */
+        public Double avgDaysToLost;
+
+        public LostDealsByStageItem(Long stageId, String stageName, Long lostCount) {
+            this.stageId = stageId;
+            this.stageName = stageName;
+            this.lostCount = lostCount;
+        }
+    }
+
+    public static class LostDealsByStageResponse {
+        public List<LostDealsByStageItem> stages;
+
+        public LostDealsByStageResponse(List<LostDealsByStageItem> stages) {
+            this.stages = stages;
+        }
+    }
+
+    /**
+     * LOST deals count for a (stage, category) pair.
+     */
+    public static class LostDealsByStageCategoryItem {
+        public String category; // organization category dbValue, e.g. "PHOTOGRAPHY"
+        public Long lostCount;
+
+        public LostDealsByStageCategoryItem(String category, Long lostCount) {
+            this.category = category;
+            this.lostCount = lostCount;
         }
     }
 

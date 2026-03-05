@@ -36,6 +36,38 @@ public interface DealStageHistoryRepository extends JpaRepository<DealStageHisto
     List<Object[]> findAverageDaysPerStageName();
 
     /**
+     * Average days diverted deals spend in each stage (by stage name), using only completed stage visits.
+     * A diverted deal is identified via deals.deal_source = 'DIVERT'.
+     * Result: [stageName, avgDays, visitCount].
+     */
+    @Query(value = "SELECT s.name AS stage_name, " +
+        "AVG(COALESCE(dsh.days_in_stage, DATEDIFF(dsh.exited_at, dsh.entered_at))) AS avg_days, " +
+        "COUNT(*) AS visit_count " +
+        "FROM deal_stage_history dsh " +
+        "INNER JOIN stages s ON dsh.stage_id = s.id " +
+        "INNER JOIN deals d ON dsh.deal_id = d.id " +
+        "WHERE (dsh.exited_at IS NOT NULL OR dsh.days_in_stage IS NOT NULL) " +
+        "AND d.deal_source = 'DIVERT' " +
+        "GROUP BY s.name", nativeQuery = true)
+    List<Object[]> findAverageDaysPerStageNameForDivertedDeals();
+
+    /**
+     * Average days diverted deals spend in each stage, broken down by final deal status.
+     * Result: [stageName, status, avgDays, visitCount].
+     */
+    @Query(value = "SELECT s.name AS stage_name, " +
+        "d.status AS deal_status, " +
+        "AVG(COALESCE(dsh.days_in_stage, DATEDIFF(dsh.exited_at, dsh.entered_at))) AS avg_days, " +
+        "COUNT(*) AS visit_count " +
+        "FROM deal_stage_history dsh " +
+        "INNER JOIN stages s ON dsh.stage_id = s.id " +
+        "INNER JOIN deals d ON dsh.deal_id = d.id " +
+        "WHERE (dsh.exited_at IS NOT NULL OR dsh.days_in_stage IS NOT NULL) " +
+        "AND d.deal_source = 'DIVERT' " +
+        "GROUP BY s.name, d.status", nativeQuery = true)
+    List<Object[]> findAverageDaysPerStageNameForDivertedDealsByStatus();
+
+    /**
      * Average days per stage name per month (month = when the deal exited the stage).
      * Result: [month (yyyy-MM), stageName, avgDays, visitCount].
      */
