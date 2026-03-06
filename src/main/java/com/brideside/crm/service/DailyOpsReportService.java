@@ -86,17 +86,22 @@ public class DailyOpsReportService {
         sb.append("4) Calls done by sales reps (count + minutes)\n");
         sb.append(formatUserCallsTable(queryCallsPerRep(start, end))).append("\n\n");
 
-        sb.append("5) City wise distribution of leads coming in\n");
+        sb.append("5) Meetings completed (per organization + user)\n");
+        sb.append(formatTable(
+                List.of("organization_name", "user_name", "meetings_completed"),
+                queryMeetingsCompletedPerOrg(start, end))).append("\n\n");
+
+        sb.append("6) City wise distribution of leads coming in\n");
         sb.append(formatCityTable(queryCityDistribution(start, end))).append("\n\n");
 
-        sb.append("6) Deals moved from Qualified to Contact Made (per account)\n");
+        sb.append("7) Deals moved from Qualified to Contact Made (per account)\n");
         sb.append(formatOrgTable(queryMovedQualifiedToContactMadePerOrg(start, end), "moved_qualified_to_contact_made"))
                 .append("\n\n");
 
-        sb.append("7) Deals in Qualified (IN_PROGRESS) rotting for 2-3 days (per account)\n");
+        sb.append("8) Deals in Qualified (IN_PROGRESS) rotting for 2-3 days (per account)\n");
         sb.append(formatOrgTable(queryQualifiedRotting2to3DaysPerOrg(end), "rotting_2_to_3_days")).append("\n");
 
-        sb.append("\n8) Deals moved to ").append(STAGE_MEETING_SCHEDULED).append(" (by org + user)\n");
+        sb.append("\n9) Deals moved to ").append(STAGE_MEETING_SCHEDULED).append(" (by org + user)\n");
         sb.append(formatTable(
                 List.of("organization_name", "deals_moved"),
                 queryMovedToStageByOrg(start, end, STAGE_MEETING_SCHEDULED)
@@ -107,7 +112,7 @@ public class DailyOpsReportService {
                 queryMovedToStageDetails(start, end, STAGE_MEETING_SCHEDULED)
         )).append("\n\n");
 
-        sb.append("9) Deals moved to ").append(STAGE_CONTRACT_SHARED).append(" (by org + user)\n");
+        sb.append("10) Deals moved to ").append(STAGE_CONTRACT_SHARED).append(" (by org + user)\n");
         sb.append(formatTable(
                 List.of("organization_name", "deals_moved"),
                 queryMovedToStageByOrg(start, end, STAGE_CONTRACT_SHARED)
@@ -127,6 +132,7 @@ public class DailyOpsReportService {
         List<Map<String, Object>> creators = queryDealsCreatedByName(start, end);
         List<Map<String, Object>> wonLost = queryWonLostPerOrg(start, end);
         List<Map<String, Object>> calls = queryCallsPerRep(start, end);
+        List<Map<String, Object>> meetingsCompleted = queryMeetingsCompletedPerOrg(start, end);
         List<Map<String, Object>> cities = queryCityDistribution(start, end);
         List<Map<String, Object>> moved = queryMovedQualifiedToContactMadePerOrg(start, end);
         List<Map<String, Object>> rotting = queryQualifiedRotting2to3DaysPerOrg(end);
@@ -142,11 +148,12 @@ public class DailyOpsReportService {
         long totalLost = sumLong(wonLost, "lost_count");
         long totalCalls = sumLong(calls, "calls_done");
         long totalCallMinutes = sumLong(calls, "total_call_minutes");
+        long totalMeetingsCompleted = sumLong(meetingsCompleted, "meetings_completed");
         long totalMeetingScheduled = queryTotalDealsMovedToStage(start, end, STAGE_MEETING_SCHEDULED);
         long totalContractShared = queryTotalDealsMovedToStage(start, end, STAGE_CONTRACT_SHARED);
 
         String content = ""
-                + sectionKpis(totalNewDeals, totalBotDeals, totalManual, totalWon, totalLost, totalCalls, totalCallMinutes)
+                + sectionKpis(totalNewDeals, totalBotDeals, totalManual, totalWon, totalLost, totalCalls, totalCallMinutes, totalMeetingsCompleted)
                 + section("1) New deals created per account",
                 "Total: " + fmt(totalNewDeals),
                 htmlTable(newDeals,
@@ -182,28 +189,35 @@ public class DailyOpsReportService {
                         List.of("calls_done", "total_call_minutes"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("5) City-wise distribution of leads",
+                + section("5) Meetings completed (per organization + user)",
+                "Total: " + fmt(totalMeetingsCompleted),
+                htmlTable(meetingsCompleted,
+                        List.of("organization_name", "user_name", "meetings_completed"),
+                        List.of("meetings_completed"),
+                        hideZeroRows,
+                        maxRowsPerTable))
+                + section("6) City-wise distribution of leads",
                 "Total new deals: " + fmt(totalNewDeals),
                 htmlTable(cities,
                         List.of("city", "deals_created"),
                         List.of("deals_created"),
                         true,
                         maxRowsPerTable))
-                + section("6) Deals moved Qualified → Contact Made (per account)",
+                + section("7) Deals moved Qualified → Contact Made (per account)",
                 "Window: previous day only",
                 htmlTable(moved,
                         List.of("organization_id", "organization_name", "moved_qualified_to_contact_made"),
                         List.of("moved_qualified_to_contact_made"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("7) Qualified rotting (IN_PROGRESS) 2–3 days (per account)",
+                + section("8) Qualified rotting (IN_PROGRESS) 2–3 days (per account)",
                 "As-of: end of previous day",
                 htmlTable(rotting,
                         List.of("organization_id", "organization_name", "rotting_2_to_3_days"),
                         List.of("rotting_2_to_3_days"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("8) Deals moved to " + STAGE_MEETING_SCHEDULED,
+                + section("9) Deals moved to " + STAGE_MEETING_SCHEDULED,
                 "Total deals moved: " + fmt(totalMeetingScheduled),
                 "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
                         + htmlTable(meetingSchedSummary,
@@ -217,7 +231,7 @@ public class DailyOpsReportService {
                         List.of("deal_value"),
                         true,
                         maxRowsPerTable))
-                + section("9) Deals moved to " + STAGE_CONTRACT_SHARED,
+                + section("10) Deals moved to " + STAGE_CONTRACT_SHARED,
                 "Total deals moved: " + fmt(totalContractShared),
                 "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
                         + htmlTable(contractSharedSummary,
@@ -429,6 +443,25 @@ public class DailyOpsReportService {
         return jdbcTemplate.queryForList(sql, start, end);
     }
 
+    private List<Map<String, Object>> queryMeetingsCompletedPerOrg(LocalDateTime start, LocalDateTime end) {
+        String sql = """
+                SELECT
+                  COALESCE(o.id, 0) AS organization_id,
+                  COALESCE(o.name, '(no organization)') AS organization_name,
+                  COALESCE(NULLIF(TRIM(CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))), ''), '(no user)') AS user_name,
+                  COUNT(*) AS meetings_completed
+                FROM activities a
+                LEFT JOIN organizations o ON o.id = a.organization_id
+                LEFT JOIN users u ON u.id = COALESCE(a.assigned_user_id, a.user_id)
+                WHERE a.done = 1
+                  AND a.type = 'MEETING'
+                  AND a.completed_at >= ? AND a.completed_at < ?
+                GROUP BY o.id, o.name, u.id, u.first_name, u.last_name
+                ORDER BY meetings_completed DESC, organization_name ASC, user_name ASC
+                """;
+        return jdbcTemplate.queryForList(sql, start, end);
+    }
+
     private List<Map<String, Object>> queryCityDistribution(LocalDateTime start, LocalDateTime end) {
         String sql = """
                 SELECT
@@ -566,7 +599,7 @@ public class DailyOpsReportService {
                 + "</td></tr>";
     }
 
-    private String sectionKpis(long totalNewDeals, long totalBot, long totalManual, long won, long lost, long calls, long callMinutes) {
+    private String sectionKpis(long totalNewDeals, long totalBot, long totalManual, long won, long lost, long calls, long callMinutes, long meetingsCompleted) {
         return "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"margin:0 0 16px 0;\">"
                 + "<tr>"
                 + kpiCard("New deals", fmt(totalNewDeals))
@@ -576,6 +609,8 @@ public class DailyOpsReportService {
                 + kpiCard("Won", fmt(won))
                 + kpiCard("Lost", fmt(lost))
                 + kpiCard("Calls / minutes", fmt(calls) + " / " + fmt(callMinutes))
+                + "</tr><tr>"
+                + kpiCard("Meetings completed", fmt(meetingsCompleted))
                 + "</tr></table>";
     }
 
@@ -664,20 +699,9 @@ public class DailyOpsReportService {
         if (v == null) return "";
         if (!numeric) return String.valueOf(v);
         if (v instanceof java.math.BigDecimal bd) {
-            try {
-                return String.format(Locale.US, "%,.2f", bd);
-            } catch (Exception ignored) {
-                return String.valueOf(v);
-            }
+            return fmt(bd.longValue());
         }
         if (v instanceof Number n) {
-            // Keep existing behavior for count-like metrics
-            if (n instanceof Float || n instanceof Double) {
-                try {
-                    return String.format(Locale.US, "%,.2f", n.doubleValue());
-                } catch (Exception ignored) {
-                }
-            }
             return fmt(n.longValue());
         }
         try {
