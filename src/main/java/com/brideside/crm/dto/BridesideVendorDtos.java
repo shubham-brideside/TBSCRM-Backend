@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class BridesideVendorDtos {
     private BridesideVendorDtos() {
@@ -26,6 +27,11 @@ public final class BridesideVendorDtos {
 
         @Size(max = 255, message = "Vendor name cannot exceed 255 characters")
         private String vendorName;
+
+        /**
+         * Details of vendor services. Stored as TEXT in DB.
+         */
+        private String about;
 
         /**
          * Stored in DB as JSON. Frontend can send an array/object string (e.g. ["Photography"]).
@@ -67,6 +73,8 @@ public final class BridesideVendorDtos {
         public void setBusinessName(String businessName) { this.businessName = businessName; }
         public String getVendorName() { return vendorName; }
         public void setVendorName(String vendorName) { this.vendorName = vendorName; }
+        public String getAbout() { return about; }
+        public void setAbout(String about) { this.about = about; }
         public String getServices() { return services; }
         public void setServices(String services) { this.services = services; }
         public String getContactNumber() { return contactNumber; }
@@ -111,8 +119,13 @@ public final class BridesideVendorDtos {
         private String igAccountId;
         private String businessName;
         private String vendorName;
+        private String about;
         private String services;
         private AccountOwnerSummary accountOwner;
+
+        private List<EventPricingDtos.EventPricingRow> eventPricing;
+        private List<EventPricingDtos.EventPricingRow> eventPricingCurrent;
+        private List<EventPricingDtos.EventPricingRow> eventPricingUpcoming;
 
         private String contactNumber;
         private String officeStudioLocation;
@@ -140,10 +153,19 @@ public final class BridesideVendorDtos {
         public void setBusinessName(String businessName) { this.businessName = businessName; }
         public String getVendorName() { return vendorName; }
         public void setVendorName(String vendorName) { this.vendorName = vendorName; }
+        public String getAbout() { return about; }
+        public void setAbout(String about) { this.about = about; }
         public String getServices() { return services; }
         public void setServices(String services) { this.services = services; }
         public AccountOwnerSummary getAccountOwner() { return accountOwner; }
+        public List<EventPricingDtos.EventPricingRow> getEventPricing() { return eventPricing; }
+        public void setEventPricing(List<EventPricingDtos.EventPricingRow> eventPricing) { this.eventPricing = eventPricing; }
+        public List<EventPricingDtos.EventPricingRow> getEventPricingCurrent() { return eventPricingCurrent; }
+        public void setEventPricingCurrent(List<EventPricingDtos.EventPricingRow> eventPricingCurrent) { this.eventPricingCurrent = eventPricingCurrent; }
+        public List<EventPricingDtos.EventPricingRow> getEventPricingUpcoming() { return eventPricingUpcoming; }
+        public void setEventPricingUpcoming(List<EventPricingDtos.EventPricingRow> eventPricingUpcoming) { this.eventPricingUpcoming = eventPricingUpcoming; }
         public void setAccountOwner(AccountOwnerSummary accountOwner) { this.accountOwner = accountOwner; }
+
         public String getContactNumber() { return contactNumber; }
         public void setContactNumber(String contactNumber) { this.contactNumber = contactNumber; }
         public String getOfficeStudioLocation() { return officeStudioLocation; }
@@ -166,11 +188,29 @@ public final class BridesideVendorDtos {
         public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     }
 
+    /**
+     * Request body for updating only the vendor about field.
+     */
+    public static class AboutUpdateRequest {
+        /**
+         * Details of vendor services. Stored as TEXT in DB. Send null or empty string to clear.
+         */
+        private String about;
+
+        public String getAbout() { return about; }
+        public void setAbout(String about) { this.about = about; }
+    }
+
     public static class VendorUpdateRequest {
         private Long pipelineId;
 
         @Size(max = 255, message = "Vendor name cannot exceed 255 characters")
         private String vendorName;
+
+        /**
+         * Details of vendor services. Stored as TEXT in DB.
+         */
+        private String about;
 
         @Size(max = 50, message = "Contact number cannot exceed 50 characters")
         private String contactNumber;
@@ -200,6 +240,8 @@ public final class BridesideVendorDtos {
         public void setPipelineId(Long pipelineId) { this.pipelineId = pipelineId; }
         public String getVendorName() { return vendorName; }
         public void setVendorName(String vendorName) { this.vendorName = vendorName; }
+        public String getAbout() { return about; }
+        public void setAbout(String about) { this.about = about; }
         public String getContactNumber() { return contactNumber; }
         public void setContactNumber(String contactNumber) { this.contactNumber = contactNumber; }
         public String getOfficeStudioLocation() { return officeStudioLocation; }

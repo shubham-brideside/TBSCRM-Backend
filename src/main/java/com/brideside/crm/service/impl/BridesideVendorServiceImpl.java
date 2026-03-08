@@ -11,6 +11,7 @@ import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PipelineRepository;
+import com.brideside.crm.service.EventPricingService;
 import com.brideside.crm.service.PipelineService;
 import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.VendorAssetService;
@@ -29,17 +30,20 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
     private final PipelineRepository pipelineRepository;
     private final PipelineService pipelineService;
     private final VendorAssetService vendorAssetService;
+    private final EventPricingService eventPricingService;
 
     public BridesideVendorServiceImpl(BridesideVendorRepository bridesideVendorRepository,
                                      OrganizationRepository organizationRepository,
                                      PipelineRepository pipelineRepository,
                                      PipelineService pipelineService,
-                                     VendorAssetService vendorAssetService) {
+                                     VendorAssetService vendorAssetService,
+                                     EventPricingService eventPricingService) {
         this.bridesideVendorRepository = bridesideVendorRepository;
         this.organizationRepository = organizationRepository;
         this.pipelineRepository = pipelineRepository;
         this.pipelineService = pipelineService;
         this.vendorAssetService = vendorAssetService;
+        this.eventPricingService = eventPricingService;
     }
 
     @Override
@@ -90,6 +94,7 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         vendor.setIgAccountId(trimmed(safeRequest.getIgAccountId()));
         vendor.setBusinessName(trimmed(safeRequest.getBusinessName()));
         vendor.setVendorName(trimmed(safeRequest.getVendorName()));
+        vendor.setAbout(trimmed(safeRequest.getAbout()));
         vendor.setServices(trimmed(safeRequest.getServices()));
 
         // Use org email and address when creating vendor (from organization creation)
@@ -131,6 +136,7 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         }
 
         vendor.setVendorName(trimmed(request.getVendorName()));
+        vendor.setAbout(trimmed(request.getAbout()));
         vendor.setContactNumber(trimmed(request.getContactNumber()));
         vendor.setOfficeStudioLocation(trimmed(request.getOfficeStudioLocation()));
         vendor.setBaseLocation(trimmed(request.getBaseLocation()));
@@ -141,6 +147,31 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         vendor.setOnboardingFee(request.getOnboardingFee());
 
         return toResponse(bridesideVendorRepository.save(vendor));
+    }
+
+    @Override
+    public BridesideVendorDtos.VendorResponse updateVendorAbout(Long organizationId, Long vendorId, BridesideVendorDtos.AboutUpdateRequest request) {
+        if (organizationId == null) {
+            throw new BadRequestException("Organization id is required");
+        }
+        if (vendorId == null) {
+            throw new BadRequestException("Vendor id is required");
+        }
+        BridesideVendor vendor = bridesideVendorRepository.findByIdAndOrganization_Id(vendorId, organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found with id " + vendorId + " for organization " + organizationId));
+
+        vendor.setAbout(trimmed(request != null ? request.getAbout() : null));
+        return toResponse(bridesideVendorRepository.save(vendor));
+    }
+
+    @Override
+    public BridesideVendorDtos.VendorResponse getVendor(Long organizationId, Long vendorId) {
+        if (organizationId == null || vendorId == null) {
+            throw new BadRequestException("Organization id and vendor id are required");
+        }
+        BridesideVendor vendor = bridesideVendorRepository.findByIdAndOrganization_Id(vendorId, organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found with id " + vendorId + " for organization " + organizationId));
+        return toResponse(vendor);
     }
 
     private Pipeline resolveOrCreatePipeline(Organization organization, Long pipelineId) {
@@ -196,6 +227,7 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         response.setIgAccountId(vendor.getIgAccountId());
         response.setBusinessName(vendor.getBusinessName());
         response.setVendorName(vendor.getVendorName());
+        response.setAbout(vendor.getAbout());
         response.setServices(vendor.getServices());
         response.setAccountOwner(toAccountOwnerSummary(vendor.getAccountOwner()));
 
@@ -210,6 +242,8 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
 
         response.setCreatedAt(vendor.getCreatedAt());
         response.setUpdatedAt(vendor.getUpdatedAt());
+
+        eventPricingService.populateEventPricingForVendorResponse(vendor.getId(), response);
         return response;
     }
 

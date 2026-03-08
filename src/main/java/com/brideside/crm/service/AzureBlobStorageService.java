@@ -17,6 +17,17 @@ public interface AzureBlobStorageService {
     String uploadImage(InputStream fileInputStream, String fileName, String contentType) throws Exception;
     
     /**
+     * Upload a file (e.g. PDF) to Azure Blob Storage
+     * @param fileInputStream The file input stream
+     * @param fileName The file name
+     * @param contentType The content type (e.g. "application/pdf")
+     * @param pathPrefix Optional path prefix for blob name (e.g. "client-data/"). Can be null or empty.
+     * @return The public URL of the uploaded file
+     * @throws Exception if upload fails
+     */
+    String uploadFile(InputStream fileInputStream, String fileName, String contentType, String pathPrefix) throws Exception;
+
+    /**
      * Delete a file from Azure Blob Storage
      * @param blobUrl The URL of the blob to delete
      * @throws Exception if deletion fails

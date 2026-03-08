@@ -11,5 +11,9 @@ public interface BridesideVendorService {
     BridesideVendorDtos.VendorResponse createVendorForOrganization(Long organizationId, BridesideVendorDtos.VendorCreateRequest request);
 
     BridesideVendorDtos.VendorResponse updateVendorDetails(Long organizationId, Long vendorId, BridesideVendorDtos.VendorUpdateRequest request);
+
+    BridesideVendorDtos.VendorResponse updateVendorAbout(Long organizationId, Long vendorId, BridesideVendorDtos.AboutUpdateRequest request);
+
+    BridesideVendorDtos.VendorResponse getVendor(Long organizationId, Long vendorId);
 }
 

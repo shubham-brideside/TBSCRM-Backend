@@ -46,6 +46,9 @@ public class BridesideVendor {
     @Column(name = "vendor_name", length = 255)
     private String vendorName;
 
+    @Column(columnDefinition = "TEXT")
+    private String about;
+
     @Column(columnDefinition = "JSON")
     private String services;
 
@@ -108,6 +111,9 @@ public class BridesideVendor {
 
     public String getVendorName() { return vendorName; }
     public void setVendorName(String vendorName) { this.vendorName = vendorName; }
+
+    public String getAbout() { return about; }
+    public void setAbout(String about) { this.about = about; }
 
     public String getServices() { return services; }
     public void setServices(String services) { this.services = services; }

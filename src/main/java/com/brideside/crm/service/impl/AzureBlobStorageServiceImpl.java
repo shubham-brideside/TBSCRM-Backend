@@ -116,15 +116,21 @@ public class AzureBlobStorageServiceImpl implements AzureBlobStorageService {
 
     @Override
     public String uploadImage(InputStream fileInputStream, String fileName, String contentType) throws Exception {
+        return uploadFile(fileInputStream, fileName, contentType, null);
+    }
+
+    @Override
+    public String uploadFile(InputStream fileInputStream, String fileName, String contentType, String pathPrefix) throws Exception {
         ensureInitialized();
         try {
-            // Generate unique blob name: {timestamp}-{uuid}-{originalFileName}
+            // Generate unique blob name: [{pathPrefix}]{timestamp}-{uuid}-{originalFileName}
             String timestamp = String.valueOf(Instant.now().toEpochMilli());
             String uniqueId = UUID.randomUUID().toString().substring(0, 8);
             String sanitizedFileName = sanitizeFileName(fileName);
-            String blobName = String.format("%s-%s-%s", timestamp, uniqueId, sanitizedFileName);
+            String prefix = (pathPrefix != null && !pathPrefix.isEmpty()) ? pathPrefix : "";
+            String blobName = prefix + String.format("%s-%s-%s", timestamp, uniqueId, sanitizedFileName);
             
-            log.debug("Uploading image to Azure Blob Storage: {}", blobName);
+            log.debug("Uploading file to Azure Blob Storage: {}", blobName);
             
             // Get blob client
             BlobClient blobClient = containerClient.getBlobClient(blobName);
@@ -140,12 +146,12 @@ public class AzureBlobStorageServiceImpl implements AzureBlobStorageService {
             // Get the URL
             String blobUrl = blobClient.getBlobUrl();
             
-            log.info("Successfully uploaded image to Azure Blob Storage: {}", blobUrl);
+            log.info("Successfully uploaded file to Azure Blob Storage: {}", blobUrl);
             
             return blobUrl;
         } catch (Exception e) {
-            log.error("Failed to upload image to Azure Blob Storage: {}", e.getMessage(), e);
-            throw new Exception("Failed to upload image to Azure Blob Storage: " + e.getMessage(), e);
+            log.error("Failed to upload file to Azure Blob Storage: {}", e.getMessage(), e);
+            throw new Exception("Failed to upload file to Azure Blob Storage: " + e.getMessage(), e);
         }
     }
 

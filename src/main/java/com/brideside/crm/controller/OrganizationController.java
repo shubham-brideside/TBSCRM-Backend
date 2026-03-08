@@ -2,21 +2,32 @@ package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.BridesideVendorDtos;
+import com.brideside.crm.dto.ClientDataDtos;
+import com.brideside.crm.dto.EventPricingDtos;
 import com.brideside.crm.dto.OrganizationDtos;
 import com.brideside.crm.dto.OrganizationDetailsDtos;
 import com.brideside.crm.dto.VendorAssetDtos;
+import com.brideside.crm.dto.VendorDataDtos;
+import com.brideside.crm.dto.VendorTeamMemberDtos;
 import com.brideside.crm.service.BridesideVendorService;
+import com.brideside.crm.service.ClientDataService;
+import com.brideside.crm.service.EventPricingService;
 import com.brideside.crm.service.OrganizationService;
 import com.brideside.crm.service.VendorAssetService;
+import com.brideside.crm.service.VendorDataService;
+import com.brideside.crm.service.VendorTeamMemberService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -28,13 +39,25 @@ public class OrganizationController {
     private final OrganizationService organizationService;
     private final BridesideVendorService bridesideVendorService;
     private final VendorAssetService vendorAssetService;
+    private final EventPricingService eventPricingService;
+    private final VendorTeamMemberService vendorTeamMemberService;
+    private final VendorDataService vendorDataService;
+    private final ClientDataService clientDataService;
 
     public OrganizationController(OrganizationService organizationService,
                                   BridesideVendorService bridesideVendorService,
-                                  VendorAssetService vendorAssetService) {
+                                  VendorAssetService vendorAssetService,
+                                  EventPricingService eventPricingService,
+                                  VendorTeamMemberService vendorTeamMemberService,
+                                  VendorDataService vendorDataService,
+                                  ClientDataService clientDataService) {
         this.organizationService = organizationService;
         this.bridesideVendorService = bridesideVendorService;
         this.vendorAssetService = vendorAssetService;
+        this.eventPricingService = eventPricingService;
+        this.vendorTeamMemberService = vendorTeamMemberService;
+        this.vendorDataService = vendorDataService;
+        this.clientDataService = clientDataService;
     }
 
     @PostMapping
@@ -120,6 +143,29 @@ public class OrganizationController {
         return ResponseEntity.ok(ApiResponse.success("Organization vendor updated", updated));
     }
 
+    @PatchMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/about")
+    @Operation(summary = "Update vendor about details",
+            description = "Updates only the about field (details of vendor services). Use this when you have a dedicated About section/editor.")
+    public ResponseEntity<ApiResponse<BridesideVendorDtos.VendorResponse>> updateVendorAbout(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestBody(required = false) BridesideVendorDtos.AboutUpdateRequest request) {
+        BridesideVendorDtos.VendorResponse updated = bridesideVendorService.updateVendorAbout(id, vendorId, request);
+        return ResponseEntity.ok(ApiResponse.success("Vendor about updated", updated));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/event-pricing")
+    @Operation(summary = "Save event pricing for a vendor",
+            description = "Replaces all event pricing for the vendor. Use eventPricing for Photography (single session, primary only). Use eventPricingCurrent and eventPricingUpcoming for Makeup (with artist levels).")
+    public ResponseEntity<ApiResponse<BridesideVendorDtos.VendorResponse>> saveEventPricing(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestBody(required = false) EventPricingDtos.EventPricingUpdateRequest request) {
+        eventPricingService.saveEventPricing(id, vendorId, request);
+        BridesideVendorDtos.VendorResponse updated = bridesideVendorService.getVendor(id, vendorId);
+        return ResponseEntity.ok(ApiResponse.success("Event pricing saved", updated));
+    }
+
     @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/assets")
     @Operation(summary = "List vendor assets for an organization",
             description = "Returns asset info (phone, SIM, etc.) for the given vendor")
@@ -139,6 +185,165 @@ public class OrganizationController {
             @Valid @RequestBody VendorAssetDtos.AssetUpdateRequest request) {
         VendorAssetDtos.AssetResponse updated = vendorAssetService.update(id, vendorId, assetId, request);
         return ResponseEntity.ok(ApiResponse.success("Vendor asset updated", updated));
+    }
+
+    @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-members")
+    @Operation(summary = "List vendor team members",
+            description = "Returns team members (name, designation, instagram) for the given vendor")
+    public ResponseEntity<ApiResponse<List<VendorTeamMemberDtos.TeamMemberResponse>>> listVendorTeamMembers(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        return ResponseEntity.ok(ApiResponse.success("Vendor team members fetched", vendorTeamMemberService.listByVendor(id, vendorId)));
+    }
+
+    @PostMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-members")
+    @Operation(summary = "Create vendor team member",
+            description = "Adds a new team member (name, designation, instagram ID) for the vendor")
+    public ResponseEntity<ApiResponse<VendorTeamMemberDtos.TeamMemberResponse>> createVendorTeamMember(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @Valid @RequestBody VendorTeamMemberDtos.TeamMemberCreateRequest request) {
+        VendorTeamMemberDtos.TeamMemberResponse created = vendorTeamMemberService.create(id, vendorId, request);
+        return ResponseEntity.status(201).body(ApiResponse.success("Team member created", created));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-members/{memberId:\\d+}")
+    @Operation(summary = "Update vendor team member",
+            description = "Updates name, designation, and instagram ID for a team member")
+    public ResponseEntity<ApiResponse<VendorTeamMemberDtos.TeamMemberResponse>> updateVendorTeamMember(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @PathVariable("memberId") Long memberId,
+            @Valid @RequestBody VendorTeamMemberDtos.TeamMemberUpdateRequest request) {
+        VendorTeamMemberDtos.TeamMemberResponse updated = vendorTeamMemberService.update(id, vendorId, memberId, request);
+        return ResponseEntity.ok(ApiResponse.success("Team member updated", updated));
+    }
+
+    @DeleteMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-members/{memberId:\\d+}")
+    @Operation(summary = "Delete vendor team member",
+            description = "Removes a team member from the vendor")
+    public ResponseEntity<ApiResponse<Void>> deleteVendorTeamMember(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @PathVariable("memberId") Long memberId) {
+        vendorTeamMemberService.delete(id, vendorId, memberId);
+        return ResponseEntity.ok(ApiResponse.success("Team member deleted"));
+    }
+
+    @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")
+    @Operation(summary = "Get vendor data (URLs)",
+            description = "Returns master data link and calendar sheet link for the vendor. Returns null if none exists.")
+    public ResponseEntity<ApiResponse<VendorDataDtos.VendorDataResponse>> getVendorData(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        return ResponseEntity.ok(ApiResponse.success("Vendor data fetched", vendorDataService.getByVendor(id, vendorId)));
+    }
+
+    @PostMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")
+    @Operation(summary = "Create vendor data",
+            description = "Creates vendor data (master data link, calendar sheet link). Fails if data already exists for this vendor.")
+    public ResponseEntity<ApiResponse<VendorDataDtos.VendorDataResponse>> createVendorData(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @Valid @RequestBody(required = false) VendorDataDtos.VendorDataCreateRequest request) {
+        VendorDataDtos.VendorDataResponse created = vendorDataService.create(id, vendorId, request != null ? request : new VendorDataDtos.VendorDataCreateRequest());
+        return ResponseEntity.status(201).body(ApiResponse.success("Vendor data created", created));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")
+    @Operation(summary = "Save vendor data (upsert)",
+            description = "Creates or updates vendor data (master data link, calendar sheet link). Use for the Save button.")
+    public ResponseEntity<ApiResponse<VendorDataDtos.VendorDataResponse>> saveVendorData(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestBody(required = false) VendorDataDtos.VendorDataUpdateRequest request) {
+        VendorDataDtos.VendorDataResponse saved = vendorDataService.save(id, vendorId, request != null ? request : new VendorDataDtos.VendorDataUpdateRequest());
+        return ResponseEntity.ok(ApiResponse.success("Vendor data saved", saved));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data/{dataId:\\d+}")
+    @Operation(summary = "Update vendor data by id",
+            description = "Updates master data link and calendar sheet link for an existing vendor data record.")
+    public ResponseEntity<ApiResponse<VendorDataDtos.VendorDataResponse>> updateVendorData(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @PathVariable("dataId") Long dataId,
+            @Valid @RequestBody VendorDataDtos.VendorDataUpdateRequest request) {
+        VendorDataDtos.VendorDataResponse updated = vendorDataService.update(id, vendorId, dataId, request);
+        return ResponseEntity.ok(ApiResponse.success("Vendor data updated", updated));
+    }
+
+    @DeleteMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")
+    @Operation(summary = "Delete vendor data",
+            description = "Removes vendor data (URLs) for the vendor.")
+    public ResponseEntity<ApiResponse<Void>> deleteVendorData(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        vendorDataService.delete(id, vendorId);
+        return ResponseEntity.ok(ApiResponse.success("Vendor data deleted"));
+    }
+
+    @GetMapping("/{id:\\d+}/client-data")
+    @Operation(summary = "Get client data (PDF URLs)",
+            description = "Returns quote format and client contract format PDF URLs for the organization. Returns null if none exists.")
+    public ResponseEntity<ApiResponse<ClientDataDtos.ClientDataResponse>> getClientData(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Client data fetched", clientDataService.getByOrganization(id)));
+    }
+
+    @PostMapping(value = "/{id:\\d+}/client-data/quote-format/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload quote format PDF",
+            description = "Uploads a PDF to Azure Blob Storage and saves the public URL. Replaces existing if any. Max 10MB.")
+    public ResponseEntity<ApiResponse<ClientDataDtos.ClientDataResponse>> uploadQuoteFormat(
+            @PathVariable("id") Long id,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            ClientDataDtos.ClientDataResponse result = clientDataService.uploadQuoteFormat(id, file);
+            return ResponseEntity.status(201).body(ApiResponse.success("Quote format PDF uploaded", result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Azure Blob Storage is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/{id:\\d+}/client-data/client-contract-format/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload client contract format PDF",
+            description = "Uploads a PDF to Azure Blob Storage and saves the public URL. Replaces existing if any. Max 10MB.")
+    public ResponseEntity<ApiResponse<ClientDataDtos.ClientDataResponse>> uploadClientContractFormat(
+            @PathVariable("id") Long id,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            ClientDataDtos.ClientDataResponse result = clientDataService.uploadClientContractFormat(id, file);
+            return ResponseEntity.status(201).body(ApiResponse.success("Client contract format PDF uploaded", result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Azure Blob Storage is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{id:\\d+}/client-data/quote-format")
+    @Operation(summary = "Remove quote format PDF",
+            description = "Removes the quote format PDF URL and deletes the file from Azure Blob Storage.")
+    public ResponseEntity<ApiResponse<ClientDataDtos.ClientDataResponse>> removeQuoteFormat(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Quote format removed", clientDataService.removeQuoteFormat(id)));
+    }
+
+    @DeleteMapping("/{id:\\d+}/client-data/client-contract-format")
+    @Operation(summary = "Remove client contract format PDF",
+            description = "Removes the client contract format PDF URL and deletes the file from Azure Blob Storage.")
+    public ResponseEntity<ApiResponse<ClientDataDtos.ClientDataResponse>> removeClientContractFormat(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Client contract format removed", clientDataService.removeClientContractFormat(id)));
+    }
+
+    @DeleteMapping("/{id:\\d+}/client-data")
+    @Operation(summary = "Delete client data",
+            description = "Removes all client data (both PDFs) for the organization.")
+    public ResponseEntity<ApiResponse<Void>> deleteClientData(@PathVariable("id") Long id) {
+        clientDataService.delete(id);
+        return ResponseEntity.ok(ApiResponse.success("Client data deleted"));
     }
 
     @PutMapping("/{id}")

@@ -46,7 +46,11 @@ Errors:
       "igAccountId": "17841400000000000",
       "businessName": "Vendor Business Name",
       "vendorName": "Vendor Display Name",
+      "about": "Details of vendor services...",
       "services": "[\"Photography\",\"Candid\"]",
+      "eventPricing": [],
+      "eventPricingCurrent": [],
+      "eventPricingUpcoming": [],
       "accountOwner": {
         "id": 5,
         "firstName": "Jane",
@@ -85,6 +89,7 @@ When a new organization is created, it may not have a row in `brideside_vendors`
   "pipelineId": 45,                   // optional
   "igAccountId": "1784140...",        // optional
   "businessName": "RSP",              // optional
+  "about": "Details of vendor services...",  // optional (TEXT)
   "services": "[\"Photography\"]",    // optional (JSON string)
 
   "contactNumber": "+91-9876543210",
@@ -120,6 +125,7 @@ When a new organization is created, it may not have a row in `brideside_vendors`
 {
   "pipelineId": 45,
   "vendorName": "Vendor Display Name",
+  "about": "Details of vendor services...",
   "contactNumber": "+91-9876543210",
   "officeStudioLocation": "Koramangala, Bangalore",
   "baseLocation": "Bangalore",
@@ -138,8 +144,29 @@ When a new organization is created, it may not have a row in `brideside_vendors`
 
 ---
 
+### Save event pricing (PUT)
+
+- **Method / URL:** `PUT /api/organizations/{organizationId}/vendors/{vendorId}/event-pricing`
+- **Body:** `{ "eventPricing": [...], "eventPricingCurrent": [...], "eventPricingUpcoming": [...] }`
+
+See `frontend-event-pricing-api.md` for full integration details.
+
+---
+
+### Update vendor about only (PATCH)
+
+For a dedicated About section, use the PATCH endpoint to update only the `about` field:
+
+- **Method / URL:** `PATCH /api/organizations/{organizationId}/vendors/{vendorId}/about`
+- **Body:** `{ "about": "Details of vendor services..." }`
+
+See `frontend-vendor-about-api.md` for full integration details.
+
+---
+
 ### Field notes / UI mapping
 
+- **`about`**: details of vendor services (plain text, can be long). Use `PATCH .../vendors/{vendorId}/about` to update only this field.
 - **`services`**: returned as a JSON string (because DB column is `JSON`). If your UI expects an array, parse it:
   - `JSON.parse(vendor.services)` → array/object (wrap in try/catch; it can be `null`)
 - **`accountOwner`**: comes from `brideside_vendors.account_owner` → `users` table (nullable; field may be `null`)
@@ -180,7 +207,12 @@ async function fetchOrganizationVendors(organizationId: number, token: string) {
     igAccountId: string | null;
     businessName: string | null;
     vendorName: string | null;
+    about: string | null;
     services: string | null;
+    eventPricing: EventPricingRow[];
+    eventPricingCurrent: EventPricingRow[];
+    eventPricingUpcoming: EventPricingRow[];
+    // EventPricingRow type: see frontend-event-pricing-api.md
     accountOwner: null | { id: number; firstName: string; lastName: string; email: string };
     contactNumber: string | null;
     officeStudioLocation: string | null;
