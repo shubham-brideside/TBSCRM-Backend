@@ -75,10 +75,11 @@ public class EventPricingServiceImpl implements EventPricingService {
                 return r;
             });
             EventPricingDtos.ArtistPricing ap = toArtistPricing(ep);
+            EventPricingDtos.ArtistPricing value = isEmptyPricing(ap) ? null : ap;
             switch (ep.getArtistLevel()) {
-                case LEVEL_PRIMARY -> row.setPrimary(ap);
-                case LEVEL_SENIOR -> row.setSenior(ap);
-                case LEVEL_JUNIOR -> row.setJunior(ap);
+                case LEVEL_PRIMARY -> row.setPrimary(value);
+                case LEVEL_SENIOR -> row.setSenior(value);
+                case LEVEL_JUNIOR -> row.setJunior(value);
                 default -> { /* ignore unknown level */ }
             }
         }
@@ -96,6 +97,15 @@ public class EventPricingServiceImpl implements EventPricingService {
         return ap;
     }
 
+    private boolean isEmptyPricing(EventPricingDtos.ArtistPricing ap) {
+        if (ap == null) return true;
+        return ap.getBasePrice() == null && ap.getDestinationPrice() == null
+                && ap.getAdditionalMakeupPrice() == null
+                && (ap.getAvailabilityAtStudio() == null || ap.getAvailabilityAtStudio().isBlank())
+                && (ap.getPolicyNotes() == null || ap.getPolicyNotes().isBlank())
+                && (ap.getCurrency() == null || ap.getCurrency().isBlank());
+    }
+
     private void saveRows(BridesideVendor vendor, String session, List<EventPricingDtos.EventPricingRow> rows) {
         if (rows == null || rows.isEmpty()) return;
         int order = 0;
@@ -105,14 +115,20 @@ public class EventPricingServiceImpl implements EventPricingService {
             String label = trimmed(row.getLabel());
             if (label == null) label = code;
 
-            if (row.getPrimary() != null) {
-                eventPricingRepository.save(toEntity(vendor, session, LEVEL_PRIMARY, code, label, order, row.getPrimary()));
-            }
-            if (row.getSenior() != null) {
-                eventPricingRepository.save(toEntity(vendor, session, LEVEL_SENIOR, code, label, order, row.getSenior()));
-            }
-            if (row.getJunior() != null) {
-                eventPricingRepository.save(toEntity(vendor, session, LEVEL_JUNIOR, code, label, order, row.getJunior()));
+            boolean hasAnyPricing = row.getPrimary() != null || row.getSenior() != null || row.getJunior() != null;
+            if (hasAnyPricing) {
+                if (row.getPrimary() != null) {
+                    eventPricingRepository.save(toEntity(vendor, session, LEVEL_PRIMARY, code, label, order, row.getPrimary()));
+                }
+                if (row.getSenior() != null) {
+                    eventPricingRepository.save(toEntity(vendor, session, LEVEL_SENIOR, code, label, order, row.getSenior()));
+                }
+                if (row.getJunior() != null) {
+                    eventPricingRepository.save(toEntity(vendor, session, LEVEL_JUNIOR, code, label, order, row.getJunior()));
+                }
+            } else {
+                // Event without pricing details: save as PRIMARY placeholder with null pricing so it persists and is editable
+                eventPricingRepository.save(toEntity(vendor, session, LEVEL_PRIMARY, code, label, order, null));
             }
             order++;
         }
@@ -127,12 +143,21 @@ public class EventPricingServiceImpl implements EventPricingService {
         ep.setEventCode(code);
         ep.setEventLabel(label);
         ep.setDisplayOrder(displayOrder);
-        ep.setBasePrice(ap.getBasePrice());
-        ep.setDestinationPrice(ap.getDestinationPrice());
-        ep.setAdditionalMakeupPrice(ap.getAdditionalMakeupPrice());
-        ep.setAvailabilityAtStudio(trimmed(ap.getAvailabilityAtStudio()));
-        ep.setPolicyNotes(trimmed(ap.getPolicyNotes()));
-        ep.setCurrency(trimmed(ap.getCurrency()));
+        if (ap != null) {
+            ep.setBasePrice(ap.getBasePrice());
+            ep.setDestinationPrice(ap.getDestinationPrice());
+            ep.setAdditionalMakeupPrice(ap.getAdditionalMakeupPrice());
+            ep.setAvailabilityAtStudio(trimmed(ap.getAvailabilityAtStudio()));
+            ep.setPolicyNotes(trimmed(ap.getPolicyNotes()));
+            ep.setCurrency(trimmed(ap.getCurrency()));
+        } else {
+            ep.setBasePrice(null);
+            ep.setDestinationPrice(null);
+            ep.setAdditionalMakeupPrice(null);
+            ep.setAvailabilityAtStudio(null);
+            ep.setPolicyNotes(null);
+            ep.setCurrency(null);
+        }
         return ep;
     }
 

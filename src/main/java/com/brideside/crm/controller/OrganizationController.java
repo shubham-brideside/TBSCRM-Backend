@@ -175,6 +175,17 @@ public class OrganizationController {
         return ResponseEntity.ok(ApiResponse.success("Vendor assets fetched", vendorAssetService.listByVendor(id, vendorId)));
     }
 
+    @PostMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/assets")
+    @Operation(summary = "Create vendor asset",
+            description = "Creates a new asset (phone, SIM, etc.) for the vendor. Use when no asset exists yet.")
+    public ResponseEntity<ApiResponse<VendorAssetDtos.AssetResponse>> createVendorAsset(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestBody(required = false) VendorAssetDtos.AssetUpdateRequest request) {
+        VendorAssetDtos.AssetResponse created = vendorAssetService.create(id, vendorId, request != null ? request : new VendorAssetDtos.AssetUpdateRequest());
+        return ResponseEntity.status(201).body(ApiResponse.success("Asset created", created));
+    }
+
     @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/assets/{assetId:\\d+}")
     @Operation(summary = "Update vendor asset details",
             description = "Updates phone model, phone issued by, SIM card, SIM issued by, issued on")

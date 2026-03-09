@@ -8,6 +8,8 @@ public interface VendorAssetService {
 
     VendorAssetDtos.AssetResponse createForVendor(Long vendorId, Long organizationId);
 
+    VendorAssetDtos.AssetResponse create(Long organizationId, Long vendorId, VendorAssetDtos.AssetUpdateRequest request);
+
     List<VendorAssetDtos.AssetResponse> listByVendor(Long organizationId, Long vendorId);
 
     VendorAssetDtos.AssetResponse update(Long organizationId, Long vendorId, Long assetId, VendorAssetDtos.AssetUpdateRequest request);

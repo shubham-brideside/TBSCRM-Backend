@@ -56,6 +56,28 @@ public class VendorAssetServiceImpl implements VendorAssetService {
     }
 
     @Override
+    public VendorAssetDtos.AssetResponse create(Long organizationId, Long vendorId, VendorAssetDtos.AssetUpdateRequest request) {
+        if (organizationId == null || vendorId == null) {
+            throw new BadRequestException("Organization id and vendor id are required");
+        }
+        BridesideVendor vendor = bridesideVendorRepository.findByIdAndOrganization_Id(vendorId, organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Vendor not found with id " + vendorId + " for organization " + organizationId));
+        Organization organization = vendor.getOrganization();
+
+        VendorAsset asset = new VendorAsset();
+        asset.setVendor(vendor);
+        asset.setOrganization(organization);
+        if (request != null) {
+            asset.setPhoneModel(trimmed(request.getPhoneModel()));
+            asset.setPhoneIssuedBy(trimmed(request.getPhoneIssuedBy()));
+            asset.setSimCard(trimmed(request.getSimCard()));
+            asset.setSimIssuedBy(trimmed(request.getSimIssuedBy()));
+            asset.setIssuedOn(request.getIssuedOn());
+        }
+        return toResponse(vendorAssetRepository.save(asset));
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<VendorAssetDtos.AssetResponse> listByVendor(Long organizationId, Long vendorId) {
         if (organizationId == null || vendorId == null) {
