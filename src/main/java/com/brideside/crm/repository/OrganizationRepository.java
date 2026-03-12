@@ -11,5 +11,7 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     List<Organization> findByOwner_IdIn(List<Long> ownerIds);
 
     List<Organization> findByGoogleCalendarIdIsNotNull();
+
+    List<Organization> findByIsActiveTrue();
 }
 

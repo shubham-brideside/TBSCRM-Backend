@@ -11,4 +11,6 @@ public interface VendorTeamMemberRepository extends JpaRepository<VendorTeamMemb
     List<VendorTeamMember> findByVendor_IdOrderByIdAsc(Long vendorId);
 
     Optional<VendorTeamMember> findByIdAndVendor_Id(Long id, Long vendorId);
+
+    long countByVendor_Id(Long vendorId);
 }

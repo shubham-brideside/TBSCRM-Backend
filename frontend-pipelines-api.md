@@ -24,7 +24,7 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
     "name": "New Pipeline",             // required, max 255 chars
     "category": "Photography",          // optional, max 255 chars
     "teamId": 42,                       // optional, references internal team identifier
-    "organizationId": 12                // optional; organization must exist
+    "organizationId": 12                // optional; organization must exist and be active (isActive=true)
   }
   ```
 - **Response (201 Created):**
@@ -249,6 +249,7 @@ Validation errors return HTTP `400` with `success: false` and a descriptive `mes
 6. **Reordering:** after drag-and-drop, post the list of stage IDs in the new order; the backend persists the new `stage_order`.
 7. **Hard delete:** Pass `hard=true` only when you intend to permanently remove a pipeline and its stages.
 8. **Teams dropdown:** Fetch `/api/teams` once when opening the create/edit form and populate the team selector; send the selected `teamId` in requests.
+9. **Organization dropdown:** Only organizations with `isActive=true` can be used for pipeline creation. Use `GET /api/organizations/accessible-for-current-user` and filter by `isActive`, or see `frontend-organization-onboarding-progress-api.md` for details.
 
 This sheet should be enough to wire up the pipelines UI. Let me know if you want sample fetch/axios calls as well.
 

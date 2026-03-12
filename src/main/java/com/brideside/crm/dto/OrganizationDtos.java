@@ -96,6 +96,7 @@ public final class OrganizationDtos {
         private String address;
         private String email;
         private String googleCalendarId;
+        private Boolean isActive;
         private Instant createdAt;
         private Instant updatedAt;
 
@@ -153,6 +154,14 @@ public final class OrganizationDtos {
 
         public void setGoogleCalendarId(String googleCalendarId) {
             this.googleCalendarId = googleCalendarId;
+        }
+
+        public Boolean getIsActive() {
+            return isActive;
+        }
+
+        public void setIsActive(Boolean isActive) {
+            this.isActive = isActive;
         }
 
         public Instant getCreatedAt() {

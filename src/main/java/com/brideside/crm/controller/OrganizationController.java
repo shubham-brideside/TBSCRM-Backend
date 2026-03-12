@@ -6,12 +6,14 @@ import com.brideside.crm.dto.ClientDataDtos;
 import com.brideside.crm.dto.EventPricingDtos;
 import com.brideside.crm.dto.OrganizationDtos;
 import com.brideside.crm.dto.OrganizationDetailsDtos;
+import com.brideside.crm.dto.OrganizationProgressDtos;
 import com.brideside.crm.dto.VendorAssetDtos;
 import com.brideside.crm.dto.VendorDataDtos;
 import com.brideside.crm.dto.VendorTeamMemberDtos;
 import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.ClientDataService;
 import com.brideside.crm.service.EventPricingService;
+import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.OrganizationService;
 import com.brideside.crm.service.VendorAssetService;
 import com.brideside.crm.service.VendorDataService;
@@ -37,6 +39,7 @@ import java.util.List;
 public class OrganizationController {
 
     private final OrganizationService organizationService;
+    private final OrganizationProgressService organizationProgressService;
     private final BridesideVendorService bridesideVendorService;
     private final VendorAssetService vendorAssetService;
     private final EventPricingService eventPricingService;
@@ -45,6 +48,7 @@ public class OrganizationController {
     private final ClientDataService clientDataService;
 
     public OrganizationController(OrganizationService organizationService,
+                                  OrganizationProgressService organizationProgressService,
                                   BridesideVendorService bridesideVendorService,
                                   VendorAssetService vendorAssetService,
                                   EventPricingService eventPricingService,
@@ -52,6 +56,7 @@ public class OrganizationController {
                                   VendorDataService vendorDataService,
                                   ClientDataService clientDataService) {
         this.organizationService = organizationService;
+        this.organizationProgressService = organizationProgressService;
         this.bridesideVendorService = bridesideVendorService;
         this.vendorAssetService = vendorAssetService;
         this.eventPricingService = eventPricingService;
@@ -101,6 +106,20 @@ public class OrganizationController {
     @Operation(summary = "Get organization by id")
     public ResponseEntity<ApiResponse<OrganizationDtos.OrganizationResponse>> get(@PathVariable("id") Long id) {
         return ResponseEntity.ok(ApiResponse.success("Organization fetched", organizationService.get(id)));
+    }
+
+    @GetMapping("/{id:\\d+}/progress")
+    @Operation(summary = "Get organization onboarding progress",
+            description = "Returns completion status for each section: Organization details, Asset Info, Events Pricing, Vendor Data, Client Data, Team Members. isActive is true when all are complete.")
+    public ResponseEntity<ApiResponse<OrganizationProgressDtos.ProgressResponse>> getProgress(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Organization progress fetched", organizationProgressService.getProgress(id)));
+    }
+
+    @GetMapping("/{id:\\d+}/progress/debug")
+    @Operation(summary = "Get organization progress (debug)",
+            description = "Same as /progress but includes clientDataRecordExists, quoteFormatUrlPresent, clientContractFormatUrlPresent to diagnose clientDataComplete.")
+    public ResponseEntity<ApiResponse<OrganizationProgressDtos.ProgressDebugResponse>> getProgressDebug(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiResponse.success("Organization progress (debug) fetched", organizationProgressService.getProgressDebug(id)));
     }
 
     @GetMapping("/{id:\\d+}/with-details")

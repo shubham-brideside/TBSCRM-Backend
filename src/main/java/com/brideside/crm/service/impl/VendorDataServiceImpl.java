@@ -7,6 +7,7 @@ import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.VendorDataRepository;
+import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.VendorDataService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +18,14 @@ public class VendorDataServiceImpl implements VendorDataService {
 
     private final VendorDataRepository vendorDataRepository;
     private final BridesideVendorRepository bridesideVendorRepository;
+    private final OrganizationProgressService organizationProgressService;
 
     public VendorDataServiceImpl(VendorDataRepository vendorDataRepository,
-                                 BridesideVendorRepository bridesideVendorRepository) {
+                                 BridesideVendorRepository bridesideVendorRepository,
+                                 OrganizationProgressService organizationProgressService) {
         this.vendorDataRepository = vendorDataRepository;
         this.bridesideVendorRepository = bridesideVendorRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -43,7 +47,9 @@ public class VendorDataServiceImpl implements VendorDataService {
         data.setVendor(vendor);
         data.setMasterDataLink(trimmed(request.getMasterDataLink()));
         data.setCalendarSheetLink(trimmed(request.getCalendarSheetLink()));
-        return toResponse(vendorDataRepository.save(data));
+        VendorData saved = vendorDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -56,7 +62,9 @@ public class VendorDataServiceImpl implements VendorDataService {
         }
         data.setMasterDataLink(trimmed(request.getMasterDataLink()));
         data.setCalendarSheetLink(trimmed(request.getCalendarSheetLink()));
-        return toResponse(vendorDataRepository.save(data));
+        VendorData saved = vendorDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -70,14 +78,19 @@ public class VendorDataServiceImpl implements VendorDataService {
                 });
         data.setMasterDataLink(trimmed(request.getMasterDataLink()));
         data.setCalendarSheetLink(trimmed(request.getCalendarSheetLink()));
-        return toResponse(vendorDataRepository.save(data));
+        VendorData saved = vendorDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
     public void delete(Long organizationId, Long vendorId) {
         validateOrgAndVendor(organizationId, vendorId);
         vendorDataRepository.findByVendor_Id(vendorId)
-                .ifPresent(vendorDataRepository::delete);
+                .ifPresent(d -> {
+                    vendorDataRepository.delete(d);
+                    organizationProgressService.recomputeAndPersistProgress(organizationId);
+                });
     }
 
     @Override
@@ -89,6 +102,7 @@ public class VendorDataServiceImpl implements VendorDataService {
             throw new ResourceNotFoundException("Vendor data not found for vendor " + vendorId);
         }
         vendorDataRepository.delete(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
     }
 
     private BridesideVendor validateOrgAndVendor(Long organizationId, Long vendorId) {

@@ -108,6 +108,7 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         vendor.setOnboardingDate(safeRequest.getOnboardingDate());
         vendor.setTeamSize(safeRequest.getTeamSize());
         vendor.setOnboardingFee(safeRequest.getOnboardingFee());
+        vendor.setAccountOwner(organization.getOwner());
 
         BridesideVendor saved = bridesideVendorRepository.save(vendor);
         vendorAssetService.createForVendor(saved.getId(), organization.getId());
@@ -165,6 +166,19 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
     }
 
     @Override
+    public void syncAccountOwnerFromOrganization(Long organizationId) {
+        Organization organization = organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization not found with id " + organizationId));
+        List<BridesideVendor> vendors = bridesideVendorRepository.findByOrganization_Id(organizationId);
+        for (BridesideVendor vendor : vendors) {
+            vendor.setAccountOwner(organization.getOwner());
+        }
+        if (!vendors.isEmpty()) {
+            bridesideVendorRepository.saveAll(vendors);
+        }
+    }
+
+    @Override
     public BridesideVendorDtos.VendorResponse getVendor(Long organizationId, Long vendorId) {
         if (organizationId == null || vendorId == null) {
             throw new BadRequestException("Organization id and vendor id are required");
@@ -195,7 +209,7 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         PipelineDtos.PipelineRequest createRequest = new PipelineDtos.PipelineRequest();
         createRequest.setName("Default Pipeline - Org " + organization.getId());
         createRequest.setOrganizationId(organization.getId());
-        PipelineDtos.PipelineResponse created = pipelineService.createPipeline(createRequest);
+        PipelineDtos.PipelineResponse created = pipelineService.createPipelineForBootstrap(createRequest);
         return pipelineRepository.findById(created.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found with id " + created.getId()));
     }

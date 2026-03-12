@@ -9,6 +9,7 @@ import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.VendorAssetRepository;
+import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.VendorAssetService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,13 +24,16 @@ public class VendorAssetServiceImpl implements VendorAssetService {
     private final VendorAssetRepository vendorAssetRepository;
     private final BridesideVendorRepository bridesideVendorRepository;
     private final OrganizationRepository organizationRepository;
+    private final OrganizationProgressService organizationProgressService;
 
     public VendorAssetServiceImpl(VendorAssetRepository vendorAssetRepository,
                                   BridesideVendorRepository bridesideVendorRepository,
-                                  OrganizationRepository organizationRepository) {
+                                  OrganizationRepository organizationRepository,
+                                  OrganizationProgressService organizationProgressService) {
         this.vendorAssetRepository = vendorAssetRepository;
         this.bridesideVendorRepository = bridesideVendorRepository;
         this.organizationRepository = organizationRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -74,7 +78,9 @@ public class VendorAssetServiceImpl implements VendorAssetService {
             asset.setSimIssuedBy(trimmed(request.getSimIssuedBy()));
             asset.setIssuedOn(request.getIssuedOn());
         }
-        return toResponse(vendorAssetRepository.save(asset));
+        VendorAsset saved = vendorAssetRepository.save(asset);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -110,7 +116,9 @@ public class VendorAssetServiceImpl implements VendorAssetService {
         asset.setSimIssuedBy(trimmed(request.getSimIssuedBy()));
         asset.setIssuedOn(request.getIssuedOn());
 
-        return toResponse(vendorAssetRepository.save(asset));
+        VendorAsset saved = vendorAssetRepository.save(asset);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     private VendorAssetDtos.AssetResponse toResponse(VendorAsset asset) {

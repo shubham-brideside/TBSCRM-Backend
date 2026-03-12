@@ -9,6 +9,7 @@ import com.brideside.crm.repository.ClientDataRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.service.AzureBlobStorageService;
 import com.brideside.crm.service.ClientDataService;
+import com.brideside.crm.service.OrganizationProgressService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,14 +25,17 @@ public class ClientDataServiceImpl implements ClientDataService {
 
     private final ClientDataRepository clientDataRepository;
     private final OrganizationRepository organizationRepository;
+    private final OrganizationProgressService organizationProgressService;
 
     @Autowired(required = false)
     private AzureBlobStorageService azureBlobStorageService;
 
     public ClientDataServiceImpl(ClientDataRepository clientDataRepository,
-                                 OrganizationRepository organizationRepository) {
+                                 OrganizationRepository organizationRepository,
+                                 OrganizationProgressService organizationProgressService) {
         this.clientDataRepository = clientDataRepository;
         this.organizationRepository = organizationRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -57,7 +61,9 @@ public class ClientDataServiceImpl implements ClientDataService {
             }
         }
         data.setQuoteFormatUrl(blobUrl);
-        return toResponse(clientDataRepository.save(data));
+        ClientData saved = clientDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -74,7 +80,9 @@ public class ClientDataServiceImpl implements ClientDataService {
             }
         }
         data.setClientContractFormatUrl(blobUrl);
-        return toResponse(clientDataRepository.save(data));
+        ClientData saved = clientDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -93,7 +101,9 @@ public class ClientDataServiceImpl implements ClientDataService {
             }
         }
         data.setQuoteFormatUrl(null);
-        return toResponse(clientDataRepository.save(data));
+        ClientData saved = clientDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -112,7 +122,9 @@ public class ClientDataServiceImpl implements ClientDataService {
             }
         }
         data.setClientContractFormatUrl(null);
-        return toResponse(clientDataRepository.save(data));
+        ClientData saved = clientDataRepository.save(data);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -128,6 +140,7 @@ public class ClientDataServiceImpl implements ClientDataService {
                 }
             }
             clientDataRepository.delete(data);
+            organizationProgressService.recomputeAndPersistProgress(organizationId);
         });
     }
 

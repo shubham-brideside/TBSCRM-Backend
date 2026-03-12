@@ -8,7 +8,7 @@ This guide consolidates all APIs needed to integrate the **Organization Details*
 
 | Section | GET | POST | PUT | PATCH | DELETE |
 |---------|-----|------|-----|-------|--------|
-| **Organization** | `/{id}`, `/{id}/with-details` | `/` | `/{id}` | — | — |
+| **Organization** | `/{id}`, `/{id}/with-details`, `/{id}/progress` | `/` | `/{id}` | — | — |
 | **Vendors** | `/{id}/vendors` | `/{id}/vendors` | `/{id}/vendors/{vendorId}` | `/{id}/vendors/{vendorId}/about` | — |
 | **Event Pricing** | (in vendor response) | — | `/{id}/vendors/{vendorId}/event-pricing` | — | — |
 | **Vendor Assets** | `/{id}/vendors/{vendorId}/assets` | — | `/{id}/vendors/{vendorId}/assets/{assetId}` | — | — |
@@ -56,6 +56,7 @@ interface Organization {
   address: string | null;
   email: string | null;
   owner: { id: number; firstName: string; lastName: string; email: string } | null;
+  isActive: boolean;  // true when all onboarding sections complete
   createdAt: string;
   updatedAt: string;
 }
@@ -434,13 +435,15 @@ Always check `res.ok` and `body.success` before using `body.data`.
 
 - **`services`**: JSON string (e.g. `"[\"Photography\"]"`). Parse with `JSON.parse()` for arrays.
 - **`onboardingFee`**: Decimal; format as currency in UI.
-- **`onboardingDate`**, **`issuedOn`**: ISO date/datetime strings.
+- **`onboardingDate`**, **`issuedOn`**: ISO-8601 format (e.g. `2026-03-02T00:00:00`). See `frontend-datetime-format-guide.md`.
 - **`access_token`**: Not exposed by the API.
 
 ---
 
 ## Related Docs
 
+- `frontend-datetime-format-guide.md` – Date/time format for `onboardingDate`, `issuedOn`, etc.
+- `frontend-organization-onboarding-progress-api.md` – Organization progress, `isActive`, and pipeline creation rules
 - `frontend-brideside-vendors-api.md` – Vendor API details
 - `frontend-event-pricing-api.md` – Event pricing structure
 - `frontend-vendor-about-api.md` – About field

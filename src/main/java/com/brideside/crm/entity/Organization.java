@@ -92,6 +92,9 @@ public class Organization {
     @Column(name = "google_calendar_id", length = 255)
     private String googleCalendarId;
 
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = Boolean.FALSE;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -124,6 +127,8 @@ public class Organization {
     public void setEmail(String email) { this.email = email; }
     public String getGoogleCalendarId() { return googleCalendarId; }
     public void setGoogleCalendarId(String googleCalendarId) { this.googleCalendarId = googleCalendarId; }
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

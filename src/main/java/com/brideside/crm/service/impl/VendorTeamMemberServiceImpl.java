@@ -7,6 +7,7 @@ import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.VendorTeamMemberRepository;
+import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.VendorTeamMemberService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +21,14 @@ public class VendorTeamMemberServiceImpl implements VendorTeamMemberService {
 
     private final VendorTeamMemberRepository vendorTeamMemberRepository;
     private final BridesideVendorRepository bridesideVendorRepository;
+    private final OrganizationProgressService organizationProgressService;
 
     public VendorTeamMemberServiceImpl(VendorTeamMemberRepository vendorTeamMemberRepository,
-                                       BridesideVendorRepository bridesideVendorRepository) {
+                                       BridesideVendorRepository bridesideVendorRepository,
+                                       OrganizationProgressService organizationProgressService) {
         this.vendorTeamMemberRepository = vendorTeamMemberRepository;
         this.bridesideVendorRepository = bridesideVendorRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -45,7 +49,9 @@ public class VendorTeamMemberServiceImpl implements VendorTeamMemberService {
         member.setName(trimmed(request.getName()));
         member.setDesignation(trimmed(request.getDesignation()));
         member.setInstagramId(trimmed(request.getInstagramId()));
-        return toResponse(vendorTeamMemberRepository.save(member));
+        VendorTeamMember saved = vendorTeamMemberRepository.save(member);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -56,7 +62,9 @@ public class VendorTeamMemberServiceImpl implements VendorTeamMemberService {
         member.setName(trimmed(request.getName()));
         member.setDesignation(trimmed(request.getDesignation()));
         member.setInstagramId(trimmed(request.getInstagramId()));
-        return toResponse(vendorTeamMemberRepository.save(member));
+        VendorTeamMember saved = vendorTeamMemberRepository.save(member);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
+        return toResponse(saved);
     }
 
     @Override
@@ -65,6 +73,7 @@ public class VendorTeamMemberServiceImpl implements VendorTeamMemberService {
         VendorTeamMember member = vendorTeamMemberRepository.findByIdAndVendor_Id(memberId, vendorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Team member not found with id " + memberId));
         vendorTeamMemberRepository.delete(member);
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
     }
 
     private BridesideVendor validateOrgAndVendor(Long organizationId, Long vendorId) {

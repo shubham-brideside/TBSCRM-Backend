@@ -63,13 +63,22 @@ public class PipelineServiceImpl implements PipelineService {
 
     @Override
     public PipelineDtos.PipelineResponse createPipeline(PipelineDtos.PipelineRequest request) {
+        return doCreatePipeline(request, true);
+    }
+
+    @Override
+    public PipelineDtos.PipelineResponse createPipelineForBootstrap(PipelineDtos.PipelineRequest request) {
+        return doCreatePipeline(request, false);
+    }
+
+    private PipelineDtos.PipelineResponse doCreatePipeline(PipelineDtos.PipelineRequest request, boolean requireOrganizationActive) {
         validatePipelineName(request.getName(), null);
 
         Pipeline pipeline = new Pipeline();
         pipeline.setName(request.getName().trim());
         pipeline.setCategory(trimToNull(request.getCategory()));
         pipeline.setTeam(resolveTeam(request.getTeamId()));
-        pipeline.setOrganization(resolveOrganization(request.getOrganizationId()));
+        pipeline.setOrganization(resolveOrganization(request.getOrganizationId(), requireOrganizationActive));
         pipeline.setDeleted(Boolean.FALSE);
 
         Pipeline saved = pipelineRepository.save(pipeline);
@@ -133,7 +142,7 @@ public class PipelineServiceImpl implements PipelineService {
         }
         if (request.getCategory() != null) pipeline.setCategory(trimToNull(request.getCategory()));
         if (request.getTeamId() != null) pipeline.setTeam(resolveTeam(request.getTeamId()));
-        if (request.getOrganizationId() != null) pipeline.setOrganization(resolveOrganization(request.getOrganizationId()));
+        if (request.getOrganizationId() != null) pipeline.setOrganization(resolveOrganization(request.getOrganizationId(), true));
         if (request.getDeleted() != null) pipeline.setDeleted(request.getDeleted());
 
         Pipeline saved = pipelineRepository.save(pipeline);
@@ -292,12 +301,16 @@ public class PipelineServiceImpl implements PipelineService {
                 .collect(Collectors.toList());
     }
 
-    private Organization resolveOrganization(Long organizationId) {
+    private Organization resolveOrganization(Long organizationId, boolean requireActive) {
         if (organizationId == null) {
             return null;
         }
-        return organizationRepository.findById(organizationId)
+        Organization org = organizationRepository.findById(organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Organization not found with id " + organizationId));
+        if (requireActive && !Boolean.TRUE.equals(org.getIsActive())) {
+            throw new BadRequestException("Organization must be active (all onboarding details complete) to create a pipeline. Complete Organization details, Asset Info, Events Pricing, Vendor Data, Client Data, and Team Members.");
+        }
+        return org;
     }
 
     private void validatePipelineName(String name, Long pipelineId) {

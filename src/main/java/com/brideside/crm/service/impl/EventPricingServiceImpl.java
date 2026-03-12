@@ -9,6 +9,7 @@ import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.EventPricingRepository;
 import com.brideside.crm.service.EventPricingService;
+import com.brideside.crm.service.OrganizationProgressService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,11 +31,14 @@ public class EventPricingServiceImpl implements EventPricingService {
 
     private final EventPricingRepository eventPricingRepository;
     private final BridesideVendorRepository bridesideVendorRepository;
+    private final OrganizationProgressService organizationProgressService;
 
     public EventPricingServiceImpl(EventPricingRepository eventPricingRepository,
-                                   BridesideVendorRepository bridesideVendorRepository) {
+                                   BridesideVendorRepository bridesideVendorRepository,
+                                   OrganizationProgressService organizationProgressService) {
         this.eventPricingRepository = eventPricingRepository;
         this.bridesideVendorRepository = bridesideVendorRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -61,6 +65,7 @@ public class EventPricingServiceImpl implements EventPricingService {
             saveRows(vendor, SESSION_CURRENT, request.getEventPricingCurrent());
             saveRows(vendor, SESSION_UPCOMING, request.getEventPricingUpcoming());
         }
+        organizationProgressService.recomputeAndPersistProgress(organizationId);
     }
 
     private List<EventPricingDtos.EventPricingRow> buildRowsForSession(List<EventPricing> all, String session) {

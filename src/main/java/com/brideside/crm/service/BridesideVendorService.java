@@ -15,5 +15,10 @@ public interface BridesideVendorService {
     BridesideVendorDtos.VendorResponse updateVendorAbout(Long organizationId, Long vendorId, BridesideVendorDtos.AboutUpdateRequest request);
 
     BridesideVendorDtos.VendorResponse getVendor(Long organizationId, Long vendorId);
+
+    /**
+     * Sync organization.owner to all brideside_vendors.account_owner for the given organization.
+     */
+    void syncAccountOwnerFromOrganization(Long organizationId);
 }
 

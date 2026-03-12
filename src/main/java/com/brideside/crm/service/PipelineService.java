@@ -6,6 +6,12 @@ import java.util.List;
 
 public interface PipelineService {
     PipelineDtos.PipelineResponse createPipeline(PipelineDtos.PipelineRequest request);
+
+    /**
+     * Creates a pipeline for a newly created organization (bootstrap). Skips the organization active check
+     * since the org cannot be active yet. Used internally when creating the default vendor/pipeline.
+     */
+    PipelineDtos.PipelineResponse createPipelineForBootstrap(PipelineDtos.PipelineRequest request);
     List<PipelineDtos.PipelineResponse> listPipelines(boolean includeStages);
     List<PipelineDtos.PipelineResponse> listArchivedPipelines(boolean includeStages);
     PipelineDtos.PipelineResponse getPipeline(Long pipelineId, boolean includeStages);

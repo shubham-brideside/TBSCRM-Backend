@@ -12,4 +12,6 @@ public interface EventPricingRepository extends JpaRepository<EventPricing, Long
     List<EventPricing> findByVendor_IdAndSessionOrderByDisplayOrderAscEventCodeAsc(Long vendorId, String session);
 
     void deleteByVendor_Id(Long vendorId);
+
+    long countByVendor_Id(Long vendorId);
 }

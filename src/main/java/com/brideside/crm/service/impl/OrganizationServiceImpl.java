@@ -11,10 +11,12 @@ import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.ActivityRepository;
+import com.brideside.crm.repository.OrganizationOnboardingProgressRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.repository.VendorAssetRepository;
 import com.brideside.crm.service.BridesideVendorService;
+import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.OrganizationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +38,8 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final PipelineRepository pipelineRepository;
     private final BridesideVendorService bridesideVendorService;
     private final VendorAssetRepository vendorAssetRepository;
+    private final OrganizationOnboardingProgressRepository progressRepository;
+    private final OrganizationProgressService organizationProgressService;
     private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES =
             EnumSet.of(Role.RoleName.SALES, Role.RoleName.CATEGORY_MANAGER);
 
@@ -46,7 +50,9 @@ public class OrganizationServiceImpl implements OrganizationService {
                                    ActivityRepository activityRepository,
                                    PipelineRepository pipelineRepository,
                                    BridesideVendorService bridesideVendorService,
-                                   VendorAssetRepository vendorAssetRepository) {
+                                   VendorAssetRepository vendorAssetRepository,
+                                   OrganizationOnboardingProgressRepository progressRepository,
+                                   OrganizationProgressService organizationProgressService) {
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
         this.personRepository = personRepository;
@@ -55,6 +61,8 @@ public class OrganizationServiceImpl implements OrganizationService {
         this.pipelineRepository = pipelineRepository;
         this.bridesideVendorService = bridesideVendorService;
         this.vendorAssetRepository = vendorAssetRepository;
+        this.progressRepository = progressRepository;
+        this.organizationProgressService = organizationProgressService;
     }
 
     @Override
@@ -68,7 +76,8 @@ public class OrganizationServiceImpl implements OrganizationService {
         Organization saved = organizationRepository.save(organization);
         // Ensure org always has a linked brideside_vendors entry and vendor_assets entry
         bridesideVendorService.createVendorForOrganization(saved.getId(), null);
-        return toResponse(saved);
+        organizationProgressService.recomputeAndPersistProgress(saved.getId());
+        return toResponse(organizationRepository.findById(saved.getId()).orElse(saved));
     }
 
     @Override
@@ -95,7 +104,10 @@ public class OrganizationServiceImpl implements OrganizationService {
         organization.setAddress(trimmed(request.getAddress()));
         organization.setEmail(trimmed(request.getEmail()));
         organization.setGoogleCalendarId(trimmed(request.getGoogleCalendarId()));
-        return toResponse(organizationRepository.save(organization));
+        Organization saved = organizationRepository.save(organization);
+        bridesideVendorService.syncAccountOwnerFromOrganization(saved.getId());
+        organizationProgressService.recomputeAndPersistProgress(saved.getId());
+        return toResponse(organizationRepository.findById(saved.getId()).orElse(saved));
     }
 
     @Override
@@ -122,6 +134,9 @@ public class OrganizationServiceImpl implements OrganizationService {
 
         // Delete vendor_assets linked to this organization (before org delete due to FK)
         vendorAssetRepository.deleteByOrganization_Id(id);
+
+        // Delete organization_onboarding_progress (before org delete due to FK)
+        progressRepository.deleteByOrganization_Id(id);
 
         // Now it's safe to delete the organization
         organizationRepository.delete(organization);
@@ -262,6 +277,7 @@ public class OrganizationServiceImpl implements OrganizationService {
         response.setAddress(organization.getAddress());
         response.setEmail(organization.getEmail());
         response.setGoogleCalendarId(organization.getGoogleCalendarId());
+        response.setIsActive(organization.getIsActive());
         response.setCreatedAt(organization.getCreatedAt());
         response.setUpdatedAt(organization.getUpdatedAt());
         return response;
