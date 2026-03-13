@@ -4,6 +4,7 @@ import com.brideside.crm.dto.SalesDashboardDtos;
 import com.brideside.crm.entity.*;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.DealRepository;
+import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.SalesTargetRepository;
 import com.brideside.crm.service.SalesDashboardService;
 import org.springframework.stereotype.Service;
@@ -23,13 +24,30 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
     private final DealRepository dealRepository;
     private final ActivityRepository activityRepository;
     private final SalesTargetRepository salesTargetRepository;
+    private final PipelineRepository pipelineRepository;
 
     public SalesDashboardServiceImpl(DealRepository dealRepository,
                                      ActivityRepository activityRepository,
-                                     SalesTargetRepository salesTargetRepository) {
+                                     SalesTargetRepository salesTargetRepository,
+                                     PipelineRepository pipelineRepository) {
         this.dealRepository = dealRepository;
         this.activityRepository = activityRepository;
         this.salesTargetRepository = salesTargetRepository;
+        this.pipelineRepository = pipelineRepository;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isPipelineOwnedBySalesUser(Long pipelineId, User user) {
+        if (pipelineId == null || user == null || user.getId() == null) {
+            return false;
+        }
+        return pipelineRepository.findById(pipelineId)
+                .filter(p -> !Boolean.TRUE.equals(p.getDeleted()))
+                .map(Pipeline::getOrganization)
+                .filter(org -> org != null && org.getOwner() != null && org.getOwner().getId() != null)
+                .map(org -> user.getId().equals(org.getOwner().getId()))
+                .orElse(false);
     }
 
     @Override
@@ -191,7 +209,11 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser) {
+    public SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser, String category, Long pipelineId) {
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
+        }
         List<Deal> lostDeals = getUserDeals(
                 dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
 
@@ -199,7 +221,19 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         long total = 0;
 
         for (Deal deal : lostDeals) {
-            if (deal.getLostReason() == null) continue;
+            if (deal.getLostReason() == null) {
+                continue;
+            }
+            if (categoryFilter != null) {
+                Organization org = deal.getOrganization();
+                if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+            if (pipelineId != null && (deal.getPipeline() == null || deal.getPipeline().getId() == null
+                    || !pipelineId.equals(deal.getPipeline().getId()))) {
+                continue;
+            }
             String label = deal.getLostReason().toDisplayString();
             countsByReason.merge(label, 1L, Long::sum);
             total++;
@@ -219,8 +253,273 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
 
         SalesDashboardDtos.LostReasonsResponse response = new SalesDashboardDtos.LostReasonsResponse();
         response.totalLostDeals = total;
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.pipelineId = pipelineId;
         response.reasons = rows;
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SalesDashboardDtos.LostReasonsByOrganizationResponse getLostReasonsByOrganization(
+            User currentUser, String category) {
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
+        }
+        List<Deal> lostDeals = getUserDeals(
+                dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
+
+        // organizationId -> (reason -> count)
+        Map<Long, Map<String, Long>> byOrg = new HashMap<>();
+        Map<Long, Organization> orgById = new HashMap<>();
+        Map<Long, Long> orgTotals = new HashMap<>();
+
+        for (Deal deal : lostDeals) {
+            if (deal.getLostReason() == null) {
+                continue;
+            }
+            Organization org = deal.getOrganization();
+            if (org == null || org.getId() == null) {
+                continue;
+            }
+            if (categoryFilter != null) {
+                if (org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+            Long orgId = org.getId();
+            orgById.put(orgId, org);
+            Map<String, Long> reasons = byOrg.computeIfAbsent(orgId, id -> new LinkedHashMap<>());
+            reasons.merge(deal.getLostReason().toDisplayString(), 1L, Long::sum);
+            orgTotals.merge(orgId, 1L, Long::sum);
+        }
+
+        List<SalesDashboardDtos.LostReasonsByOrganizationRow> rows = new ArrayList<>();
+        for (Map.Entry<Long, Map<String, Long>> entry : byOrg.entrySet()) {
+            Long orgId = entry.getKey();
+            long orgTotal = orgTotals.getOrDefault(orgId, 0L);
+            Organization org = orgById.get(orgId);
+            List<SalesDashboardDtos.LostReasonRow> reasonRows = new ArrayList<>();
+            for (Map.Entry<String, Long> re : entry.getValue().entrySet()) {
+                SalesDashboardDtos.LostReasonRow r = new SalesDashboardDtos.LostReasonRow();
+                r.reason = re.getKey();
+                r.count = re.getValue();
+                r.percentage = orgTotal > 0
+                        ? BigDecimal.valueOf(re.getValue() * 100.0)
+                        .divide(BigDecimal.valueOf(orgTotal), 2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                reasonRows.add(r);
+            }
+            SalesDashboardDtos.LostReasonsByOrganizationRow row = new SalesDashboardDtos.LostReasonsByOrganizationRow();
+            row.organizationId = orgId;
+            row.organizationName = org != null ? org.getName() : null;
+            row.organizationCategory = org != null && org.getCategory() != null
+                    ? org.getCategory().getDbValue() : null;
+            row.totalLostDeals = orgTotal;
+            row.reasons = reasonRows;
+            rows.add(row);
+        }
+        rows.sort(Comparator.comparing(r -> r.organizationName != null ? r.organizationName : ""));
+
+        SalesDashboardDtos.LostReasonsByOrganizationResponse response =
+                new SalesDashboardDtos.LostReasonsByOrganizationResponse();
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.organizations = rows;
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SalesDashboardDtos.LostReasonsByPipelineResponse getLostReasonsByPipeline(
+            User currentUser, String category, Long pipelineId) {
+        final Organization.OrganizationCategory categoryFilter =
+                (category != null && !category.trim().isEmpty())
+                        ? Organization.OrganizationCategory.fromDbValue(category)
+                        : null;
+        final Long onlyPipelineId = pipelineId;
+        List<Deal> lostDeals = getUserDeals(
+                dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
+
+        Map<Long, Map<String, Long>> byPipeline = new HashMap<>();
+        Map<Long, String> pipelineNames = new HashMap<>();
+        Map<Long, Long> pipelineTotals = new HashMap<>();
+
+        for (Deal deal : lostDeals) {
+            if (deal.getLostReason() == null || deal.getPipeline() == null || deal.getPipeline().getId() == null) {
+                continue;
+            }
+            Long pid = deal.getPipeline().getId();
+            if (onlyPipelineId != null && !onlyPipelineId.equals(pid)) {
+                continue;
+            }
+            if (categoryFilter != null) {
+                Organization org = deal.getPipeline().getOrganization();
+                if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+            pipelineNames.put(pid, deal.getPipeline().getName());
+            byPipeline.computeIfAbsent(pid, id -> new LinkedHashMap<>())
+                    .merge(deal.getLostReason().toDisplayString(), 1L, Long::sum);
+            pipelineTotals.merge(pid, 1L, Long::sum);
+        }
+
+        // Single pipeline requested: include row even with zero lost deals (user's pipeline only)
+        if (onlyPipelineId != null && isPipelineOwnedBySalesUser(onlyPipelineId, currentUser)
+                && !byPipeline.containsKey(onlyPipelineId)) {
+            pipelineRepository.findById(onlyPipelineId).ifPresent(p -> {
+                if (categoryFilter != null) {
+                    Organization org = p.getOrganization();
+                    if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                        return;
+                    }
+                }
+                byPipeline.put(onlyPipelineId, new LinkedHashMap<>());
+                pipelineNames.put(onlyPipelineId, p.getName());
+                pipelineTotals.put(onlyPipelineId, 0L);
+            });
+        }
+
+        List<SalesDashboardDtos.LostReasonsByPipelineRow> rows = new ArrayList<>();
+        for (Map.Entry<Long, Map<String, Long>> entry : byPipeline.entrySet()) {
+            Long pid = entry.getKey();
+            long pTotal = pipelineTotals.getOrDefault(pid, 0L);
+            List<SalesDashboardDtos.LostReasonRow> reasonRows = new ArrayList<>();
+            for (Map.Entry<String, Long> re : entry.getValue().entrySet()) {
+                SalesDashboardDtos.LostReasonRow r = new SalesDashboardDtos.LostReasonRow();
+                r.reason = re.getKey();
+                r.count = re.getValue();
+                r.percentage = pTotal > 0
+                        ? BigDecimal.valueOf(re.getValue() * 100.0)
+                        .divide(BigDecimal.valueOf(pTotal), 2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                reasonRows.add(r);
+            }
+            SalesDashboardDtos.LostReasonsByPipelineRow row = new SalesDashboardDtos.LostReasonsByPipelineRow();
+            row.pipelineId = pid;
+            row.pipelineName = pipelineNames.get(pid);
+            row.totalLostDeals = pTotal;
+            row.reasons = reasonRows;
+            rows.add(row);
+        }
+        rows.sort(Comparator.comparing(r -> r.pipelineName != null ? r.pipelineName : ""));
+
+        SalesDashboardDtos.LostReasonsByPipelineResponse response =
+                new SalesDashboardDtos.LostReasonsByPipelineResponse();
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.pipelines = rows;
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SalesDashboardDtos.LostDealsByStagePerOrganizationResponse getLostDealsByStagePerOrganization(
+            User currentUser, String category, Long pipelineId) {
+        final Organization.OrganizationCategory categoryFilter =
+                (category != null && !category.trim().isEmpty())
+                        ? Organization.OrganizationCategory.fromDbValue(category)
+                        : null;
+        List<Deal> lostDeals = getUserDeals(
+                dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
+
+        Map<Long, Organization> orgById = new HashMap<>();
+        // orgId -> composite key pipelineId|stageId -> aggregate (stageId "null" when missing)
+        Map<Long, Map<String, StageLossAgg>> byOrgStage = new HashMap<>();
+        Map<Long, Long> orgLostCounts = new HashMap<>();
+        Map<Long, BigDecimal> orgLostValues = new HashMap<>();
+
+        for (Deal deal : lostDeals) {
+            if (pipelineId != null && (deal.getPipeline() == null || deal.getPipeline().getId() == null
+                    || !pipelineId.equals(deal.getPipeline().getId()))) {
+                continue;
+            }
+            Organization org = deal.getOrganization();
+            if (org == null && deal.getPipeline() != null) {
+                org = deal.getPipeline().getOrganization();
+            }
+            if (org == null || org.getId() == null) {
+                continue;
+            }
+            if (categoryFilter != null) {
+                if (org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+            Long orgId = org.getId();
+            orgById.put(orgId, org);
+            BigDecimal v = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+            orgLostCounts.merge(orgId, 1L, Long::sum);
+            orgLostValues.merge(orgId, v, BigDecimal::add);
+
+            Long pid = deal.getPipeline() != null ? deal.getPipeline().getId() : -1L;
+            Long sid = (deal.getStage() != null && deal.getStage().getId() != null)
+                    ? deal.getStage().getId()
+                    : null;
+            String stageKey = pid + "|" + (sid != null ? sid : "none");
+            Map<String, StageLossAgg> byStage = byOrgStage.computeIfAbsent(orgId, id -> new HashMap<>());
+            StageLossAgg agg = byStage.computeIfAbsent(stageKey, k -> {
+                StageLossAgg a = new StageLossAgg();
+                a.stageId = sid;
+                if (deal.getStage() != null && deal.getStage().getName() != null) {
+                    a.stageName = deal.getStage().getName();
+                } else {
+                    a.stageName = "Unknown stage";
+                }
+                if (deal.getPipeline() != null) {
+                    a.pipelineId = deal.getPipeline().getId();
+                    a.pipelineName = deal.getPipeline().getName();
+                }
+                return a;
+            });
+            agg.lostCount++;
+            agg.lostValue = agg.lostValue.add(v);
+        }
+
+        List<SalesDashboardDtos.LostDealsByStageOrganizationRow> orgRows = new ArrayList<>();
+        for (Map.Entry<Long, Map<String, StageLossAgg>> e : byOrgStage.entrySet()) {
+            Long orgId = e.getKey();
+            Organization org = orgById.get(orgId);
+            SalesDashboardDtos.LostDealsByStageOrganizationRow row =
+                    new SalesDashboardDtos.LostDealsByStageOrganizationRow();
+            row.organizationId = orgId;
+            row.organizationName = org != null ? org.getName() : null;
+            row.organizationCategory = org != null && org.getCategory() != null
+                    ? org.getCategory().getDbValue() : null;
+            row.totalLostDeals = orgLostCounts.getOrDefault(orgId, 0L);
+            row.totalLostValue = orgLostValues.getOrDefault(orgId, BigDecimal.ZERO);
+            List<SalesDashboardDtos.LostDealsByStageRow> stageRows = new ArrayList<>();
+            for (StageLossAgg agg : e.getValue().values()) { // each pipeline+stage bucket
+                SalesDashboardDtos.LostDealsByStageRow sr = new SalesDashboardDtos.LostDealsByStageRow();
+                sr.stageId = agg.stageId;
+                sr.stageName = agg.stageName;
+                sr.pipelineId = agg.pipelineId;
+                sr.pipelineName = agg.pipelineName;
+                sr.lostCount = agg.lostCount;
+                sr.lostValue = agg.lostValue;
+                stageRows.add(sr);
+            }
+            stageRows.sort(Comparator.comparing(sr -> sr.stageName != null ? sr.stageName : ""));
+            row.stages = stageRows;
+            orgRows.add(row);
+        }
+        orgRows.sort(Comparator.comparing(r -> r.organizationName != null ? r.organizationName : ""));
+
+        SalesDashboardDtos.LostDealsByStagePerOrganizationResponse response =
+                new SalesDashboardDtos.LostDealsByStagePerOrganizationResponse();
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.pipelineId = pipelineId;
+        response.organizations = orgRows;
+        return response;
+    }
+
+    private static final class StageLossAgg {
+        Long stageId;
+        String stageName;
+        Long pipelineId;
+        String pipelineName;
+        long lostCount;
+        BigDecimal lostValue = BigDecimal.ZERO;
     }
 
     @Override

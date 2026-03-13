@@ -74,8 +74,48 @@ public class SalesDashboardDtos {
 
     /**
      * Lost reasons breakdown for the current user's deals.
+     * Optional {@code category} / {@code pipelineId} echo filters when used (same semantics as Category Manager dashboard).
      */
     public static class LostReasonsResponse {
+        public Long totalLostDeals;
+        /**
+         * Organization category filter applied, e.g. "Photography". Null if none.
+         */
+        public String category;
+        /**
+         * Pipeline filter applied. Null if none.
+         */
+        public Long pipelineId;
+        public List<LostReasonRow> reasons;
+    }
+
+    /**
+     * Lost reasons grouped by organization (each org owned by the sales user has its own breakdown).
+     */
+    public static class LostReasonsByOrganizationResponse {
+        public String category;
+        public List<LostReasonsByOrganizationRow> organizations;
+    }
+
+    public static class LostReasonsByOrganizationRow {
+        public Long organizationId;
+        public String organizationName;
+        public String organizationCategory;
+        public Long totalLostDeals;
+        public List<LostReasonRow> reasons;
+    }
+
+    /**
+     * Lost reasons grouped by pipeline for the current user (optional org category filter).
+     */
+    public static class LostReasonsByPipelineResponse {
+        public String category;
+        public List<LostReasonsByPipelineRow> pipelines;
+    }
+
+    public static class LostReasonsByPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
         public Long totalLostDeals;
         public List<LostReasonRow> reasons;
     }
@@ -84,6 +124,37 @@ public class SalesDashboardDtos {
         public String reason;
         public Long count;
         public BigDecimal percentage;
+    }
+
+    /**
+     * LOST deals grouped by organization, then by pipeline stage (where the deal was when marked lost).
+     * Scoped to the sales user (deal → pipeline → organization → owner).
+     */
+    public static class LostDealsByStagePerOrganizationResponse {
+        /** Organization category filter if any */
+        public String category;
+        public Long pipelineId;
+        public List<LostDealsByStageOrganizationRow> organizations;
+    }
+
+    public static class LostDealsByStageOrganizationRow {
+        public Long organizationId;
+        public String organizationName;
+        public String organizationCategory;
+        public Long totalLostDeals;
+        public BigDecimal totalLostValue;
+        /** Per stage within this org */
+        public List<LostDealsByStageRow> stages;
+    }
+
+    public static class LostDealsByStageRow {
+        /** Null when deal had no stage at loss time */
+        public Long stageId;
+        public String stageName;
+        public Long pipelineId;
+        public String pipelineName;
+        public Long lostCount;
+        public BigDecimal lostValue;
     }
 
     /**

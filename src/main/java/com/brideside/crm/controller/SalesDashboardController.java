@@ -75,11 +75,70 @@ public class SalesDashboardController {
     @GetMapping("/lost-reasons")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Lost deal reasons",
-            description = "Breakdown of lost deal reasons with counts and percentages, for the authenticated user.")
-    public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsResponse>> getLostReasons() {
+            description = "Breakdown of lost deal reasons with counts and percentages, scoped to the authenticated user only "
+                    + "(deal → pipeline → organization → owner). Optional filters match Category Manager: "
+                    + "category = organization category (e.g. Photography), pipelineId = pipeline.")
+    public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsResponse>> getLostReasons(
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "pipelineId", required = false) Long pipelineId) {
         User user = getCurrentUser();
-        SalesDashboardDtos.LostReasonsResponse data = salesDashboardService.getLostReasons(user);
+        if (pipelineId != null && !salesDashboardService.isPipelineOwnedBySalesUser(pipelineId, user)) {
+            return ResponseEntity.badRequest().body(
+                    ApiResponse.error("pipelineId must be a pipeline belonging to your organization"));
+        }
+        SalesDashboardDtos.LostReasonsResponse data =
+                salesDashboardService.getLostReasons(user, category, pipelineId);
         return ResponseEntity.ok(ApiResponse.success("Lost reasons fetched", data));
+    }
+
+    @GetMapping("/lost-reasons-by-organization")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lost reasons per organization",
+            description = "LOST deal reasons grouped by organization for the authenticated user only. "
+                    + "Optional category = organization category filter (same as Category Manager).")
+    public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsByOrganizationResponse>> getLostReasonsByOrganization(
+            @RequestParam(value = "category", required = false) String category) {
+        User user = getCurrentUser();
+        SalesDashboardDtos.LostReasonsByOrganizationResponse data =
+                salesDashboardService.getLostReasonsByOrganization(user, category);
+        return ResponseEntity.ok(ApiResponse.success("Lost reasons by organization fetched", data));
+    }
+
+    @GetMapping("/lost-reasons-by-pipeline")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lost reasons per pipeline",
+            description = "LOST deal reasons grouped by pipeline for the authenticated user only. "
+                    + "Optional category = organization category filter.")
+    public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsByPipelineResponse>> getLostReasonsByPipeline(
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "pipelineId", required = false) Long pipelineId) {
+        User user = getCurrentUser();
+        if (pipelineId != null && !salesDashboardService.isPipelineOwnedBySalesUser(pipelineId, user)) {
+            return ResponseEntity.badRequest().body(
+                    ApiResponse.error("pipelineId must be a pipeline belonging to your organization"));
+        }
+        SalesDashboardDtos.LostReasonsByPipelineResponse data =
+                salesDashboardService.getLostReasonsByPipeline(user, category, pipelineId);
+        return ResponseEntity.ok(ApiResponse.success("Lost reasons by pipeline fetched", data));
+    }
+
+    @GetMapping("/lost-deals-by-stage-per-organization")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lost deals by stage per organization",
+            description = "LOST deals grouped by organization and by stage (pipeline stage at time of reporting), "
+                    + "with count and value per stage. Scoped to the authenticated user only. "
+                    + "Optional category (org category) and pipelineId (must be your pipeline).")
+    public ResponseEntity<ApiResponse<SalesDashboardDtos.LostDealsByStagePerOrganizationResponse>> getLostDealsByStagePerOrganization(
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "pipelineId", required = false) Long pipelineId) {
+        User user = getCurrentUser();
+        if (pipelineId != null && !salesDashboardService.isPipelineOwnedBySalesUser(pipelineId, user)) {
+            return ResponseEntity.badRequest().body(
+                    ApiResponse.error("pipelineId must be a pipeline belonging to your organization"));
+        }
+        SalesDashboardDtos.LostDealsByStagePerOrganizationResponse data =
+                salesDashboardService.getLostDealsByStagePerOrganization(user, category, pipelineId);
+        return ResponseEntity.ok(ApiResponse.success("Lost deals by stage per organization fetched", data));
     }
 
     @GetMapping("/activities-monthly")
