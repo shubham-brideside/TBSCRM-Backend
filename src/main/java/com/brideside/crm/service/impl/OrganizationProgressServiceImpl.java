@@ -11,6 +11,7 @@ import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.ClientDataRepository;
 import com.brideside.crm.repository.EventPricingRepository;
+import com.brideside.crm.repository.OrganizationActivationRepository;
 import com.brideside.crm.repository.OrganizationOnboardingProgressRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.VendorAssetRepository;
@@ -31,6 +32,7 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
 
     private final OrganizationRepository organizationRepository;
     private final OrganizationOnboardingProgressRepository progressRepository;
+    private final OrganizationActivationRepository organizationActivationRepository;
     private final BridesideVendorRepository bridesideVendorRepository;
     private final VendorAssetRepository vendorAssetRepository;
     private final EventPricingRepository eventPricingRepository;
@@ -40,6 +42,7 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
 
     public OrganizationProgressServiceImpl(OrganizationRepository organizationRepository,
                                            OrganizationOnboardingProgressRepository progressRepository,
+                                           OrganizationActivationRepository organizationActivationRepository,
                                            BridesideVendorRepository bridesideVendorRepository,
                                            VendorAssetRepository vendorAssetRepository,
                                            EventPricingRepository eventPricingRepository,
@@ -48,6 +51,7 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
                                            VendorTeamMemberRepository vendorTeamMemberRepository) {
         this.organizationRepository = organizationRepository;
         this.progressRepository = progressRepository;
+        this.organizationActivationRepository = organizationActivationRepository;
         this.bridesideVendorRepository = bridesideVendorRepository;
         this.vendorAssetRepository = vendorAssetRepository;
         this.eventPricingRepository = eventPricingRepository;
@@ -86,7 +90,11 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
         progressRepository.save(progress);
 
         boolean allComplete = orgDetails && assetInfo && eventsPricing && vendorData && clientData && teamMembers;
-        organization.setIsActive(allComplete);
+        boolean activationActivated = organizationActivationRepository.findByOrganization_Id(organizationId)
+                .map(a -> Boolean.TRUE.equals(a.getActivated()))
+                .orElse(false);
+        // Progress API isActive: true if full onboarding done OR activation checklist activated (four core done)
+        organization.setIsActive(allComplete || activationActivated);
         organizationRepository.save(organization);
     }
 
@@ -101,7 +109,18 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
         OrganizationOnboardingProgress progress = progressRepository.findByOrganization_Id(organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Progress not found for organization " + organizationId));
 
-        return toResponse(organization.getId(), progress, organization.getIsActive());
+        boolean allOnboardingComplete = Boolean.TRUE.equals(progress.getOrganizationDetailsComplete())
+                && Boolean.TRUE.equals(progress.getAssetInfoComplete())
+                && Boolean.TRUE.equals(progress.getEventsPricingComplete())
+                && Boolean.TRUE.equals(progress.getVendorDataComplete())
+                && Boolean.TRUE.equals(progress.getClientDataComplete())
+                && Boolean.TRUE.equals(progress.getTeamMembersComplete());
+        boolean activationActivated = organizationActivationRepository.findByOrganization_Id(organizationId)
+                .map(a -> Boolean.TRUE.equals(a.getActivated()))
+                .orElse(false);
+        // Progress isActive must match activation checklist when activated=true (same as organizations.is_active rule)
+        boolean isActive = allOnboardingComplete || activationActivated;
+        return toResponse(organization.getId(), progress, isActive);
     }
 
     @Override

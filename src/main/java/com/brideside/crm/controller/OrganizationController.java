@@ -6,6 +6,7 @@ import com.brideside.crm.dto.ClientDataDtos;
 import com.brideside.crm.dto.EventPricingDtos;
 import com.brideside.crm.dto.OrganizationDtos;
 import com.brideside.crm.dto.OrganizationDetailsDtos;
+import com.brideside.crm.dto.OrganizationActivationDtos;
 import com.brideside.crm.dto.OrganizationProgressDtos;
 import com.brideside.crm.dto.VendorAssetDtos;
 import com.brideside.crm.dto.VendorDataDtos;
@@ -14,6 +15,7 @@ import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.ClientDataService;
 import com.brideside.crm.service.EventPricingService;
 import com.brideside.crm.service.OrganizationProgressService;
+import com.brideside.crm.service.OrganizationActivationService;
 import com.brideside.crm.service.OrganizationService;
 import com.brideside.crm.service.VendorAssetService;
 import com.brideside.crm.service.VendorDataService;
@@ -30,6 +32,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -40,29 +44,35 @@ public class OrganizationController {
 
     private final OrganizationService organizationService;
     private final OrganizationProgressService organizationProgressService;
+    private final OrganizationActivationService organizationActivationService;
     private final BridesideVendorService bridesideVendorService;
     private final VendorAssetService vendorAssetService;
     private final EventPricingService eventPricingService;
     private final VendorTeamMemberService vendorTeamMemberService;
     private final VendorDataService vendorDataService;
     private final ClientDataService clientDataService;
+    private final ObjectMapper objectMapper;
 
     public OrganizationController(OrganizationService organizationService,
                                   OrganizationProgressService organizationProgressService,
+                                  OrganizationActivationService organizationActivationService,
                                   BridesideVendorService bridesideVendorService,
                                   VendorAssetService vendorAssetService,
                                   EventPricingService eventPricingService,
                                   VendorTeamMemberService vendorTeamMemberService,
                                   VendorDataService vendorDataService,
-                                  ClientDataService clientDataService) {
+                                  ClientDataService clientDataService,
+                                  ObjectMapper objectMapper) {
         this.organizationService = organizationService;
         this.organizationProgressService = organizationProgressService;
+        this.organizationActivationService = organizationActivationService;
         this.bridesideVendorService = bridesideVendorService;
         this.vendorAssetService = vendorAssetService;
         this.eventPricingService = eventPricingService;
         this.vendorTeamMemberService = vendorTeamMemberService;
         this.vendorDataService = vendorDataService;
         this.clientDataService = clientDataService;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping
@@ -113,6 +123,30 @@ public class OrganizationController {
             description = "Returns completion status for each section: Organization details, Asset Info, Events Pricing, Vendor Data, Client Data, Team Members. isActive is true when all are complete.")
     public ResponseEntity<ApiResponse<OrganizationProgressDtos.ProgressResponse>> getProgress(@PathVariable("id") Long id) {
         return ResponseEntity.ok(ApiResponse.success("Organization progress fetched", organizationProgressService.getProgress(id)));
+    }
+
+    @GetMapping("/{id:\\d+}/activation-checklist")
+    @Operation(summary = "Get organization activation checklist",
+            description = "Returns activation checklist and progress for the organization. If no record exists yet, returns defaults with all items unchecked.")
+    public ResponseEntity<ApiResponse<OrganizationActivationDtos.ProgressResponse>> getActivationChecklist(
+            @PathVariable("id") Long id) {
+        OrganizationActivationDtos.ProgressResponse response = organizationActivationService.getActivationProgress(id);
+        return ResponseEntity.ok(ApiResponse.success("Organization activation checklist fetched", response));
+    }
+
+    @PutMapping("/{id:\\d+}/activation-checklist")
+    @Operation(summary = "Save organization activation checklist",
+            description = "Upserts activation checklist for the organization and recomputes completed/total counts and activated flag.")
+    public ResponseEntity<ApiResponse<OrganizationActivationDtos.ProgressResponse>> saveActivationChecklist(
+            @PathVariable("id") Long id,
+            @RequestBody(required = false) JsonNode body) {
+        if (body == null || body.isNull()) {
+            body = objectMapper.createObjectNode();
+        }
+        OrganizationActivationDtos.Checklist checklist = objectMapper.convertValue(body, OrganizationActivationDtos.Checklist.class);
+        OrganizationActivationDtos.ProgressResponse response =
+                organizationActivationService.saveChecklist(id, checklist, body);
+        return ResponseEntity.ok(ApiResponse.success("Organization activation checklist saved", response));
     }
 
     @GetMapping("/{id:\\d+}/progress/debug")
