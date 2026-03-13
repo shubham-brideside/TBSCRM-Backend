@@ -17,7 +17,32 @@ public interface SalesDashboardService {
 
     SalesDashboardDtos.RevenueResponse getRevenue(User currentUser, LocalDate dateFrom, LocalDate dateTo);
 
-    SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser);
+    /**
+     * True if the pipeline exists, is not deleted, and belongs to an organization owned by {@code user}.
+     */
+    boolean isPipelineOwnedBySalesUser(Long pipelineId, User user);
+
+    /**
+     * Lost reasons for the current user's LOST deals only.
+     * Optional {@code category} filters by organization category; {@code pipelineId} must be a pipeline
+     * owned by the user (same as deal → pipeline → organization → owner).
+     */
+    SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser, String category, Long pipelineId);
+
+    SalesDashboardDtos.LostReasonsByOrganizationResponse getLostReasonsByOrganization(User currentUser, String category);
+
+    /**
+     * Lost reasons per pipeline for pipelines the user owns (via organization owner).
+     * If {@code pipelineId} is set, only that pipeline is returned (must be owned by the user).
+     */
+    SalesDashboardDtos.LostReasonsByPipelineResponse getLostReasonsByPipeline(
+            User currentUser, String category, Long pipelineId);
+
+    /**
+     * LOST deal counts and values by stage, grouped per organization (user-owned deals only).
+     */
+    SalesDashboardDtos.LostDealsByStagePerOrganizationResponse getLostDealsByStagePerOrganization(
+            User currentUser, String category, Long pipelineId);
 
     SalesDashboardDtos.ActivityMonthlyResponse getActivityMonthly(User currentUser, Integer year);
 
