@@ -2105,13 +2105,25 @@ public class DealServiceImpl implements DealService {
                 return;
             }
             
-            // 1. Check if person has a phone number
+            // 1. Resolve the best available phone number for the activity.
+            // Bot flows can persist the captured phone on the deal before the linked person is updated.
             Person person = freshDeal.getPerson();
-            if (person == null || person.getPhone() == null || person.getPhone().trim().isEmpty()) {
-                log.warn("Skipping activity creation for deal {}: Person has no phone number", freshDeal.getId());
+            String activityPhone = null;
+            if (freshDeal.getPhoneNumber() != null && !freshDeal.getPhoneNumber().trim().isEmpty()) {
+                activityPhone = freshDeal.getPhoneNumber().trim();
+                log.debug("Deal {} will use deal phoneNumber {}", freshDeal.getId(), activityPhone);
+            } else if (person != null && person.getPhone() != null && !person.getPhone().trim().isEmpty()) {
+                activityPhone = person.getPhone().trim();
+                log.debug("Deal {} will use person {} phone {}", freshDeal.getId(), person.getId(), activityPhone);
+            } else if (freshDeal.getContactNumber() != null && !freshDeal.getContactNumber().trim().isEmpty()) {
+                activityPhone = freshDeal.getContactNumber().trim();
+                log.debug("Deal {} will use deal contact number {}", freshDeal.getId(), activityPhone);
+            }
+
+            if (activityPhone == null) {
+                log.warn("Skipping activity creation for deal {}: no phone number on deal.phoneNumber, person.phone, or deal.contactNumber", freshDeal.getId());
                 return;
             }
-            log.debug("Deal {} has person {} with phone {}", freshDeal.getId(), person.getId(), person.getPhone());
             
             // 2. Get team manager using direct SQL query following the exact path:
             // deals.pipeline_id -> pipelines.team_id -> teams.manager_id -> users
@@ -2299,9 +2311,7 @@ public class DealServiceImpl implements DealService {
                 makeFirstCall.setDate(todayStr);
                 makeFirstCall.setDone(false);
                 makeFirstCall.setDealName(freshDeal.getName());
-                if (person != null) {
-                    makeFirstCall.setPhone(person.getPhone());
-                }
+                makeFirstCall.setPhone(activityPhone);
                 
                 // Verify values before saving
                 if (makeFirstCall.getAssignedUserId() == null || makeFirstCall.getAssignedUser() == null) {
@@ -2340,9 +2350,7 @@ public class DealServiceImpl implements DealService {
                 sendQuotes.setDate(todayStr);
                 sendQuotes.setDone(false);
                 sendQuotes.setDealName(freshDeal.getName());
-                if (person != null) {
-                    sendQuotes.setPhone(person.getPhone());
-                }
+                sendQuotes.setPhone(activityPhone);
                 
                 // Verify values before saving
                 if (sendQuotes.getAssignedUserId() == null || sendQuotes.getAssignedUser() == null) {
