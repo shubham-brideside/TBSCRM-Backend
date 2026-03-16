@@ -1020,6 +1020,80 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
     @Override
     @Transactional(readOnly = true)
+    public AdminDashboardDtos.CommissionByPipelineResponse getCommissionByPipeline(
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    ) {
+        if (dateFrom == null || dateTo == null) {
+            throw new IllegalArgumentException("dateFrom and dateTo are required");
+        }
+        if (dateTo.isBefore(dateFrom)) {
+            throw new IllegalArgumentException("dateTo must be on or after dateFrom");
+        }
+
+        Organization.OrganizationCategory categoryFilter = null;
+        if (category != null && !category.trim().isEmpty()) {
+            categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
+        }
+
+        LocalDateTime fromDateTime = dateFrom.atStartOfDay();
+        LocalDateTime toDateTime = dateTo.plusDays(1).atStartOfDay();
+
+        List<Deal> wonDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON);
+
+        Map<Long, AdminDashboardDtos.CommissionByPipelineRow> aggregates = new HashMap<>();
+
+        for (Deal deal : wonDeals) {
+            if (deal.getPipeline() == null || deal.getPipeline().getId() == null) {
+                continue;
+            }
+
+            LocalDateTime reference = deal.getWonAt() != null ? deal.getWonAt()
+                    : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+            if (reference == null || reference.isBefore(fromDateTime) || !reference.isBefore(toDateTime)) {
+                continue;
+            }
+
+            if (categoryFilter != null) {
+                Organization org = deal.getPipeline().getOrganization();
+                if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+
+            Long pipelineId = deal.getPipeline().getId();
+            AdminDashboardDtos.CommissionByPipelineRow row =
+                    aggregates.computeIfAbsent(pipelineId, id -> {
+                        AdminDashboardDtos.CommissionByPipelineRow r = new AdminDashboardDtos.CommissionByPipelineRow();
+                        r.pipelineId = id;
+                        r.pipelineName = deal.getPipeline().getName();
+                        r.totalDeals = 0L;
+                        r.totalDealValue = BigDecimal.ZERO;
+                        r.totalCommission = BigDecimal.ZERO;
+                        return r;
+                    });
+
+            row.totalDeals = row.totalDeals + 1;
+            BigDecimal value = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+            BigDecimal commission = deal.getCommissionAmount() != null
+                    ? deal.getCommissionAmount()
+                    : BigDecimal.ZERO;
+            row.totalDealValue = row.totalDealValue.add(value);
+            row.totalCommission = row.totalCommission.add(commission);
+        }
+
+        AdminDashboardDtos.CommissionByPipelineResponse response =
+                new AdminDashboardDtos.CommissionByPipelineResponse();
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelines = new ArrayList<>(aggregates.values());
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public AdminDashboardDtos.DealDivertReportResponse getDealDivertReport(Integer year) {
         List<Deal> allDeals = dealRepository.findWonDivertedDealsForReport(DealStatus.WON, DealSource.DIVERT);
         

@@ -217,6 +217,28 @@ public class AdminDashboardDtos {
     }
 
     /**
+     * Commission aggregated per pipeline for WON, non-deleted deals.
+     */
+    public static class CommissionByPipelineResponse {
+        /**
+         * Optional organization category filter that was applied, e.g. "Photography".
+         * Null if no category filter was used.
+         */
+        public String category;
+        public java.time.LocalDate dateFrom;
+        public java.time.LocalDate dateTo;
+        public java.util.List<CommissionByPipelineRow> pipelines;
+    }
+
+    public static class CommissionByPipelineRow {
+        public Long pipelineId;
+        public String pipelineName;
+        public Long totalDeals;
+        public BigDecimal totalDealValue;
+        public BigDecimal totalCommission;
+    }
+
+    /**
      * Monthly activity summary per user (for admin dashboard).
      */
     public static class UserActivityMonthlySummaryResponse {
