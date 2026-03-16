@@ -19,15 +19,15 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 
 @RestController
-@RequestMapping("/api/sales/dashboard")
-@Tag(name = "Sales Dashboard", description = "Optional query params on every route: dateFrom, dateTo (ISO date, both or neither), pipelineId.")
-public class SalesDashboardController {
+@RequestMapping("/api/presales/dashboard")
+@Tag(name = "Presales Dashboard", description = "Same filters as sales dashboard: dateFrom, dateTo, pipelineId on every route.")
+public class PresalesDashboardController {
 
     private final SalesDashboardService salesDashboardService;
     private final UserRepository userRepository;
 
-    public SalesDashboardController(SalesDashboardService salesDashboardService,
-                                    UserRepository userRepository) {
+    public PresalesDashboardController(SalesDashboardService salesDashboardService,
+                                       UserRepository userRepository) {
         this.salesDashboardService = salesDashboardService;
         this.userRepository = userRepository;
     }
@@ -37,13 +37,13 @@ public class SalesDashboardController {
             return "dateFrom and dateTo must both be set or both omitted";
         }
         if (pipelineId != null && !salesDashboardService.isPipelineOwnedBySalesUser(pipelineId, user)) {
-            return "pipelineId must be a pipeline belonging to your organization";
+            return "pipelineId must be a pipeline belonging to your Sales manager's organization";
         }
         return null;
     }
 
     @GetMapping("/summary")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Dashboard summary")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.SummaryResponse>> getSummary(
             @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
@@ -54,12 +54,12 @@ public class SalesDashboardController {
         if (err != null) {
             return ResponseEntity.badRequest().body(ApiResponse.error(err));
         }
-        return ResponseEntity.ok(ApiResponse.success("Dashboard summary fetched",
+        return ResponseEntity.ok(ApiResponse.success("Presales dashboard summary fetched",
                 salesDashboardService.getDashboardSummary(user, dateFrom, dateTo, pipelineId)));
     }
 
     @GetMapping("/deals-status-monthly")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Monthly deal status")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.DealStatusMonthlyResponse>> getDealStatusMonthly(
             @RequestParam("year") Integer year,
@@ -79,8 +79,8 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/revenue")
-    @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Revenue by pipeline", description = "dateFrom/dateTo optional (all-time WON if omitted).")
+    @PreAuthorize("hasRole('PRESALES')")
+    @Operation(summary = "Revenue by pipeline")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.RevenueResponse>> getRevenue(
             @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
             @RequestParam(value = "dateTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
@@ -95,7 +95,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/lost-reasons")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Lost deal reasons")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsResponse>> getLostReasons(
             @RequestParam(value = "category", required = false) String category,
@@ -112,7 +112,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/lost-reasons-by-organization")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Lost reasons per organization")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsByOrganizationResponse>> getLostReasonsByOrganization(
             @RequestParam(value = "category", required = false) String category,
@@ -129,7 +129,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/lost-reasons-by-pipeline")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Lost reasons per pipeline")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.LostReasonsByPipelineResponse>> getLostReasonsByPipeline(
             @RequestParam(value = "category", required = false) String category,
@@ -146,7 +146,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/lost-deals-by-stage-per-organization")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Lost deals by stage per organization")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.LostDealsByStagePerOrganizationResponse>> getLostDealsByStagePerOrganization(
             @RequestParam(value = "category", required = false) String category,
@@ -163,7 +163,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/lost-deals-by-stage")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Lost deals by stage")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.LostDealsByStageResponse>> getLostDealsByStage(
             @RequestParam(value = "category", required = false) String category,
@@ -180,8 +180,8 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/activities-monthly")
-    @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Monthly activity summary", description = "pipelineId echoed only; activities are not tied to pipeline.")
+    @PreAuthorize("hasRole('PRESALES')")
+    @Operation(summary = "Monthly activity summary")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.ActivityMonthlyResponse>> getActivityMonthly(
             @RequestParam("year") Integer year,
             @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
@@ -200,7 +200,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/pipeline-performance")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Pipeline performance")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.PipelinePerformanceResponse>> getPipelinePerformance(
             @RequestParam(value = "dateFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
@@ -216,7 +216,7 @@ public class SalesDashboardController {
     }
 
     @GetMapping("/target-vs-achievement")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasRole('PRESALES')")
     @Operation(summary = "Target vs achievement")
     public ResponseEntity<ApiResponse<SalesDashboardDtos.TargetVsAchievementResponse>> getTargetVsAchievement(
             @RequestParam("year") Integer year,

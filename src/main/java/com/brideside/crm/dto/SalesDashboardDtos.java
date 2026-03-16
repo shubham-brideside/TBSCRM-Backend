@@ -32,6 +32,11 @@ public class SalesDashboardDtos {
 
         public Long totalActivities;
         public Long pendingActivities;
+
+        /** Applied filters (echo). */
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     /**
@@ -40,6 +45,9 @@ public class SalesDashboardDtos {
     public static class DealStatusMonthlyResponse {
         public Integer year;
         public List<DealStatusMonthRow> months;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class DealStatusMonthRow {
@@ -62,6 +70,7 @@ public class SalesDashboardDtos {
         public BigDecimal totalDealValue;
         public BigDecimal totalCommission;
         public List<RevenueByPipelineRow> pipelines;
+        public Long pipelineId;
     }
 
     public static class RevenueByPipelineRow {
@@ -87,6 +96,8 @@ public class SalesDashboardDtos {
          */
         public Long pipelineId;
         public List<LostReasonRow> reasons;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
     }
 
     /**
@@ -95,6 +106,9 @@ public class SalesDashboardDtos {
     public static class LostReasonsByOrganizationResponse {
         public String category;
         public List<LostReasonsByOrganizationRow> organizations;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class LostReasonsByOrganizationRow {
@@ -111,6 +125,9 @@ public class SalesDashboardDtos {
     public static class LostReasonsByPipelineResponse {
         public String category;
         public List<LostReasonsByPipelineRow> pipelines;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class LostReasonsByPipelineRow {
@@ -135,6 +152,8 @@ public class SalesDashboardDtos {
         public String category;
         public Long pipelineId;
         public List<LostDealsByStageOrganizationRow> organizations;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
     }
 
     public static class LostDealsByStageOrganizationRow {
@@ -158,11 +177,27 @@ public class SalesDashboardDtos {
     }
 
     /**
+     * LOST deals aggregated by pipeline + stage (flat list). Same user scope as other dashboard lost APIs.
+     */
+    public static class LostDealsByStageResponse {
+        public String category;
+        public Long pipelineId;
+        public Long totalLostDeals;
+        public BigDecimal totalLostValue;
+        public List<LostDealsByStageRow> stages;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+    }
+
+    /**
      * Monthly activity summary for the current user.
      */
     public static class ActivityMonthlyResponse {
         public Integer year;
         public List<ActivityMonthRow> months;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class ActivityMonthRow {
@@ -179,6 +214,9 @@ public class SalesDashboardDtos {
      */
     public static class PipelinePerformanceResponse {
         public List<PipelinePerformanceRow> pipelines;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class PipelinePerformanceRow {
@@ -198,15 +236,31 @@ public class SalesDashboardDtos {
     public static class TargetVsAchievementResponse {
         public Integer year;
         public List<TargetVsAchievementRow> targets;
+        public LocalDate dateFrom;
+        public LocalDate dateTo;
+        public Long pipelineId;
     }
 
     public static class TargetVsAchievementRow {
         public String category;
         public String periodType;
         public LocalDate periodStart;
+        /** Calendar month (1–12) for this row — same granularity as Target page month blocks. */
+        public Integer month;
+        public Integer year;
         public BigDecimal targetAmount;
+        /**
+         * Same as Target page: SALES = sum of won deal commission in period/category;
+         * PRESALES = won deal count (incentive-based view).
+         */
         public BigDecimal achievedAmount;
         public BigDecimal achievementPercentage;
+        /** COMMISSION (sales) or DEAL_COUNT (presales) — matches Target dashboard semantics. */
+        public String achievedBasis;
+        /** Same slabs as Target page (SALES): % applied to achieved commission. PRESALES: 0 with fixed incentiveAmount. */
+        public BigDecimal incentivePercent;
+        /** SALES: incentivePercent × achieved (commission). PRESALES: 500×direct + 1000×divert won deals. */
+        public BigDecimal incentiveAmount;
         public List<String> organizationNames;
     }
 }

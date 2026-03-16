@@ -5,8 +5,10 @@ import com.brideside.crm.entity.*;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.PipelineRepository;
+import com.brideside.crm.dto.TargetDtos;
 import com.brideside.crm.repository.SalesTargetRepository;
 import com.brideside.crm.service.SalesDashboardService;
+import com.brideside.crm.service.TargetService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,15 +27,18 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
     private final ActivityRepository activityRepository;
     private final SalesTargetRepository salesTargetRepository;
     private final PipelineRepository pipelineRepository;
+    private final TargetService targetService;
 
     public SalesDashboardServiceImpl(DealRepository dealRepository,
                                      ActivityRepository activityRepository,
                                      SalesTargetRepository salesTargetRepository,
-                                     PipelineRepository pipelineRepository) {
+                                     PipelineRepository pipelineRepository,
+                                     TargetService targetService) {
         this.dealRepository = dealRepository;
         this.activityRepository = activityRepository;
         this.salesTargetRepository = salesTargetRepository;
         this.pipelineRepository = pipelineRepository;
+        this.targetService = targetService;
     }
 
     @Override
@@ -42,17 +47,92 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         if (pipelineId == null || user == null || user.getId() == null) {
             return false;
         }
+        Long ownerIdToMatch = user.getId();
+        if (user.getRole() != null && user.getRole().getName() == Role.RoleName.PRESALES) {
+            if (user.getManager() == null || user.getManager().getId() == null) {
+                return false;
+            }
+            ownerIdToMatch = user.getManager().getId();
+        }
+        Long effectiveOwnerId = ownerIdToMatch;
         return pipelineRepository.findById(pipelineId)
                 .filter(p -> !Boolean.TRUE.equals(p.getDeleted()))
                 .map(Pipeline::getOrganization)
                 .filter(org -> org != null && org.getOwner() != null && org.getOwner().getId() != null)
-                .map(org -> user.getId().equals(org.getOwner().getId()))
+                .map(org -> effectiveOwnerId.equals(org.getOwner().getId()))
                 .orElse(false);
+    }
+
+    private static boolean windowActive(LocalDate from, LocalDate to) {
+        return from != null && to != null;
+    }
+
+    private static LocalDateTime windowStart(LocalDate from) {
+        return from.atStartOfDay();
+    }
+
+    private static LocalDateTime windowEndExclusive(LocalDate to) {
+        return to.plusDays(1).atStartOfDay();
+    }
+
+    private static boolean dealMatchesPipeline(Deal deal, Long pipelineId) {
+        if (pipelineId == null) {
+            return true;
+        }
+        return deal.getPipeline() != null && pipelineId.equals(deal.getPipeline().getId());
+    }
+
+    /** Reference date for WON/LOST/IN_PROGRESS in window. */
+    private static boolean dealRefInWindow(Deal deal, LocalDate from, LocalDate to) {
+        if (!windowActive(from, to)) {
+            return true;
+        }
+        LocalDateTime ref = getReferenceDateForStatus(deal);
+        if (ref == null) {
+            return false;
+        }
+        return !ref.isBefore(windowStart(from)) && ref.isBefore(windowEndExclusive(to));
+    }
+
+    private static boolean lostDealInWindow(Deal deal, LocalDate from, LocalDate to) {
+        if (!windowActive(from, to)) {
+            return true;
+        }
+        LocalDateTime ref = deal.getLostAt() != null ? deal.getLostAt()
+                : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+        if (ref == null) {
+            return false;
+        }
+        return !ref.isBefore(windowStart(from)) && ref.isBefore(windowEndExclusive(to));
+    }
+
+    private static boolean wonDealInWindow(Deal deal, LocalDate from, LocalDate to) {
+        if (!windowActive(from, to)) {
+            return true;
+        }
+        LocalDateTime ref = deal.getWonAt() != null ? deal.getWonAt()
+                : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+        if (ref == null) {
+            return false;
+        }
+        return !ref.isBefore(windowStart(from)) && ref.isBefore(windowEndExclusive(to));
+    }
+
+    private static boolean activityInWindow(Activity a, LocalDate from, LocalDate to) {
+        if (!windowActive(from, to)) {
+            return true;
+        }
+        if (a.getCreatedAt() == null) {
+            return false;
+        }
+        LocalDateTime ref = LocalDateTime.ofInstant(a.getCreatedAt(), ZoneId.systemDefault());
+        return !ref.isBefore(windowStart(from)) && ref.isBefore(windowEndExclusive(to));
     }
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.SummaryResponse getDashboardSummary(User currentUser) {
+    public SalesDashboardDtos.SummaryResponse getDashboardSummary(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<Deal> userDeals = getUserDeals(dealRepository.findByIsDeletedFalse(), currentUser);
 
         long wonCount = 0, lostCount = 0, inProgressCount = 0;
@@ -60,8 +140,13 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         BigDecimal totalCommission = BigDecimal.ZERO;
         BigDecimal wonValueYtd = BigDecimal.ZERO;
         int currentYear = LocalDate.now().getYear();
+        int included = 0;
 
         for (Deal deal : userDeals) {
+            if (!dealMatchesPipeline(deal, pipelineId) || !dealRefInWindow(deal, dateFrom, dateTo)) {
+                continue;
+            }
+            included++;
             BigDecimal v = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
             BigDecimal comm = deal.getCommissionAmount() != null ? deal.getCommissionAmount() : BigDecimal.ZERO;
 
@@ -84,19 +169,25 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         }
 
         List<Activity> activities = activityRepository.findByAssignedUserId(currentUser.getId());
-        long totalActivities = activities.size();
-        long pendingActivities = activities.stream()
-                .filter(a -> a.getStatus() != null
-                        && (a.getStatus() == Activity.ActivityStatus.OPEN
-                        || a.getStatus() == Activity.ActivityStatus.PENDING
-                        || a.getStatus() == Activity.ActivityStatus.IN_PROGRESS))
-                .count();
+        long totalActivities = 0;
+        long pendingActivities = 0;
+        for (Activity a : activities) {
+            if (!activityInWindow(a, dateFrom, dateTo)) {
+                continue;
+            }
+            totalActivities++;
+            if (a.getStatus() != null && (a.getStatus() == Activity.ActivityStatus.OPEN
+                    || a.getStatus() == Activity.ActivityStatus.PENDING
+                    || a.getStatus() == Activity.ActivityStatus.IN_PROGRESS)) {
+                pendingActivities++;
+            }
+        }
 
         SalesDashboardDtos.SummaryResponse r = new SalesDashboardDtos.SummaryResponse();
         r.userId = currentUser.getId();
         r.userName = fullName(currentUser);
         r.email = currentUser.getEmail();
-        r.totalDeals = (long) userDeals.size();
+        r.totalDeals = (long) included;
         r.wonDeals = wonCount;
         r.lostDeals = lostCount;
         r.inProgressDeals = inProgressCount;
@@ -108,20 +199,32 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         r.wonValueYtd = wonValueYtd;
         r.totalActivities = totalActivities;
         r.pendingActivities = pendingActivities;
+        r.dateFrom = dateFrom;
+        r.dateTo = dateTo;
+        r.pipelineId = pipelineId;
         return r;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.DealStatusMonthlyResponse getDealStatusMonthly(User currentUser, Integer year) {
+    public SalesDashboardDtos.DealStatusMonthlyResponse getDealStatusMonthly(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<Deal> userDeals = getUserDeals(dealRepository.findByIsDeletedFalse(), currentUser);
         Map<Integer, StatusAggregate> byMonth = new HashMap<>();
 
         for (Deal deal : userDeals) {
-            if (deal.getStatus() == null) continue;
+            if (deal.getStatus() == null || !dealMatchesPipeline(deal, pipelineId)) {
+                continue;
+            }
             LocalDateTime ref = getReferenceDateForStatus(deal);
-            if (ref == null || ref.getYear() != year) continue;
-
+            if (ref == null || ref.getYear() != year) {
+                continue;
+            }
+            if (windowActive(dateFrom, dateTo)) {
+                if (ref.isBefore(windowStart(dateFrom)) || !ref.isBefore(windowEndExclusive(dateTo))) {
+                    continue;
+                }
+            }
             int month = ref.getMonthValue();
             StatusAggregate agg = byMonth.computeIfAbsent(month, m -> new StatusAggregate());
             BigDecimal v = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
@@ -154,17 +257,22 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         SalesDashboardDtos.DealStatusMonthlyResponse response = new SalesDashboardDtos.DealStatusMonthlyResponse();
         response.year = year;
         response.months = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.RevenueResponse getRevenue(User currentUser, LocalDate dateFrom, LocalDate dateTo) {
+    public SalesDashboardDtos.RevenueResponse getRevenue(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<Deal> wonDeals = getUserDeals(
                 dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON), currentUser);
 
-        LocalDateTime fromDt = dateFrom.atStartOfDay();
-        LocalDateTime toDt = dateTo.plusDays(1).atStartOfDay();
+        boolean limitTime = windowActive(dateFrom, dateTo);
+        LocalDateTime fromDt = limitTime ? windowStart(dateFrom) : null;
+        LocalDateTime toDt = limitTime ? windowEndExclusive(dateTo) : null;
 
         long totalDeals = 0;
         BigDecimal totalValue = BigDecimal.ZERO;
@@ -172,9 +280,18 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         Map<Long, PipelineRevAggregate> byPipeline = new LinkedHashMap<>();
 
         for (Deal deal : wonDeals) {
+            if (!dealMatchesPipeline(deal, pipelineId)) {
+                continue;
+            }
             LocalDateTime ref = deal.getWonAt() != null ? deal.getWonAt()
                     : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
-            if (ref == null || ref.isBefore(fromDt) || !ref.isBefore(toDt)) continue;
+            if (limitTime) {
+                if (ref == null || ref.isBefore(fromDt) || !ref.isBefore(toDt)) {
+                    continue;
+                }
+            } else if (ref == null) {
+                continue;
+            }
 
             BigDecimal v = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
             BigDecimal c = deal.getCommissionAmount() != null ? deal.getCommissionAmount() : BigDecimal.ZERO;
@@ -195,6 +312,7 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         response.totalDeals = totalDeals;
         response.totalDealValue = totalValue;
         response.totalCommission = totalCommission;
+        response.pipelineId = pipelineId;
         response.pipelines = byPipeline.values().stream().map(agg -> {
             SalesDashboardDtos.RevenueByPipelineRow row = new SalesDashboardDtos.RevenueByPipelineRow();
             row.pipelineId = agg.pipelineId;
@@ -209,7 +327,8 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser, String category, Long pipelineId) {
+    public SalesDashboardDtos.LostReasonsResponse getLostReasons(
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -221,7 +340,8 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         long total = 0;
 
         for (Deal deal : lostDeals) {
-            if (deal.getLostReason() == null) {
+            if (deal.getLostReason() == null || !dealMatchesPipeline(deal, pipelineId)
+                    || !lostDealInWindow(deal, dateFrom, dateTo)) {
                 continue;
             }
             if (categoryFilter != null) {
@@ -230,12 +350,7 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
                     continue;
                 }
             }
-            if (pipelineId != null && (deal.getPipeline() == null || deal.getPipeline().getId() == null
-                    || !pipelineId.equals(deal.getPipeline().getId()))) {
-                continue;
-            }
-            String label = deal.getLostReason().toDisplayString();
-            countsByReason.merge(label, 1L, Long::sum);
+            countsByReason.merge(deal.getLostReason().toDisplayString(), 1L, Long::sum);
             total++;
         }
 
@@ -256,13 +371,15 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.pipelineId = pipelineId;
         response.reasons = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public SalesDashboardDtos.LostReasonsByOrganizationResponse getLostReasonsByOrganization(
-            User currentUser, String category) {
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -270,13 +387,13 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         List<Deal> lostDeals = getUserDeals(
                 dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
 
-        // organizationId -> (reason -> count)
         Map<Long, Map<String, Long>> byOrg = new HashMap<>();
         Map<Long, Organization> orgById = new HashMap<>();
         Map<Long, Long> orgTotals = new HashMap<>();
 
         for (Deal deal : lostDeals) {
-            if (deal.getLostReason() == null) {
+            if (deal.getLostReason() == null || !dealMatchesPipeline(deal, pipelineId)
+                    || !lostDealInWindow(deal, dateFrom, dateTo)) {
                 continue;
             }
             Organization org = deal.getOrganization();
@@ -290,8 +407,8 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
             }
             Long orgId = org.getId();
             orgById.put(orgId, org);
-            Map<String, Long> reasons = byOrg.computeIfAbsent(orgId, id -> new LinkedHashMap<>());
-            reasons.merge(deal.getLostReason().toDisplayString(), 1L, Long::sum);
+            byOrg.computeIfAbsent(orgId, id -> new LinkedHashMap<>())
+                    .merge(deal.getLostReason().toDisplayString(), 1L, Long::sum);
             orgTotals.merge(orgId, 1L, Long::sum);
         }
 
@@ -326,13 +443,16 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
                 new SalesDashboardDtos.LostReasonsByOrganizationResponse();
         response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.organizations = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public SalesDashboardDtos.LostReasonsByPipelineResponse getLostReasonsByPipeline(
-            User currentUser, String category, Long pipelineId) {
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         final Organization.OrganizationCategory categoryFilter =
                 (category != null && !category.trim().isEmpty())
                         ? Organization.OrganizationCategory.fromDbValue(category)
@@ -349,10 +469,10 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
             if (deal.getLostReason() == null || deal.getPipeline() == null || deal.getPipeline().getId() == null) {
                 continue;
             }
-            Long pid = deal.getPipeline().getId();
-            if (onlyPipelineId != null && !onlyPipelineId.equals(pid)) {
+            if (!dealMatchesPipeline(deal, onlyPipelineId) || !lostDealInWindow(deal, dateFrom, dateTo)) {
                 continue;
             }
+            Long pid = deal.getPipeline().getId();
             if (categoryFilter != null) {
                 Organization org = deal.getPipeline().getOrganization();
                 if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
@@ -365,7 +485,6 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
             pipelineTotals.merge(pid, 1L, Long::sum);
         }
 
-        // Single pipeline requested: include row even with zero lost deals (user's pipeline only)
         if (onlyPipelineId != null && isPipelineOwnedBySalesUser(onlyPipelineId, currentUser)
                 && !byPipeline.containsKey(onlyPipelineId)) {
             pipelineRepository.findById(onlyPipelineId).ifPresent(p -> {
@@ -409,13 +528,16 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
                 new SalesDashboardDtos.LostReasonsByPipelineResponse();
         response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.pipelines = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
     public SalesDashboardDtos.LostDealsByStagePerOrganizationResponse getLostDealsByStagePerOrganization(
-            User currentUser, String category, Long pipelineId) {
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         final Organization.OrganizationCategory categoryFilter =
                 (category != null && !category.trim().isEmpty())
                         ? Organization.OrganizationCategory.fromDbValue(category)
@@ -424,14 +546,12 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
                 dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
 
         Map<Long, Organization> orgById = new HashMap<>();
-        // orgId -> composite key pipelineId|stageId -> aggregate (stageId "null" when missing)
         Map<Long, Map<String, StageLossAgg>> byOrgStage = new HashMap<>();
         Map<Long, Long> orgLostCounts = new HashMap<>();
         Map<Long, BigDecimal> orgLostValues = new HashMap<>();
 
         for (Deal deal : lostDeals) {
-            if (pipelineId != null && (deal.getPipeline() == null || deal.getPipeline().getId() == null
-                    || !pipelineId.equals(deal.getPipeline().getId()))) {
+            if (!dealMatchesPipeline(deal, pipelineId) || !lostDealInWindow(deal, dateFrom, dateTo)) {
                 continue;
             }
             Organization org = deal.getOrganization();
@@ -489,7 +609,7 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
             row.totalLostDeals = orgLostCounts.getOrDefault(orgId, 0L);
             row.totalLostValue = orgLostValues.getOrDefault(orgId, BigDecimal.ZERO);
             List<SalesDashboardDtos.LostDealsByStageRow> stageRows = new ArrayList<>();
-            for (StageLossAgg agg : e.getValue().values()) { // each pipeline+stage bucket
+            for (StageLossAgg agg : e.getValue().values()) {
                 SalesDashboardDtos.LostDealsByStageRow sr = new SalesDashboardDtos.LostDealsByStageRow();
                 sr.stageId = agg.stageId;
                 sr.stageName = agg.stageName;
@@ -510,6 +630,93 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
         response.pipelineId = pipelineId;
         response.organizations = orgRows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SalesDashboardDtos.LostDealsByStageResponse getLostDealsByStage(
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
+        final Organization.OrganizationCategory categoryFilter =
+                (category != null && !category.trim().isEmpty())
+                        ? Organization.OrganizationCategory.fromDbValue(category)
+                        : null;
+        List<Deal> lostDeals = getUserDeals(
+                dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST), currentUser);
+
+        Map<String, StageLossAgg> byKey = new LinkedHashMap<>();
+        long totalCount = 0;
+        BigDecimal totalValue = BigDecimal.ZERO;
+
+        for (Deal deal : lostDeals) {
+            if (!dealMatchesPipeline(deal, pipelineId) || !lostDealInWindow(deal, dateFrom, dateTo)) {
+                continue;
+            }
+            Organization org = deal.getOrganization();
+            if (org == null && deal.getPipeline() != null) {
+                org = deal.getPipeline().getOrganization();
+            }
+            if (org == null) {
+                continue;
+            }
+            if (categoryFilter != null) {
+                if (org.getCategory() == null || org.getCategory() != categoryFilter) {
+                    continue;
+                }
+            }
+            BigDecimal v = deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO;
+            totalCount++;
+            totalValue = totalValue.add(v);
+
+            Long pid = deal.getPipeline() != null ? deal.getPipeline().getId() : -1L;
+            Long sid = (deal.getStage() != null && deal.getStage().getId() != null)
+                    ? deal.getStage().getId()
+                    : null;
+            String key = pid + "|" + (sid != null ? sid : "none");
+            StageLossAgg agg = byKey.computeIfAbsent(key, k -> {
+                StageLossAgg a = new StageLossAgg();
+                a.stageId = sid;
+                if (deal.getStage() != null && deal.getStage().getName() != null) {
+                    a.stageName = deal.getStage().getName();
+                } else {
+                    a.stageName = "Unknown stage";
+                }
+                if (deal.getPipeline() != null) {
+                    a.pipelineId = deal.getPipeline().getId();
+                    a.pipelineName = deal.getPipeline().getName();
+                }
+                return a;
+            });
+            agg.lostCount++;
+            agg.lostValue = agg.lostValue.add(v);
+        }
+
+        List<SalesDashboardDtos.LostDealsByStageRow> stageRows = new ArrayList<>();
+        for (StageLossAgg agg : byKey.values()) {
+            SalesDashboardDtos.LostDealsByStageRow sr = new SalesDashboardDtos.LostDealsByStageRow();
+            sr.stageId = agg.stageId;
+            sr.stageName = agg.stageName;
+            sr.pipelineId = agg.pipelineId;
+            sr.pipelineName = agg.pipelineName;
+            sr.lostCount = agg.lostCount;
+            sr.lostValue = agg.lostValue;
+            stageRows.add(sr);
+        }
+        stageRows.sort(Comparator
+                .comparing((SalesDashboardDtos.LostDealsByStageRow r) ->
+                        r.pipelineName != null ? r.pipelineName : "")
+                .thenComparing(r -> r.stageName != null ? r.stageName : ""));
+
+        SalesDashboardDtos.LostDealsByStageResponse response = new SalesDashboardDtos.LostDealsByStageResponse();
+        response.category = categoryFilter != null ? categoryFilter.getDbValue() : null;
+        response.pipelineId = pipelineId;
+        response.totalLostDeals = totalCount;
+        response.totalLostValue = totalValue;
+        response.stages = stageRows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
         return response;
     }
 
@@ -524,19 +731,22 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.ActivityMonthlyResponse getActivityMonthly(User currentUser, Integer year) {
+    public SalesDashboardDtos.ActivityMonthlyResponse getActivityMonthly(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<Activity> activities = activityRepository.findByAssignedUserId(currentUser.getId());
         Map<Integer, ActivityAggregate> byMonth = new HashMap<>();
 
         for (Activity activity : activities) {
-            if (activity.getCreatedAt() == null) continue;
+            if (activity.getCreatedAt() == null || !activityInWindow(activity, dateFrom, dateTo)) {
+                continue;
+            }
             LocalDateTime ref = LocalDateTime.ofInstant(activity.getCreatedAt(), ZoneId.systemDefault());
-            if (ref.getYear() != year) continue;
-
+            if (ref.getYear() != year) {
+                continue;
+            }
             int month = ref.getMonthValue();
             ActivityAggregate agg = byMonth.computeIfAbsent(month, m -> new ActivityAggregate());
             agg.totalActivities++;
-
             if (activity.getCategory() == Activity.ActivityCategory.CALL) {
                 agg.callCount++;
                 agg.totalCallMinutes += activity.getDurationMinutes() != null ? activity.getDurationMinutes() : 0;
@@ -572,17 +782,26 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         SalesDashboardDtos.ActivityMonthlyResponse response = new SalesDashboardDtos.ActivityMonthlyResponse();
         response.year = year;
         response.months = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.PipelinePerformanceResponse getPipelinePerformance(User currentUser) {
+    public SalesDashboardDtos.PipelinePerformanceResponse getPipelinePerformance(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<Deal> userDeals = getUserDeals(dealRepository.findByIsDeletedFalse(), currentUser);
         Map<Long, PipelineStatusAggregate> byPipeline = new LinkedHashMap<>();
 
         for (Deal deal : userDeals) {
-            if (deal.getPipeline() == null || deal.getPipeline().getId() == null) continue;
+            if (deal.getPipeline() == null || deal.getPipeline().getId() == null) {
+                continue;
+            }
+            if (!dealMatchesPipeline(deal, pipelineId) || !dealRefInWindow(deal, dateFrom, dateTo)) {
+                continue;
+            }
             Long pid = deal.getPipeline().getId();
             PipelineStatusAggregate agg = byPipeline.computeIfAbsent(pid,
                     id -> new PipelineStatusAggregate(deal.getPipeline()));
@@ -603,82 +822,204 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
             row.inProgressValue = agg.inProgressValue;
             return row;
         }).collect(Collectors.toList());
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public SalesDashboardDtos.TargetVsAchievementResponse getTargetVsAchievement(User currentUser, Integer year) {
-        LocalDate yearStart = LocalDate.of(year, 1, 1);
-        LocalDate yearEnd = LocalDate.of(year, 12, 31);
-        List<SalesTarget> targets = salesTargetRepository.findByUser_IdAndPeriodStartBetween(
-                currentUser.getId(), yearStart, yearEnd);
-
-        List<Deal> wonDeals = getUserDeals(
-                dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON), currentUser);
-
+    public SalesDashboardDtos.TargetVsAchievementResponse getTargetVsAchievement(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId) {
         List<SalesDashboardDtos.TargetVsAchievementRow> rows = new ArrayList<>();
-        for (SalesTarget target : targets) {
-            LocalDate periodStart = target.getPeriodStart();
-            LocalDate periodEnd = computePeriodEnd(periodStart, target.getPeriodType());
 
-            LocalDateTime fromDt = periodStart.atStartOfDay();
-            LocalDateTime toDt = periodEnd.plusDays(1).atStartOfDay();
+        if (pipelineId == null && !windowActive(dateFrom, dateTo)) {
+            // Same computation as Target page (/api/targets/dashboard) for full year
+            TargetDtos.DashboardFilter filter = new TargetDtos.DashboardFilter();
+            filter.preset = TargetDtos.TargetTimePreset.THIS_YEAR;
+            filter.year = year;
+            filter.month = 1;
+            TargetDtos.DashboardResponse dash = targetService.dashboard(filter, false);
+            Long uid = currentUser.getId();
+            for (TargetDtos.MonthBlock block : dash.months) {
+                if (block.year == null || block.month == null || block.year.intValue() != year) {
+                    continue;
+                }
+                java.time.YearMonth ym = java.time.YearMonth.of(block.year, block.month);
+                if (!monthInOptionalWindow(ym, dateFrom, dateTo)) {
+                    continue;
+                }
+                if (block.categories == null) {
+                    continue;
+                }
+                for (TargetDtos.CategoryTable table : block.categories) {
+                    if (table.rows == null) {
+                        continue;
+                    }
+                    for (TargetDtos.TargetRow tr : table.rows) {
+                        if (tr.userId == null || !tr.userId.equals(uid)) {
+                            continue;
+                        }
+                        SalesDashboardDtos.TargetVsAchievementRow row = new SalesDashboardDtos.TargetVsAchievementRow();
+                        row.category = table.categoryLabel;
+                        row.periodType = "MONTHLY";
+                        row.periodStart = LocalDate.of(block.year, block.month, 1);
+                        row.month = block.month;
+                        row.year = block.year;
+                        row.targetAmount = tr.totalTarget;
+                        row.achievedAmount = tr.achieved;
+                        row.achievementPercentage = tr.achievementPercent;
+                        row.achievedBasis = "PRESALES".equals(tr.userRole) ? "DEAL_COUNT" : "COMMISSION";
+                        row.incentivePercent = tr.incentivePercent;
+                        row.incentiveAmount = tr.incentiveAmount;
+                        row.organizationNames = Collections.emptyList();
+                        rows.add(row);
+                    }
+                }
+            }
+        } else {
+            // Optional pipeline / date window: commission-based achieved (Target page rule for SALES)
+            LocalDate yearStart = LocalDate.of(year, 1, 1);
+            LocalDate yearEnd = LocalDate.of(year, 12, 31);
+            List<SalesTarget> targets = salesTargetRepository.findByUser_IdAndPeriodStartBetween(
+                    currentUser.getId(), yearStart, yearEnd);
+            List<Deal> wonDeals = getUserDeals(
+                    dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON), currentUser);
+            boolean presales = currentUser.getRole() != null
+                    && currentUser.getRole().getName() == Role.RoleName.PRESALES;
 
-            Set<Long> targetOrgIds = target.getOrganizations() != null
-                    ? target.getOrganizations().stream().map(Organization::getId).collect(Collectors.toSet())
-                    : Collections.emptySet();
+            for (SalesTarget target : targets) {
+                LocalDate periodStart = target.getPeriodStart();
+                LocalDate periodEnd = computePeriodEnd(periodStart, target.getPeriodType());
+                LocalDateTime fromDt = periodStart.atStartOfDay();
+                LocalDateTime toDt = periodEnd.plusDays(1).atStartOfDay();
+                Set<Long> targetOrgIds = target.getOrganizations() != null
+                        ? target.getOrganizations().stream().map(Organization::getId).collect(Collectors.toSet())
+                        : Collections.emptySet();
 
-            BigDecimal achieved = BigDecimal.ZERO;
-            for (Deal deal : wonDeals) {
-                LocalDateTime ref = deal.getWonAt() != null ? deal.getWonAt()
-                        : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
-                if (ref == null || ref.isBefore(fromDt) || !ref.isBefore(toDt)) continue;
-
-                if (!targetOrgIds.isEmpty() && deal.getOrganization() != null) {
-                    if (!targetOrgIds.contains(deal.getOrganization().getId())) continue;
+                BigDecimal achievedCommission = BigDecimal.ZERO;
+                int dealCount = 0;
+                int directDeals = 0;
+                int diversionDeals = 0;
+                for (Deal deal : wonDeals) {
+                    if (!dealMatchesPipeline(deal, pipelineId)) {
+                        continue;
+                    }
+                    LocalDateTime ref = deal.getWonAt() != null ? deal.getWonAt()
+                            : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
+                    if (ref == null || ref.isBefore(fromDt) || !ref.isBefore(toDt)) {
+                        continue;
+                    }
+                    if (windowActive(dateFrom, dateTo)) {
+                        if (ref.isBefore(windowStart(dateFrom)) || !ref.isBefore(windowEndExclusive(dateTo))) {
+                            continue;
+                        }
+                    }
+                    if (!targetOrgIds.isEmpty() && deal.getOrganization() != null) {
+                        if (!targetOrgIds.contains(deal.getOrganization().getId())) {
+                            continue;
+                        }
+                    }
+                    TargetCategory dealCat = TargetCategory.fromDeal(deal);
+                    if (dealCat != null && dealCat != target.getCategory()) {
+                        continue;
+                    }
+                    dealCount++;
+                    achievedCommission = achievedCommission.add(
+                            deal.getCommissionAmount() != null ? deal.getCommissionAmount() : BigDecimal.ZERO);
+                    boolean diverted = Boolean.TRUE.equals(deal.getIsDiverted())
+                            || (deal.getDealSource() != null && deal.getDealSource() == DealSource.DIVERT);
+                    if (diverted) {
+                        diversionDeals++;
+                    } else {
+                        directDeals++;
+                    }
                 }
 
-                TargetCategory dealCat = TargetCategory.fromDeal(deal);
-                if (dealCat != null && dealCat != target.getCategory()) continue;
-
-                achieved = achieved.add(deal.getValue() != null ? deal.getValue() : BigDecimal.ZERO);
+                SalesDashboardDtos.TargetVsAchievementRow row = new SalesDashboardDtos.TargetVsAchievementRow();
+                row.category = target.getCategory() != null ? target.getCategory().getLabel() : null;
+                row.periodType = target.getPeriodType() != null ? target.getPeriodType().name() : null;
+                row.periodStart = periodStart;
+                row.month = periodStart.getMonthValue();
+                row.year = periodStart.getYear();
+                row.targetAmount = target.getTargetAmount();
+                if (presales) {
+                    row.achievedAmount = BigDecimal.valueOf(dealCount);
+                    row.achievementPercentage = null;
+                    row.achievedBasis = "DEAL_COUNT";
+                    row.incentivePercent = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+                    row.incentiveAmount = BigDecimal.valueOf(500L).multiply(BigDecimal.valueOf(directDeals))
+                            .add(BigDecimal.valueOf(1000L).multiply(BigDecimal.valueOf(diversionDeals)))
+                            .setScale(2, RoundingMode.HALF_UP);
+                } else {
+                    row.achievedAmount = achievedCommission;
+                    row.achievementPercentage = target.getTargetAmount() != null
+                            && target.getTargetAmount().compareTo(BigDecimal.ZERO) > 0
+                            ? achievedCommission.multiply(BigDecimal.valueOf(100))
+                            .divide(target.getTargetAmount(), 2, RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+                    row.achievedBasis = "COMMISSION";
+                    row.incentivePercent = calculateSalesIncentivePercent(row.achievementPercentage);
+                    row.incentiveAmount = achievedCommission.compareTo(BigDecimal.ZERO) == 0
+                            ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                            : row.incentivePercent.multiply(achievedCommission)
+                            .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                }
+                row.organizationNames = target.getOrganizations() != null
+                        ? target.getOrganizations().stream().map(Organization::getName).collect(Collectors.toList())
+                        : Collections.emptyList();
+                rows.add(row);
             }
-
-            SalesDashboardDtos.TargetVsAchievementRow row = new SalesDashboardDtos.TargetVsAchievementRow();
-            row.category = target.getCategory() != null ? target.getCategory().getLabel() : null;
-            row.periodType = target.getPeriodType() != null ? target.getPeriodType().name() : null;
-            row.periodStart = periodStart;
-            row.targetAmount = target.getTargetAmount();
-            row.achievedAmount = achieved;
-            row.achievementPercentage = target.getTargetAmount().compareTo(BigDecimal.ZERO) > 0
-                    ? achieved.multiply(BigDecimal.valueOf(100))
-                    .divide(target.getTargetAmount(), 2, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-            row.organizationNames = target.getOrganizations() != null
-                    ? target.getOrganizations().stream().map(Organization::getName).collect(Collectors.toList())
-                    : Collections.emptyList();
-            rows.add(row);
         }
 
         SalesDashboardDtos.TargetVsAchievementResponse response = new SalesDashboardDtos.TargetVsAchievementResponse();
         response.year = year;
         response.targets = rows;
+        response.dateFrom = dateFrom;
+        response.dateTo = dateTo;
+        response.pipelineId = pipelineId;
         return response;
     }
 
-    // ---- Helpers ----
+    private static boolean monthInOptionalWindow(java.time.YearMonth ym, LocalDate from, LocalDate to) {
+        if (!windowActive(from, to)) {
+            return true;
+        }
+        LocalDate first = ym.atDay(1);
+        LocalDate last = ym.atEndOfMonth();
+        return !last.isBefore(from) && !first.isAfter(to);
+    }
 
-    /**
-     * Filter deals to only those owned by the given user
-     * (deal -> pipeline -> organization -> owner == user).
-     */
+    /** Same slabs as Target page SALES incentive. */
+    private static BigDecimal calculateSalesIncentivePercent(BigDecimal achievementPercent) {
+        if (achievementPercent == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (achievementPercent.compareTo(BigDecimal.valueOf(80)) < 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (achievementPercent.compareTo(BigDecimal.valueOf(100)) < 0) {
+            return BigDecimal.valueOf(8).setScale(2, RoundingMode.HALF_UP);
+        }
+        if (achievementPercent.compareTo(BigDecimal.valueOf(150)) < 0) {
+            return BigDecimal.TEN.setScale(2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(15).setScale(2, RoundingMode.HALF_UP);
+    }
+
     private List<Deal> getUserDeals(List<Deal> allDeals, User user) {
-        Long userId = user.getId();
+        Long ownerIdToMatch = user.getId();
+        if (user.getRole() != null && user.getRole().getName() == Role.RoleName.PRESALES) {
+            if (user.getManager() == null || user.getManager().getId() == null) {
+                return Collections.emptyList();
+            }
+            ownerIdToMatch = user.getManager().getId();
+        }
         List<Deal> result = new ArrayList<>();
         for (Deal deal : allDeals) {
             User owner = resolveOwnerFromDeal(deal);
-            if (owner != null && userId.equals(owner.getId())) {
+            if (owner != null && ownerIdToMatch.equals(owner.getId())) {
                 result.add(deal);
             }
         }
@@ -686,9 +1027,13 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
     }
 
     private User resolveOwnerFromDeal(Deal deal) {
-        if (deal == null || deal.getPipeline() == null) return null;
+        if (deal == null || deal.getPipeline() == null) {
+            return null;
+        }
         Organization org = deal.getPipeline().getOrganization();
-        if (org == null) return null;
+        if (org == null) {
+            return null;
+        }
         return org.getOwner();
     }
 
@@ -722,16 +1067,21 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         };
     }
 
-    // ---- Inner aggregate classes ----
-
     private static class StatusAggregate {
         long wonCount = 0, lostCount = 0, inProgressCount = 0;
         BigDecimal wonValue = BigDecimal.ZERO, lostValue = BigDecimal.ZERO, inProgressValue = BigDecimal.ZERO;
 
         void add(DealStatus status, BigDecimal value) {
-            if (status == DealStatus.WON) { wonCount++; wonValue = wonValue.add(value); }
-            else if (status == DealStatus.LOST) { lostCount++; lostValue = lostValue.add(value); }
-            else if (status == DealStatus.IN_PROGRESS) { inProgressCount++; inProgressValue = inProgressValue.add(value); }
+            if (status == DealStatus.WON) {
+                wonCount++;
+                wonValue = wonValue.add(value);
+            } else if (status == DealStatus.LOST) {
+                lostCount++;
+                lostValue = lostValue.add(value);
+            } else if (status == DealStatus.IN_PROGRESS) {
+                inProgressCount++;
+                inProgressValue = inProgressValue.add(value);
+            }
         }
     }
 
@@ -766,9 +1116,16 @@ public class SalesDashboardServiceImpl implements SalesDashboardService {
         }
 
         void add(DealStatus status, BigDecimal value) {
-            if (status == DealStatus.WON) { wonCount++; wonValue = wonValue.add(value); }
-            else if (status == DealStatus.LOST) { lostCount++; lostValue = lostValue.add(value); }
-            else if (status == DealStatus.IN_PROGRESS) { inProgressCount++; inProgressValue = inProgressValue.add(value); }
+            if (status == DealStatus.WON) {
+                wonCount++;
+                wonValue = wonValue.add(value);
+            } else if (status == DealStatus.LOST) {
+                lostCount++;
+                lostValue = lostValue.add(value);
+            } else if (status == DealStatus.IN_PROGRESS) {
+                inProgressCount++;
+                inProgressValue = inProgressValue.add(value);
+            }
         }
     }
 
