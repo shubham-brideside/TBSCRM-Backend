@@ -244,6 +244,29 @@ public class AdminController {
         );
     }
 
+    @GetMapping("/dashboard/commission-by-pipeline")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(
+            summary = "Commission summary per pipeline (WON deals)",
+            description = "Returns, for a given date range, the count, total value, and total commission of WON, "
+                    + "non-deleted deals aggregated per pipeline. Optionally filter by organization category.")
+    public ResponseEntity<ApiResponse<AdminDashboardDtos.CommissionByPipelineResponse>> getCommissionByPipeline(
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam("dateFrom")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam("dateTo")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo
+    ) {
+        if (dateFrom == null || dateTo == null) {
+            throw new BadRequestException("dateFrom and dateTo are required");
+        }
+        AdminDashboardDtos.CommissionByPipelineResponse data =
+                adminDashboardService.getCommissionByPipeline(category, dateFrom, dateTo);
+        return ResponseEntity.ok(
+                ApiResponse.success("Commission by pipeline fetched", data)
+        );
+    }
+
     @GetMapping("/dashboard/lost-reasons")
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(

@@ -95,5 +95,15 @@ public interface AdminDashboardService {
      * Returns all-time totals + optional monthly breakdown if year provided.
      */
     AdminDashboardDtos.InstagramDealsByOrganizationResponse getInstagramDealsByOrganization(Integer year);
+
+    /**
+     * Commission summary (WON, non-deleted deals) aggregated per pipeline for a date range,
+     * with optional organization category filter.
+     */
+    AdminDashboardDtos.CommissionByPipelineResponse getCommissionByPipeline(
+            String category,
+            LocalDate dateFrom,
+            LocalDate dateTo
+    );
 }
 
