@@ -30,6 +30,8 @@ Quick reference of the most frequently used REST endpoints exposed by the Brides
 |  | `GET /api/pipelines` | List pipelines (optionally with stages) | Use `?includeStages=true` when building Kanban boards. |
 |  | `POST /api/pipelines` | Create pipeline | Accepts `PipelineRequest`; optional stage list. |
 |  | `GET /api/sources` etc. | Other controllers follow the same `GET/POST/PUT/DELETE` patterns; see Swagger (`/swagger-ui.html`) for full catalog. |
+| **Presales dashboard** | `GET /api/presales/dashboard/*` | Same surface as sales dashboard | **Role: PRESALES only.** Deal metrics use the user’s Sales manager’s orgs; activities/targets are per presales user. See `frontend-presales-dashboard-api.md`. |
+| **Sales dashboard** | `GET /api/sales/dashboard/*` | Personal sales metrics | Authenticated; deal scope = orgs owned by the current user. |
 
 ## Calendar Sync Flow
 

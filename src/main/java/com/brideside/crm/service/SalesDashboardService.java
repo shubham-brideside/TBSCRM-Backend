@@ -6,47 +6,44 @@ import com.brideside.crm.entity.User;
 import java.time.LocalDate;
 
 /**
- * Dashboard service for the Sales role. All data is scoped to the authenticated user's
- * own organizations (deal -> pipeline -> organization -> owner == currentUser).
+ * Sales / presales dashboard. Every method accepts optional {@code dateFrom}/{@code dateTo}
+ * (deal reference dates in range) and optional {@code pipelineId}. When dates are omitted, no time filter.
  */
 public interface SalesDashboardService {
 
-    SalesDashboardDtos.SummaryResponse getDashboardSummary(User currentUser);
+    SalesDashboardDtos.SummaryResponse getDashboardSummary(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.DealStatusMonthlyResponse getDealStatusMonthly(User currentUser, Integer year);
+    SalesDashboardDtos.DealStatusMonthlyResponse getDealStatusMonthly(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.RevenueResponse getRevenue(User currentUser, LocalDate dateFrom, LocalDate dateTo);
+    /** When dateFrom/dateTo null, all-time WON revenue; optional pipelineId. */
+    SalesDashboardDtos.RevenueResponse getRevenue(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    /**
-     * True if the pipeline exists, is not deleted, and belongs to an organization owned by {@code user}.
-     */
     boolean isPipelineOwnedBySalesUser(Long pipelineId, User user);
 
-    /**
-     * Lost reasons for the current user's LOST deals only.
-     * Optional {@code category} filters by organization category; {@code pipelineId} must be a pipeline
-     * owned by the user (same as deal → pipeline → organization → owner).
-     */
-    SalesDashboardDtos.LostReasonsResponse getLostReasons(User currentUser, String category, Long pipelineId);
+    SalesDashboardDtos.LostReasonsResponse getLostReasons(
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.LostReasonsByOrganizationResponse getLostReasonsByOrganization(User currentUser, String category);
+    SalesDashboardDtos.LostReasonsByOrganizationResponse getLostReasonsByOrganization(
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    /**
-     * Lost reasons per pipeline for pipelines the user owns (via organization owner).
-     * If {@code pipelineId} is set, only that pipeline is returned (must be owned by the user).
-     */
     SalesDashboardDtos.LostReasonsByPipelineResponse getLostReasonsByPipeline(
-            User currentUser, String category, Long pipelineId);
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    /**
-     * LOST deal counts and values by stage, grouped per organization (user-owned deals only).
-     */
     SalesDashboardDtos.LostDealsByStagePerOrganizationResponse getLostDealsByStagePerOrganization(
-            User currentUser, String category, Long pipelineId);
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.ActivityMonthlyResponse getActivityMonthly(User currentUser, Integer year);
+    SalesDashboardDtos.LostDealsByStageResponse getLostDealsByStage(
+            User currentUser, String category, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.PipelinePerformanceResponse getPipelinePerformance(User currentUser);
+    SalesDashboardDtos.ActivityMonthlyResponse getActivityMonthly(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 
-    SalesDashboardDtos.TargetVsAchievementResponse getTargetVsAchievement(User currentUser, Integer year);
+    SalesDashboardDtos.PipelinePerformanceResponse getPipelinePerformance(
+            User currentUser, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
+
+    SalesDashboardDtos.TargetVsAchievementResponse getTargetVsAchievement(
+            User currentUser, Integer year, LocalDate dateFrom, LocalDate dateTo, Long pipelineId);
 }
