@@ -158,6 +158,13 @@ public class Deal {
     @Column(name = "is_diverted", nullable = false)
     private Boolean isDiverted = Boolean.FALSE;
 
+    /**
+     * Legacy column used by Instagram / DM flows. Not exposed in API, but must be set
+     * to satisfy non-null constraint on existing databases.
+     */
+    @Column(name = "reentered_via_direct_message", nullable = false)
+    private Boolean reenteredViaDirectMessage = Boolean.FALSE;
+
     @Column(name = "is_deleted", nullable = false)
     private Boolean isDeleted = Boolean.FALSE;
 
@@ -258,6 +265,8 @@ public class Deal {
     public void setNotes(String notes) { this.notes = notes; }
     public Boolean getFinalThankYouSent() { return finalThankYouSent; }
     public void setFinalThankYouSent(Boolean finalThankYouSent) { this.finalThankYouSent = finalThankYouSent; }
+    public Boolean getReenteredViaDirectMessage() { return reenteredViaDirectMessage; }
+    public void setReenteredViaDirectMessage(Boolean reenteredViaDirectMessage) { this.reenteredViaDirectMessage = reenteredViaDirectMessage; }
     public Boolean getEventDateAsked() { return eventDateAsked; }
     public void setEventDateAsked(Boolean eventDateAsked) { this.eventDateAsked = eventDateAsked; }
     public Boolean getContactNumberAsked() { return contactNumberAsked; }
