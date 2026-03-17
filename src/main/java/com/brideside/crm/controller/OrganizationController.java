@@ -12,6 +12,7 @@ import com.brideside.crm.dto.VendorAssetDtos;
 import com.brideside.crm.dto.VendorDataDtos;
 import com.brideside.crm.dto.VendorTeamMemberDtos;
 import com.brideside.crm.dto.VendorTeamSizeDtos;
+import com.brideside.crm.dto.VendorAdditionalInfoDtos;
 import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.ClientDataService;
 import com.brideside.crm.service.EventPricingService;
@@ -22,6 +23,7 @@ import com.brideside.crm.service.VendorAssetService;
 import com.brideside.crm.service.VendorDataService;
 import com.brideside.crm.service.VendorTeamMemberService;
 import com.brideside.crm.service.VendorTeamSizeService;
+import com.brideside.crm.service.VendorAdditionalInfoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,6 +56,7 @@ public class OrganizationController {
     private final VendorDataService vendorDataService;
     private final ClientDataService clientDataService;
     private final VendorTeamSizeService vendorTeamSizeService;
+    private final VendorAdditionalInfoService vendorAdditionalInfoService;
     private final ObjectMapper objectMapper;
 
     public OrganizationController(OrganizationService organizationService,
@@ -62,11 +65,12 @@ public class OrganizationController {
                                   BridesideVendorService bridesideVendorService,
                                   VendorAssetService vendorAssetService,
                                   EventPricingService eventPricingService,
-                                  VendorTeamMemberService vendorTeamMemberService,
-                                  VendorDataService vendorDataService,
-                                  ClientDataService clientDataService,
-                                  VendorTeamSizeService vendorTeamSizeService,
-                                  ObjectMapper objectMapper) {
+                         VendorTeamMemberService vendorTeamMemberService,
+                         VendorDataService vendorDataService,
+                         ClientDataService clientDataService,
+                         VendorTeamSizeService vendorTeamSizeService,
+                         VendorAdditionalInfoService vendorAdditionalInfoService,
+                         ObjectMapper objectMapper) {
         this.organizationService = organizationService;
         this.organizationProgressService = organizationProgressService;
         this.organizationActivationService = organizationActivationService;
@@ -77,6 +81,7 @@ public class OrganizationController {
         this.vendorDataService = vendorDataService;
         this.clientDataService = clientDataService;
         this.vendorTeamSizeService = vendorTeamSizeService;
+        this.vendorAdditionalInfoService = vendorAdditionalInfoService;
         this.objectMapper = objectMapper;
     }
 
@@ -319,6 +324,68 @@ public class OrganizationController {
         VendorTeamSizeDtos.TeamSizeRowsResponse saved =
                 vendorTeamSizeService.saveForVendor(id, vendorId, request != null ? request : new VendorTeamSizeDtos.TeamSizeSaveRequest());
         return ResponseEntity.ok(ApiResponse.success("Vendor team size rows saved", saved));
+    }
+
+    @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/additional-info")
+    @Operation(summary = "Get vendor additional info",
+            description = "Returns additional info details for the given vendor (pricing, turnaround time, style, travel & accommodation, contract, logo, and custom fields).")
+    public ResponseEntity<ApiResponse<VendorAdditionalInfoDtos.AdditionalInfoResponse>> getVendorAdditionalInfo(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        VendorAdditionalInfoDtos.AdditionalInfoResponse response = vendorAdditionalInfoService.getByVendor(id, vendorId);
+        return ResponseEntity.ok(ApiResponse.success("Vendor additional info fetched", response));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/additional-info")
+    @Operation(summary = "Save vendor additional info",
+            description = "Creates or updates additional info for the vendor, including fixed fields and custom fields.")
+    public ResponseEntity<ApiResponse<VendorAdditionalInfoDtos.AdditionalInfoResponse>> saveVendorAdditionalInfo(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @Valid @RequestBody(required = false) VendorAdditionalInfoDtos.AdditionalInfoSaveRequest request) {
+        VendorAdditionalInfoDtos.AdditionalInfoResponse saved =
+                vendorAdditionalInfoService.saveForVendor(id, vendorId, request != null ? request : new VendorAdditionalInfoDtos.AdditionalInfoSaveRequest());
+        return ResponseEntity.ok(ApiResponse.success("Vendor additional info saved", saved));
+    }
+
+    @PostMapping(value = "/{id:\\d+}/vendors/{vendorId:\\d+}/additional-info/vendor-contract/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload vendor contract",
+            description = "Uploads a vendor contract file (PDF or image: JPG, PNG, WebP, GIF) to Azure Blob Storage and saves the public URL in vendor additional info. Replaces existing if any. Max 10MB.")
+    public ResponseEntity<ApiResponse<VendorAdditionalInfoDtos.AdditionalInfoResponse>> uploadVendorContract(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            VendorAdditionalInfoDtos.AdditionalInfoResponse result =
+                    vendorAdditionalInfoService.uploadVendorContract(id, vendorId, file);
+            return ResponseEntity.status(201).body(ApiResponse.success("Vendor contract uploaded", result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Azure Blob Storage is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/{id:\\d+}/vendors/{vendorId:\\d+}/additional-info/vendor-logo/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload vendor logo",
+            description = "Uploads a vendor logo file (PDF or image: JPG, PNG, WebP, GIF) to Azure Blob Storage and saves the public URL in vendor additional info. Replaces existing if any. Max 10MB.")
+    public ResponseEntity<ApiResponse<VendorAdditionalInfoDtos.AdditionalInfoResponse>> uploadVendorLogo(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @RequestParam("file") MultipartFile file) {
+        try {
+            VendorAdditionalInfoDtos.AdditionalInfoResponse result =
+                    vendorAdditionalInfoService.uploadVendorLogo(id, vendorId, file);
+            return ResponseEntity.status(201).body(ApiResponse.success("Vendor logo uploaded", result));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("Azure Blob Storage is not configured. Set AZURE_STORAGE_BLOB_CONNECTION_STRING."));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")
