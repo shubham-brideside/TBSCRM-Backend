@@ -11,6 +11,7 @@ import com.brideside.crm.dto.OrganizationProgressDtos;
 import com.brideside.crm.dto.VendorAssetDtos;
 import com.brideside.crm.dto.VendorDataDtos;
 import com.brideside.crm.dto.VendorTeamMemberDtos;
+import com.brideside.crm.dto.VendorTeamSizeDtos;
 import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.ClientDataService;
 import com.brideside.crm.service.EventPricingService;
@@ -20,6 +21,7 @@ import com.brideside.crm.service.OrganizationService;
 import com.brideside.crm.service.VendorAssetService;
 import com.brideside.crm.service.VendorDataService;
 import com.brideside.crm.service.VendorTeamMemberService;
+import com.brideside.crm.service.VendorTeamSizeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -51,6 +53,7 @@ public class OrganizationController {
     private final VendorTeamMemberService vendorTeamMemberService;
     private final VendorDataService vendorDataService;
     private final ClientDataService clientDataService;
+    private final VendorTeamSizeService vendorTeamSizeService;
     private final ObjectMapper objectMapper;
 
     public OrganizationController(OrganizationService organizationService,
@@ -62,6 +65,7 @@ public class OrganizationController {
                                   VendorTeamMemberService vendorTeamMemberService,
                                   VendorDataService vendorDataService,
                                   ClientDataService clientDataService,
+                                  VendorTeamSizeService vendorTeamSizeService,
                                   ObjectMapper objectMapper) {
         this.organizationService = organizationService;
         this.organizationProgressService = organizationProgressService;
@@ -72,6 +76,7 @@ public class OrganizationController {
         this.vendorTeamMemberService = vendorTeamMemberService;
         this.vendorDataService = vendorDataService;
         this.clientDataService = clientDataService;
+        this.vendorTeamSizeService = vendorTeamSizeService;
         this.objectMapper = objectMapper;
     }
 
@@ -292,6 +297,28 @@ public class OrganizationController {
             @PathVariable("memberId") Long memberId) {
         vendorTeamMemberService.delete(id, vendorId, memberId);
         return ResponseEntity.ok(ApiResponse.success("Team member deleted"));
+    }
+
+    @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-size")
+    @Operation(summary = "Get vendor team size rows",
+            description = "Returns detailed team size rows for the given vendor (guest count, event type, photographer, cinematographer, drone, notes).")
+    public ResponseEntity<ApiResponse<VendorTeamSizeDtos.TeamSizeRowsResponse>> getVendorTeamSize(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId) {
+        VendorTeamSizeDtos.TeamSizeRowsResponse response = vendorTeamSizeService.listByVendor(id, vendorId);
+        return ResponseEntity.ok(ApiResponse.success("Vendor team size rows fetched", response));
+    }
+
+    @PutMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/team-size")
+    @Operation(summary = "Save vendor team size rows",
+            description = "Replaces all team size rows for the vendor. Send the full list of rows each time.")
+    public ResponseEntity<ApiResponse<VendorTeamSizeDtos.TeamSizeRowsResponse>> saveVendorTeamSize(
+            @PathVariable("id") Long id,
+            @PathVariable("vendorId") Long vendorId,
+            @Valid @RequestBody(required = false) VendorTeamSizeDtos.TeamSizeSaveRequest request) {
+        VendorTeamSizeDtos.TeamSizeRowsResponse saved =
+                vendorTeamSizeService.saveForVendor(id, vendorId, request != null ? request : new VendorTeamSizeDtos.TeamSizeSaveRequest());
+        return ResponseEntity.ok(ApiResponse.success("Vendor team size rows saved", saved));
     }
 
     @GetMapping("/{id:\\d+}/vendors/{vendorId:\\d+}/vendor-data")

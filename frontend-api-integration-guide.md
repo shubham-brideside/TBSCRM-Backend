@@ -14,6 +14,7 @@ This guide consolidates all APIs needed to integrate the **Organization Details*
 | **Vendor Assets** | `/{id}/vendors/{vendorId}/assets` | — | `/{id}/vendors/{vendorId}/assets/{assetId}` | — | — |
 | **Team Members** | `/{id}/vendors/{vendorId}/team-members` | `/{id}/vendors/{vendorId}/team-members` | `/{id}/vendors/{vendorId}/team-members/{memberId}` | — | `/{id}/vendors/{vendorId}/team-members/{memberId}` |
 | **Vendor Data** | `/{id}/vendors/{vendorId}/vendor-data` | `/{id}/vendors/{vendorId}/vendor-data` | `/{id}/vendors/{vendorId}/vendor-data` or `.../vendor-data/{dataId}` | — | `/{id}/vendors/{vendorId}/vendor-data` |
+| **Team Size (table)** | `/{id}/vendors/{vendorId}/team-size` | — | `/{id}/vendors/{vendorId}/team-size` | — | — |
 | **Client Data** | `/{id}/client-data` | `/{id}/client-data/quote-format/upload`, `.../client-contract-format/upload` | — | — | `/{id}/client-data/quote-format`, `.../client-contract-format`, `/{id}/client-data` |
 
 **Base URL:** `/api/organizations`
@@ -278,6 +279,30 @@ export const deleteVendorData = (orgId: number, vendorId: number) =>
   api<void>(`/${orgId}/vendors/${vendorId}/vendor-data`, {
     method: "DELETE",
   });
+
+// Team size (detailed table)
+export interface TeamSizeRow {
+  id?: number;
+  guestCount: string;
+  eventType: string;
+  photographer?: string;
+  cinematographer?: string;
+  drone?: string;
+  notes?: string;
+}
+
+export const getTeamSizeRows = (orgId: number, vendorId: number) =>
+  api<{ rows: TeamSizeRow[] }>(`/${orgId}/vendors/${vendorId}/team-size`);
+
+export const saveTeamSizeRows = (
+  orgId: number,
+  vendorId: number,
+  rows: TeamSizeRow[]
+) =>
+  api<{ rows: TeamSizeRow[] }>(`/${orgId}/vendors/${vendorId}/team-size`, {
+    method: "PUT",
+    body: { rows },
+  });
 ```
 
 ---
@@ -302,6 +327,7 @@ const { organization, vendors } = await getOrganizationWithDetails(orgId);
 | **Asset info** | `GET .../assets` | `PUT /{orgId}/vendors/{vendorId}/assets/{assetId}` |
 | **Team Members** | `GET .../team-members` | `POST` create, `PUT` edit, `DELETE` remove |
 | **Vendor Data** | `GET .../vendor-data` | `PUT /vendor-data` save (upsert), `DELETE` clear |
+| **Team Size (table)** | `GET .../team-size` | `PUT .../team-size` (replace all rows) |
 | **Client Data** | `GET .../client-data` | `POST .../quote-format/upload`, `.../client-contract-format/upload` (multipart), `DELETE` to remove |
 
 ### 3. When no vendor exists
