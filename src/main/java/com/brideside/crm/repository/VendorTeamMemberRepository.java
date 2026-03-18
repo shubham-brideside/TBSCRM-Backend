@@ -13,4 +13,6 @@ public interface VendorTeamMemberRepository extends JpaRepository<VendorTeamMemb
     Optional<VendorTeamMember> findByIdAndVendor_Id(Long id, Long vendorId);
 
     long countByVendor_Id(Long vendorId);
+
+    void deleteByVendor_Id(Long vendorId);
 }

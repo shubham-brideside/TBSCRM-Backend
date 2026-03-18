@@ -5,16 +5,23 @@ import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
+import com.brideside.crm.entity.BridesideVendor;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
+import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.ActivityRepository;
 import com.brideside.crm.repository.OrganizationOnboardingProgressRepository;
+import com.brideside.crm.repository.OrganizationActivationRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.repository.EventPricingRepository;
+import com.brideside.crm.repository.VendorTeamSizeRepository;
+import com.brideside.crm.repository.VendorTeamMemberRepository;
 import com.brideside.crm.repository.VendorAssetRepository;
+import com.brideside.crm.repository.VendorDataRepository;
 import com.brideside.crm.service.BridesideVendorService;
 import com.brideside.crm.service.OrganizationProgressService;
 import com.brideside.crm.service.OrganizationService;
@@ -39,6 +46,12 @@ public class OrganizationServiceImpl implements OrganizationService {
     private final BridesideVendorService bridesideVendorService;
     private final VendorAssetRepository vendorAssetRepository;
     private final OrganizationOnboardingProgressRepository progressRepository;
+    private final OrganizationActivationRepository activationRepository;
+    private final BridesideVendorRepository bridesideVendorRepository;
+    private final EventPricingRepository eventPricingRepository;
+    private final VendorTeamSizeRepository vendorTeamSizeRepository;
+    private final VendorTeamMemberRepository vendorTeamMemberRepository;
+    private final VendorDataRepository vendorDataRepository;
     private final OrganizationProgressService organizationProgressService;
     private static final Set<Role.RoleName> ALLOWED_OWNER_ROLES =
             EnumSet.of(Role.RoleName.SALES, Role.RoleName.CATEGORY_MANAGER);
@@ -50,8 +63,14 @@ public class OrganizationServiceImpl implements OrganizationService {
                                    ActivityRepository activityRepository,
                                    PipelineRepository pipelineRepository,
                                    BridesideVendorService bridesideVendorService,
+                                   BridesideVendorRepository bridesideVendorRepository,
                                    VendorAssetRepository vendorAssetRepository,
+                                   EventPricingRepository eventPricingRepository,
+                                   VendorTeamSizeRepository vendorTeamSizeRepository,
+                                   VendorTeamMemberRepository vendorTeamMemberRepository,
+                                   VendorDataRepository vendorDataRepository,
                                    OrganizationOnboardingProgressRepository progressRepository,
+                                   OrganizationActivationRepository activationRepository,
                                    OrganizationProgressService organizationProgressService) {
         this.organizationRepository = organizationRepository;
         this.userRepository = userRepository;
@@ -60,8 +79,14 @@ public class OrganizationServiceImpl implements OrganizationService {
         this.activityRepository = activityRepository;
         this.pipelineRepository = pipelineRepository;
         this.bridesideVendorService = bridesideVendorService;
+        this.bridesideVendorRepository = bridesideVendorRepository;
         this.vendorAssetRepository = vendorAssetRepository;
+        this.eventPricingRepository = eventPricingRepository;
+        this.vendorTeamSizeRepository = vendorTeamSizeRepository;
+        this.vendorTeamMemberRepository = vendorTeamMemberRepository;
+        this.vendorDataRepository = vendorDataRepository;
         this.progressRepository = progressRepository;
+        this.activationRepository = activationRepository;
         this.organizationProgressService = organizationProgressService;
     }
 
@@ -132,11 +157,26 @@ public class OrganizationServiceImpl implements OrganizationService {
             pipelineRepository.saveAll(pipelines);
         }
 
+        // Delete vendor-dependent tables that may block vendor deletion due to foreign key constraints.
+        // Example observed issue: events_pricing.vendor_id -> brideside_vendors.id
+        List<BridesideVendor> vendors = bridesideVendorRepository.findByOrganization_Id(id);
+        for (BridesideVendor vendor : vendors) {
+            // These repositories generate delete queries by vendor_id.
+            eventPricingRepository.deleteByVendor_Id(vendor.getId());
+            vendorTeamSizeRepository.deleteByVendor_Id(vendor.getId());
+            vendorTeamMemberRepository.deleteByVendor_Id(vendor.getId());
+            vendorDataRepository.deleteByVendor_Id(vendor.getId());
+        }
+
         // Delete vendor_assets linked to this organization (before org delete due to FK)
         vendorAssetRepository.deleteByOrganization_Id(id);
 
         // Delete organization_onboarding_progress (before org delete due to FK)
         progressRepository.deleteByOrganization_Id(id);
+
+        // Delete organization_activation (before org delete due to FK)
+        activationRepository.findByOrganization_Id(id)
+                .ifPresent(activationRepository::delete);
 
         // Now it's safe to delete the organization
         organizationRepository.delete(organization);

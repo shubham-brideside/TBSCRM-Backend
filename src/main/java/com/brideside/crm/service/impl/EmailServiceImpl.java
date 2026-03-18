@@ -12,6 +12,9 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Service
 public class EmailServiceImpl implements EmailService {
 
@@ -78,6 +81,44 @@ public class EmailServiceImpl implements EmailService {
         } catch (MessagingException e) {
             String errorMessage = "Failed to send email to: " + toEmail;
             logger.error(errorMessage, e);
+            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+        } catch (Exception e) {
+            logger.error("Failed to send email to: {}", toEmail, e);
+            throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendHtmlEmailWithCc(String toEmail, List<String> ccEmails, String subject, String html, String plainTextFallback) {
+        try {
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
+            helper.setFrom(fromEmail, fromName);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+
+            if (ccEmails != null && !ccEmails.isEmpty()) {
+                List<String> cleaned = new ArrayList<>();
+                for (String cc : ccEmails) {
+                    if (cc != null && !cc.isBlank()) {
+                        cleaned.add(cc.trim());
+                    }
+                }
+                if (!cleaned.isEmpty()) {
+                    helper.setCc(cleaned.toArray(new String[0]));
+                }
+            }
+
+            String plain = plainTextFallback != null ? plainTextFallback : "";
+            String safeHtml = html != null ? html : "";
+            helper.setText(plain, safeHtml);
+
+            mailSender.send(mimeMessage);
+            logger.info("HTML email sent successfully to: {} with ccCount={}", toEmail,
+                    ccEmails != null ? ccEmails.size() : 0);
+        } catch (MessagingException e) {
+            logger.error("Failed to send email to: {}", toEmail, e);
             throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
         } catch (Exception e) {
             logger.error("Failed to send email to: {}", toEmail, e);

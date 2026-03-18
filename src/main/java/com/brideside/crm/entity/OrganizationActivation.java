@@ -94,6 +94,21 @@ public class OrganizationActivation {
     @Column(name = "activated", nullable = false)
     private Boolean activated = Boolean.FALSE;
 
+    @Column(name = "mail_contract_section_sent", nullable = false)
+    private Boolean mailContractSectionSent = Boolean.FALSE;
+
+    @Column(name = "mail_calendar_ig_whatsapp_section_sent", nullable = false)
+    private Boolean mailCalendarIgWhatsappSectionSent = Boolean.FALSE;
+
+    @Column(name = "mail_hr_section_sent", nullable = false)
+    private Boolean mailHrSectionSent = Boolean.FALSE;
+
+    @Column(name = "mail_chatbot_section_sent", nullable = false)
+    private Boolean mailChatbotSectionSent = Boolean.FALSE;
+
+    @Column(name = "mail_quote_client_contract_section_sent", nullable = false)
+    private Boolean mailQuoteClientContractSectionSent = Boolean.FALSE;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -177,6 +192,31 @@ public class OrganizationActivation {
 
     public Boolean getActivated() { return activated; }
     public void setActivated(Boolean activated) { this.activated = activated; }
+
+    public Boolean getMailContractSectionSent() { return mailContractSectionSent; }
+    public void setMailContractSectionSent(Boolean mailContractSectionSent) {
+        this.mailContractSectionSent = mailContractSectionSent != null && mailContractSectionSent;
+    }
+
+    public Boolean getMailCalendarIgWhatsappSectionSent() { return mailCalendarIgWhatsappSectionSent; }
+    public void setMailCalendarIgWhatsappSectionSent(Boolean mailCalendarIgWhatsappSectionSent) {
+        this.mailCalendarIgWhatsappSectionSent = mailCalendarIgWhatsappSectionSent != null && mailCalendarIgWhatsappSectionSent;
+    }
+
+    public Boolean getMailHrSectionSent() { return mailHrSectionSent; }
+    public void setMailHrSectionSent(Boolean mailHrSectionSent) {
+        this.mailHrSectionSent = mailHrSectionSent != null && mailHrSectionSent;
+    }
+
+    public Boolean getMailChatbotSectionSent() { return mailChatbotSectionSent; }
+    public void setMailChatbotSectionSent(Boolean mailChatbotSectionSent) {
+        this.mailChatbotSectionSent = mailChatbotSectionSent != null && mailChatbotSectionSent;
+    }
+
+    public Boolean getMailQuoteClientContractSectionSent() { return mailQuoteClientContractSectionSent; }
+    public void setMailQuoteClientContractSectionSent(Boolean mailQuoteClientContractSectionSent) {
+        this.mailQuoteClientContractSectionSent = mailQuoteClientContractSectionSent != null && mailQuoteClientContractSectionSent;
+    }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

@@ -4,6 +4,7 @@ import com.brideside.crm.dto.OrganizationProgressDtos;
 import com.brideside.crm.entity.BridesideVendor;
 import com.brideside.crm.entity.ClientData;
 import com.brideside.crm.entity.Organization;
+import com.brideside.crm.entity.OrganizationActivation;
 import com.brideside.crm.entity.OrganizationOnboardingProgress;
 import com.brideside.crm.entity.VendorAsset;
 import com.brideside.crm.entity.VendorData;
@@ -89,12 +90,12 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
 
         progressRepository.save(progress);
 
-        boolean allComplete = orgDetails && assetInfo && eventsPricing && vendorData && clientData && teamMembers;
-        boolean activationActivated = organizationActivationRepository.findByOrganization_Id(organizationId)
-                .map(a -> Boolean.TRUE.equals(a.getActivated()))
+        // Organization is considered active only when the "core 4" activation checklist fields are done.
+        // This must NOT depend on the 6 onboarding completion flags.
+        boolean coreFourDone = organizationActivationRepository.findByOrganization_Id(organizationId)
+                .map(this::coreFourComplete)
                 .orElse(false);
-        // Progress API isActive: true if full onboarding done OR activation checklist activated (four core done)
-        organization.setIsActive(allComplete || activationActivated);
+        organization.setIsActive(coreFourDone);
         organizationRepository.save(organization);
     }
 
@@ -109,17 +110,10 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
         OrganizationOnboardingProgress progress = progressRepository.findByOrganization_Id(organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Progress not found for organization " + organizationId));
 
-        boolean allOnboardingComplete = Boolean.TRUE.equals(progress.getOrganizationDetailsComplete())
-                && Boolean.TRUE.equals(progress.getAssetInfoComplete())
-                && Boolean.TRUE.equals(progress.getEventsPricingComplete())
-                && Boolean.TRUE.equals(progress.getVendorDataComplete())
-                && Boolean.TRUE.equals(progress.getClientDataComplete())
-                && Boolean.TRUE.equals(progress.getTeamMembersComplete());
-        boolean activationActivated = organizationActivationRepository.findByOrganization_Id(organizationId)
-                .map(a -> Boolean.TRUE.equals(a.getActivated()))
+        // Organization is active only when the "core 4" activation checklist fields are done.
+        boolean isActive = organizationActivationRepository.findByOrganization_Id(organizationId)
+                .map(this::coreFourComplete)
                 .orElse(false);
-        // Progress isActive must match activation checklist when activated=true (same as organizations.is_active rule)
-        boolean isActive = allOnboardingComplete || activationActivated;
         return toResponse(organization.getId(), progress, isActive);
     }
 
@@ -257,5 +251,21 @@ public class OrganizationProgressServiceImpl implements OrganizationProgressServ
         r.setTotalCount(TOTAL_SECTIONS);
         r.setUpdatedAt(p.getUpdatedAt());
         return r;
+    }
+
+    /**
+     * Core activation checklist:
+     * - Contract signed
+     * - Onboarding Fee
+     * - Gmail and login credentials
+     * - Phone and SIM card issues
+     */
+    private boolean coreFourComplete(OrganizationActivation a) {
+        if (a == null) return false;
+        boolean contractSigned = Boolean.TRUE.equals(a.getVendorContract()) || Boolean.TRUE.equals(a.getContractSigned());
+        return contractSigned
+                && Boolean.TRUE.equals(a.getOnboardingFeeReceived())
+                && Boolean.TRUE.equals(a.getGmailAndLoginCredentials())
+                && Boolean.TRUE.equals(a.getPhoneAndSimIssued());
     }
 }

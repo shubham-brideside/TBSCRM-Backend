@@ -10,4 +10,6 @@ public interface VendorDataRepository extends JpaRepository<VendorData, Long> {
     Optional<VendorData> findByVendor_Id(Long vendorId);
 
     boolean existsByVendor_Id(Long vendorId);
+
+    void deleteByVendor_Id(Long vendorId);
 }
