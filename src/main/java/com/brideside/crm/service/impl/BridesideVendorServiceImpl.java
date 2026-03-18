@@ -207,7 +207,12 @@ public class BridesideVendorServiceImpl implements BridesideVendorService {
         }
 
         PipelineDtos.PipelineRequest createRequest = new PipelineDtos.PipelineRequest();
-        createRequest.setName("Default Pipeline - Org " + organization.getId());
+        String organizationName = organization.getName();
+        if (organizationName != null && !organizationName.isBlank()) {
+            createRequest.setName(organizationName.trim());
+        } else {
+            createRequest.setName("Default Pipeline - Org " + organization.getId());
+        }
         createRequest.setOrganizationId(organization.getId());
         PipelineDtos.PipelineResponse created = pipelineService.createPipelineForBootstrap(createRequest);
         return pipelineRepository.findById(created.getId())
