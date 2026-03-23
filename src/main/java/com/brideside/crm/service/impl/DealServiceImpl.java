@@ -160,12 +160,18 @@ public class DealServiceImpl implements DealService {
         // Keep legacy 'won' column in sync for DBs that still require it
         deal.setLegacyWon(deal.getStatus() == DealStatus.WON);
         if (deal.getStatus() == DealStatus.WON) {
+            deal.setContractShared(Boolean.TRUE);
+            deal.setWhatsappGroupCreated(Boolean.TRUE);
             deal.setWonAt(LocalDateTime.now());
             deal.setLostAt(null);
         } else if (deal.getStatus() == DealStatus.LOST) {
+            deal.setContractShared(null);
+            deal.setWhatsappGroupCreated(null);
             deal.setLostAt(LocalDateTime.now());
             deal.setWonAt(null);
         } else {
+            deal.setContractShared(null);
+            deal.setWhatsappGroupCreated(null);
             deal.setWonAt(null);
             deal.setLostAt(null);
         }
@@ -461,12 +467,18 @@ public class DealServiceImpl implements DealService {
             // Sync legacy 'won' column
             deal.setLegacyWon(request.status == DealStatus.WON);
             if (request.status == DealStatus.WON) {
+                deal.setContractShared(Boolean.TRUE);
+                deal.setWhatsappGroupCreated(Boolean.TRUE);
                 deal.setWonAt(LocalDateTime.now());
                 deal.setLostAt(null);
             } else if (request.status == DealStatus.LOST) {
+                deal.setContractShared(null);
+                deal.setWhatsappGroupCreated(null);
                 deal.setLostAt(LocalDateTime.now());
                 deal.setWonAt(null);
             } else {
+                deal.setContractShared(null);
+                deal.setWhatsappGroupCreated(null);
                 deal.setWonAt(null);
                 deal.setLostAt(null);
             }
@@ -1721,12 +1733,18 @@ public class DealServiceImpl implements DealService {
         // Sync legacy 'won' column
         deal.setLegacyWon(status == DealStatus.WON);
         if (status == DealStatus.WON) {
+            deal.setContractShared(Boolean.TRUE);
+            deal.setWhatsappGroupCreated(Boolean.TRUE);
             deal.setWonAt(LocalDateTime.now());
             deal.setLostAt(null);
         } else if (status == DealStatus.LOST) {
+            deal.setContractShared(null);
+            deal.setWhatsappGroupCreated(null);
             deal.setLostAt(LocalDateTime.now());
             deal.setWonAt(null);
         } else {
+            deal.setContractShared(null);
+            deal.setWhatsappGroupCreated(null);
             deal.setWonAt(null);
             deal.setLostAt(null);
         }
