@@ -112,6 +112,12 @@ public class Deal {
     @Column(name = "final_thank_you_sent", nullable = true)
     private Boolean finalThankYouSent;
 
+    @Column(name = "contract_shared", nullable = true)
+    private Boolean contractShared;
+
+    @Column(name = "whatsapp_group_created", nullable = true)
+    private Boolean whatsappGroupCreated;
+
     @Column(name = "event_date_asked", nullable = true)
     private Boolean eventDateAsked;
 
@@ -265,6 +271,10 @@ public class Deal {
     public void setNotes(String notes) { this.notes = notes; }
     public Boolean getFinalThankYouSent() { return finalThankYouSent; }
     public void setFinalThankYouSent(Boolean finalThankYouSent) { this.finalThankYouSent = finalThankYouSent; }
+    public Boolean getContractShared() { return contractShared; }
+    public void setContractShared(Boolean contractShared) { this.contractShared = contractShared; }
+    public Boolean getWhatsappGroupCreated() { return whatsappGroupCreated; }
+    public void setWhatsappGroupCreated(Boolean whatsappGroupCreated) { this.whatsappGroupCreated = whatsappGroupCreated; }
     public Boolean getReenteredViaDirectMessage() { return reenteredViaDirectMessage; }
     public void setReenteredViaDirectMessage(Boolean reenteredViaDirectMessage) { this.reenteredViaDirectMessage = reenteredViaDirectMessage; }
     public Boolean getEventDateAsked() { return eventDateAsked; }
