@@ -89,6 +89,7 @@ public class VendorCalendarSyncServiceImpl implements VendorCalendarSyncService 
             event.setGoogleEventId(payload.eventId());
             event.setSummary(payload.summary());
             event.setDescription(payload.description());
+            event.setDealId(extractDealId(payload.description()));
             event.setStartAt(payload.startAt());
             event.setEndAt(payload.endAt());
             event.setAllDay(payload.allDay());
@@ -101,6 +102,38 @@ public class VendorCalendarSyncServiceImpl implements VendorCalendarSyncService 
         existingInWindow.stream()
                 .filter(event -> !seen.contains(event.getGoogleEventId()))
                 .forEach(eventRepository::delete);
+    }
+
+    private Long extractDealId(String description) {
+        if (description == null || description.isBlank()) {
+            return null;
+        }
+        String marker = "Deal ID:";
+        int markerIndex = description.lastIndexOf(marker);
+        if (markerIndex < 0) {
+            return null;
+        }
+        String trailing = description.substring(markerIndex + marker.length()).trim();
+        if (trailing.isEmpty()) {
+            return null;
+        }
+        StringBuilder digits = new StringBuilder();
+        for (int i = 0; i < trailing.length(); i++) {
+            char ch = trailing.charAt(i);
+            if (Character.isDigit(ch)) {
+                digits.append(ch);
+            } else if (digits.length() > 0) {
+                break;
+            }
+        }
+        if (digits.length() == 0) {
+            return null;
+        }
+        try {
+            return Long.parseLong(digits.toString());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }
 

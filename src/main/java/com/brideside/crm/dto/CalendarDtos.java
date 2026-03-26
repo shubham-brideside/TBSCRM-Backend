@@ -1,6 +1,7 @@
 package com.brideside.crm.dto;
 
 import java.time.Instant;
+import java.util.List;
 
 public final class CalendarDtos {
 
@@ -9,6 +10,7 @@ public final class CalendarDtos {
 
     public static class VendorEventResponse {
         public Long id;
+        public Long dealId;
         public Long organizationId;
         public String organizationName;
         public String googleEventId;
@@ -19,6 +21,15 @@ public final class CalendarDtos {
         public boolean allDay;
         public String status;
         public Instant lastSyncedAt;
+    }
+
+    public static class DealEventTypeByDateItem {
+        public String eventDate; // yyyy-MM-dd
+        public String eventType;
+    }
+
+    public static class UpsertDealEventTypesByDateRequest {
+        public List<DealEventTypeByDateItem> items;
     }
 }
 

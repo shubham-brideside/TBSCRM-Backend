@@ -384,8 +384,8 @@ public class PersonService {
         r.id = d.getId();
         r.name = d.getName();
         r.value = d.getValue();
-        r.personId = d.getPerson() != null ? d.getPerson().getId() : null;
-        r.personName = d.getPerson() != null ? d.getPerson().getName() : null;
+        r.personId = d.getPersonId();
+        r.personName = d.getPersonName();
         r.pipelineId = d.getPipeline() != null ? d.getPipeline().getId() : null;
         r.stageId = d.getStage() != null ? d.getStage().getId() : null;
         r.sourceId = d.getSource() != null ? d.getSource().getId() : null;
