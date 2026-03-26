@@ -35,6 +35,14 @@ public class Deal {
     @JoinColumn(name = "person_id", nullable = true)
     private Person person;
 
+    // Direct FK field for performance (avoid loading `person` just to get id)
+    @Column(name = "person_id", insertable = false, updatable = false)
+    private Long personId;
+
+    // Denormalized snapshot for fast search/sort/display (backfilled from persons.name)
+    @Column(name = "person_name", length = 255, nullable = true)
+    private String personName;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "pipeline_id", nullable = true)
     private Pipeline pipeline;
@@ -232,6 +240,9 @@ public class Deal {
     public void setValue(BigDecimal value) { this.value = value; }
     public Person getPerson() { return person; }
     public void setPerson(Person person) { this.person = person; }
+    public Long getPersonId() { return personId; }
+    public String getPersonName() { return personName; }
+    public void setPersonName(String personName) { this.personName = personName; }
     public Pipeline getPipeline() { return pipeline; }
     public void setPipeline(Pipeline pipeline) { this.pipeline = pipeline; }
     public Long getPipelineId() { return pipelineId; }
@@ -345,6 +356,12 @@ public class Deal {
         }
         if (this.createdBy == null) {
             this.createdBy = CreatedByType.USER;
+        }
+
+        // Ensure denormalized column is populated on inserts.
+        // For updates, we rely on DB trigger + keep this logic insert-safe.
+        if (this.personName == null) {
+            this.personName = this.person != null ? this.person.getName() : null;
         }
     }
 }

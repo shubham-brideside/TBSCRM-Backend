@@ -167,7 +167,7 @@ public final class DealSpecifications {
             // Search in person name, instagram ID, and phone (if person exists)
             Join<Object, Object> personJoin = root.join("person", JoinType.LEFT);
             jakarta.persistence.criteria.Predicate personNamePredicate = cb.like(
-                cb.lower(personJoin.get("name")), likePattern
+                cb.lower(root.get("personName")), likePattern
             );
             jakarta.persistence.criteria.Predicate personInstagramPredicate = cb.like(
                 cb.lower(personJoin.get("instagramId")), likePattern
@@ -209,7 +209,7 @@ public final class DealSpecifications {
             // Search in person name, instagram ID, and phone (if person exists)
             Join<Object, Object> personJoin = root.join("person", JoinType.LEFT);
             jakarta.persistence.criteria.Predicate personNamePredicate = cb.like(
-                cb.lower(personJoin.get("name")), likePattern
+                cb.lower(root.get("personName")), likePattern
             );
             jakarta.persistence.criteria.Predicate personInstagramPredicate = cb.like(
                 cb.lower(personJoin.get("instagramId")), likePattern

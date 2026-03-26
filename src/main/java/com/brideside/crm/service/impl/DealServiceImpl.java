@@ -1277,7 +1277,7 @@ public class DealServiceImpl implements DealService {
             if (deal == null) continue;
 
             if (deal.getPerson() != null) {
-                deal.getPerson().getName();
+                deal.getPersonName();
                 if (deal.getPerson().getOwner() != null) {
                     deal.getPerson().getOwner().getFirstName();
                     deal.getPerson().getOwner().getLastName();
@@ -1487,7 +1487,7 @@ public class DealServiceImpl implements DealService {
     }
     
     private String getPersonName(Deal deal) {
-        return deal.getPerson() != null ? deal.getPerson().getName() : null;
+        return deal.getPersonName();
     }
     
     private String getOrganizationName(Deal deal) {

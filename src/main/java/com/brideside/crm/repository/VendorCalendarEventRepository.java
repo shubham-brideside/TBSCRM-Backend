@@ -2,6 +2,9 @@ package com.brideside.crm.repository;
 
 import com.brideside.crm.entity.VendorCalendarEvent;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -16,5 +19,10 @@ public interface VendorCalendarEventRepository extends JpaRepository<VendorCalen
     List<VendorCalendarEvent> findByOrganization_IdAndStartAtBetween(Long organizationId, Instant startAt, Instant endAt);
 
     List<VendorCalendarEvent> findByStartAtBetween(Instant startAt, Instant endAt);
+    List<VendorCalendarEvent> findByDealId(Long dealId);
+
+    @Modifying
+    @Query("DELETE FROM VendorCalendarEvent v WHERE v.dealId = :dealId")
+    int deleteByDealId(@Param("dealId") Long dealId);
 }
 

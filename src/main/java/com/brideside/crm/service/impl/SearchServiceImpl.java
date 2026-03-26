@@ -8,7 +8,6 @@ import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
-import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.mapper.PersonMapper;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.DealSpecifications;
@@ -244,8 +243,8 @@ public class SearchServiceImpl implements SearchService {
         response.id = deal.getId();
         response.name = deal.getName();
         response.value = deal.getValue();
-        response.personId = deal.getPerson() != null ? deal.getPerson().getId() : null;
-        response.personName = deal.getPerson() != null ? deal.getPerson().getName() : null;
+        response.personId = deal.getPersonId();
+        response.personName = deal.getPersonName();
         response.pipelineId = deal.getPipeline() != null ? deal.getPipeline().getId() : null;
         response.stageId = deal.getStage() != null ? deal.getStage().getId() : null;
         response.sourceId = deal.getSource() != null ? deal.getSource().getId() : null;
