@@ -401,7 +401,6 @@ public class PersonService {
         r.phoneNumber = d.getPhoneNumber();
         r.city = d.getCity();
         r.finalThankYouSent = d.getFinalThankYouSent();
-        r.approved = d.getApproved();
         r.eventDateAsked = d.getEventDateAsked();
         r.contactNumberAsked = d.getContactNumberAsked();
         r.venueAsked = d.getVenueAsked();

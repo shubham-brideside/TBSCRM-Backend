@@ -157,13 +157,6 @@ public class DealController {
         return ResponseEntity.ok(res);
     }
 
-    @GetMapping("/won-unapproved")
-    @Operation(summary = "List won deals pending approval")
-    public ResponseEntity<List<DealResponse>> listWonUnapproved() {
-        List<DealResponse> res = dealService.listWonUnapproved().stream().map(this::toResponse).collect(Collectors.toList());
-        return ResponseEntity.ok(res);
-    }
-
     @GetMapping("/lost")
     @Operation(summary = "List lost deals")
     public ResponseEntity<List<DealResponse>> listLost() {
@@ -263,7 +256,6 @@ public class DealController {
         r.city = d.getCity();
         r.notes = d.getNotes();
         r.finalThankYouSent = d.getFinalThankYouSent();
-        r.approved = d.getApproved();
         r.eventDateAsked = d.getEventDateAsked();
         r.contactNumberAsked = d.getContactNumberAsked();
         r.venueAsked = d.getVenueAsked();

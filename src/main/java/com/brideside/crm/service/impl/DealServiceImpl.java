@@ -202,9 +202,6 @@ public class DealServiceImpl implements DealService {
         deal.setCity(request.city);
         deal.setNotes(request.notes);
         deal.setFinalThankYouSent(request.finalThankYouSent);
-        if (request.approved != null) {
-            deal.setApproved(request.approved);
-        }
         deal.setEventDateAsked(request.eventDateAsked);
         deal.setContactNumberAsked(request.contactNumberAsked);
         deal.setVenueAsked(request.venueAsked);
@@ -509,9 +506,6 @@ public class DealServiceImpl implements DealService {
         }
         if (request.finalThankYouSent != null) {
             deal.setFinalThankYouSent(request.finalThankYouSent);
-        }
-        if (request.approved != null) {
-            deal.setApproved(request.approved);
         }
         if (request.eventDateAsked != null) {
             deal.setEventDateAsked(request.eventDateAsked);
@@ -1591,11 +1585,6 @@ public class DealServiceImpl implements DealService {
     @Override
     public List<Deal> listWon() { 
         return dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON); 
-    }
-
-    @Override
-    public List<Deal> listWonUnapproved() {
-        return dealRepository.findByStatusAndApprovedFalseAndIsDeletedFalse(DealStatus.WON);
     }
 
     @Override
