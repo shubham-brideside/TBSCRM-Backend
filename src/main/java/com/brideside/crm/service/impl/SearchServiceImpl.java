@@ -260,6 +260,7 @@ public class SearchServiceImpl implements SearchService {
         response.phoneNumber = deal.getPhoneNumber();
         response.city = deal.getCity();
         response.finalThankYouSent = deal.getFinalThankYouSent();
+        response.approved = deal.getApproved();
         response.eventDateAsked = deal.getEventDateAsked();
         response.contactNumberAsked = deal.getContactNumberAsked();
         response.venueAsked = deal.getVenueAsked();

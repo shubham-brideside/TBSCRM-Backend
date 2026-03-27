@@ -20,6 +20,7 @@ public interface DealService {
     List<com.brideside.crm.dto.PersonDTO> getPersonsByDealIds(List<Long> dealIds);
     List<com.brideside.crm.dto.ActivityDTO> getActivitiesByDealIds(List<Long> dealIds);
     List<Deal> listWon();
+    List<Deal> listWonUnapproved();
     List<Deal> listByStatus(DealStatus status);
     List<Deal> listByPerson(Long personId);
     List<Deal> listByOrganization(Long organizationId);

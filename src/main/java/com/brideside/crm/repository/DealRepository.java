@@ -55,6 +55,7 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findByPipelineAndIsDeletedFalse(Pipeline pipeline);
     List<Deal> findByStageAndIsDeletedFalse(Stage stage);
     List<Deal> findByStatusAndIsDeletedFalse(DealStatus status);
+    List<Deal> findByStatusAndApprovedFalseAndIsDeletedFalse(DealStatus status);
     List<Deal> findByPersonAndIsDeletedFalse(Person person);
     List<Deal> findByOrganizationAndIsDeletedFalse(Organization organization);
     List<Deal> findByDealCategoryAndIsDeletedFalse(Category category);
