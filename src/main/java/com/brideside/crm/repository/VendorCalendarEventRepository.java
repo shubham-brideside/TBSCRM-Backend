@@ -22,6 +22,10 @@ public interface VendorCalendarEventRepository extends JpaRepository<VendorCalen
     List<VendorCalendarEvent> findByDealId(Long dealId);
 
     @Modifying
+    @Query("UPDATE VendorCalendarEvent v SET v.team = :team WHERE v.dealId = :dealId")
+    int updateTeamByDealId(@Param("dealId") Long dealId, @Param("team") String team);
+
+    @Modifying
     @Query("DELETE FROM VendorCalendarEvent v WHERE v.dealId = :dealId")
     int deleteByDealId(@Param("dealId") Long dealId);
 }
