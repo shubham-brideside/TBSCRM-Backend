@@ -28,6 +28,9 @@ public class DealCalendarEventType {
     @Column(name = "event_type", nullable = false, length = 255)
     private String eventType;
 
+    @Column(name = "team", length = 255)
+    private String team;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -76,6 +79,14 @@ public class DealCalendarEventType {
 
     public void setEventType(String eventType) {
         this.eventType = eventType;
+    }
+
+    public String getTeam() {
+        return team;
+    }
+
+    public void setTeam(String team) {
+        this.team = team;
     }
 
     public Instant getCreatedAt() {

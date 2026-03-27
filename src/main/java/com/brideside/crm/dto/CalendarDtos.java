@@ -11,6 +11,7 @@ public final class CalendarDtos {
     public static class VendorEventResponse {
         public Long id;
         public Long dealId;
+        public String team;
         public Long organizationId;
         public String organizationName;
         public String googleEventId;
@@ -26,6 +27,7 @@ public final class CalendarDtos {
     public static class DealEventTypeByDateItem {
         public String eventDate; // yyyy-MM-dd
         public String eventType;
+        public String team; // optional team label for this deal's calendar events
     }
 
     public static class UpsertDealEventTypesByDateRequest {

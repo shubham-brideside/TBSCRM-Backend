@@ -33,6 +33,9 @@ public class VendorCalendarEvent {
     @Column(name = "deal_id")
     private Long dealId;
 
+    @Column(name = "team", length = 255)
+    private String team;
+
     @Column(name = "start_at", nullable = false)
     private Instant startAt;
 
@@ -83,6 +86,8 @@ public class VendorCalendarEvent {
     public void setDescription(String description) { this.description = description; }
     public Long getDealId() { return dealId; }
     public void setDealId(Long dealId) { this.dealId = dealId; }
+    public String getTeam() { return team; }
+    public void setTeam(String team) { this.team = team; }
     public Instant getStartAt() { return startAt; }
     public void setStartAt(Instant startAt) { this.startAt = startAt; }
     public Instant getEndAt() { return endAt; }

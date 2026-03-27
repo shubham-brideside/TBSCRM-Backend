@@ -29,8 +29,10 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -139,12 +141,14 @@ public class CalendarController {
             entity.setDeal(deal);
             entity.setEventDate(parsedDate);
             entity.setEventType(item.eventType.trim());
+            entity.setTeam(normalizeTeam(item.team));
             entitiesToSave.add(entity);
         }
 
         List<DealCalendarEventType> savedMappings = dealCalendarEventTypeRepository.saveAll(entitiesToSave);
         syncDealEventsIfEnabled(deal);
         mirrorVendorEventsIfEnabled();
+        applyTeamsToVendorEvents(dealId, savedMappings);
 
         List<CalendarDtos.DealEventTypeByDateItem> response = savedMappings.stream()
                 .map(this::toDealEventTypeItem)
@@ -207,6 +211,7 @@ public class CalendarController {
         CalendarDtos.VendorEventResponse dto = new CalendarDtos.VendorEventResponse();
         dto.id = event.getId();
         dto.dealId = event.getDealId();
+        dto.team = event.getTeam();
         dto.organizationId = event.getOrganization() != null ? event.getOrganization().getId() : null;
         dto.organizationName = event.getOrganization() != null ? event.getOrganization().getName() : null;
         dto.googleEventId = event.getGoogleEventId();
@@ -224,6 +229,7 @@ public class CalendarController {
         CalendarDtos.DealEventTypeByDateItem item = new CalendarDtos.DealEventTypeByDateItem();
         item.eventDate = entity.getEventDate() != null ? entity.getEventDate().toString() : null;
         item.eventType = entity.getEventType();
+        item.team = entity.getTeam();
         return item;
     }
 
@@ -253,6 +259,42 @@ public class CalendarController {
         if (vendorCalendarSyncService.isPresent()) {
             vendorCalendarSyncService.get().syncAllVendorCalendars();
         }
+    }
+
+    private void applyTeamsToVendorEvents(Long dealId, List<DealCalendarEventType> mappings) {
+        if (dealId == null || mappings == null || mappings.isEmpty()) {
+            return;
+        }
+        Map<LocalDate, String> teamByDate = new HashMap<>();
+        for (DealCalendarEventType mapping : mappings) {
+            if (mapping.getEventDate() != null) {
+                teamByDate.put(mapping.getEventDate(), normalizeTeam(mapping.getTeam()));
+            }
+        }
+        if (teamByDate.isEmpty()) {
+            return;
+        }
+        List<VendorCalendarEvent> vendorEvents = vendorCalendarEventRepository.findByDealId(dealId);
+        if (vendorEvents.isEmpty()) {
+            return;
+        }
+        for (VendorCalendarEvent event : vendorEvents) {
+            if (event.getStartAt() == null) {
+                continue;
+            }
+            LocalDate eventDate = event.getStartAt().atZone(ZoneOffset.UTC).toLocalDate();
+            if (teamByDate.containsKey(eventDate)) {
+                event.setTeam(teamByDate.get(eventDate));
+            }
+        }
+        vendorCalendarEventRepository.saveAll(vendorEvents);
+    }
+
+    private String normalizeTeam(String team) {
+        if (!StringUtils.hasText(team)) {
+            return null;
+        }
+        return team.trim();
     }
 }
 

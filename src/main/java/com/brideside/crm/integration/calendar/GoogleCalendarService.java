@@ -96,7 +96,8 @@ public class GoogleCalendarService {
             return Optional.empty();
         }
         
-        Map<String, String> eventTypeByDate = getEventTypeByDate(deal.getId());
+        Map<String, DealCalendarEventType> mappingByDate = getMappingsByDate(deal.getId());
+        Map<String, String> eventTypeByDate = toEventTypeByDate(mappingByDate);
         List<LocalDate> eventDates = resolveEventDatesForSync(deal, eventTypeByDate);
         if (eventDates == null || eventDates.isEmpty()) {
             return Optional.empty();
@@ -109,9 +110,11 @@ public class GoogleCalendarService {
         for (LocalDate eventDate : eventDates) {
             String dateStr = eventDate.toString();
             String existingEventId = existingEventIds != null ? existingEventIds.get(dateStr) : null;
-            String perDateEventType = eventTypeByDate.get(dateStr);
+            DealCalendarEventType mapping = mappingByDate.get(dateStr);
+            String perDateEventType = mapping != null ? mapping.getEventType() : null;
+            String perDateTeam = mapping != null ? mapping.getTeam() : null;
             
-            Optional<String> eventId = upsertSingleEvent(deal, calendarId, eventDate, existingEventId, perDateEventType);
+            Optional<String> eventId = upsertSingleEvent(deal, calendarId, eventDate, existingEventId, perDateEventType, perDateTeam);
             if (eventId.isPresent()) {
                 updatedEventIds.put(dateStr, eventId.get());
             }
@@ -136,8 +139,9 @@ public class GoogleCalendarService {
                                                String calendarId,
                                                LocalDate eventDate,
                                                String existingEventId,
-                                               String perDateEventType) {
-        ObjectNode payload = buildEventPayload(deal, eventDate, perDateEventType);
+                                               String perDateEventType,
+                                               String perDateTeam) {
+        ObjectNode payload = buildEventPayload(deal, eventDate, perDateEventType, perDateTeam);
         String body;
         try {
             body = objectMapper.writeValueAsString(payload);
@@ -197,8 +201,10 @@ public class GoogleCalendarService {
         }
         String calendarId = deal.getOrganization().getGoogleCalendarId().trim();
         String existingEventId = deal.getGoogleCalendarEventId();
-        String perDateEventType = getEventTypeByDate(deal.getId()).get(firstDate.toString());
-        return upsertSingleEvent(deal, calendarId, firstDate, existingEventId, perDateEventType);
+        DealCalendarEventType mapping = getMappingsByDate(deal.getId()).get(firstDate.toString());
+        String perDateEventType = mapping != null ? mapping.getEventType() : null;
+        String perDateTeam = mapping != null ? mapping.getTeam() : null;
+        return upsertSingleEvent(deal, calendarId, firstDate, existingEventId, perDateEventType, perDateTeam);
     }
 
     /**
@@ -332,7 +338,7 @@ public class GoogleCalendarService {
         if (deal == null) {
             return false;
         }
-        Map<String, String> eventTypeByDate = getEventTypeByDate(deal.getId());
+        Map<String, String> eventTypeByDate = toEventTypeByDate(getMappingsByDate(deal.getId()));
         List<LocalDate> effectiveDates = resolveEventDatesForSync(deal, eventTypeByDate);
         LocalDate firstEventDate = effectiveDates != null && !effectiveDates.isEmpty() ? effectiveDates.get(0) : null;
         if (firstEventDate == null) {
@@ -497,13 +503,13 @@ public class GoogleCalendarService {
         throw new IllegalStateException("No Google Calendar credentials configured. Please set GOOGLE_CALENDAR_CREDENTIALS_JSON environment variable or GOOGLE_CALENDAR_CREDENTIALS_FILE property.");
     }
 
-    private ObjectNode buildEventPayload(Deal deal, LocalDate eventDate, String perDateEventType) {
+    private ObjectNode buildEventPayload(Deal deal, LocalDate eventDate, String perDateEventType, String perDateTeam) {
         if (eventDate == null) {
             throw new IllegalStateException("No event date provided for deal " + deal.getId());
         }
         ObjectNode root = objectMapper.createObjectNode();
         root.put("summary", buildSummary(deal, eventDate));
-        root.put("description", buildDescription(deal, perDateEventType));
+        root.put("description", buildDescription(deal, perDateEventType, perDateTeam));
         if (StringUtils.hasText(deal.getVenue())) {
             root.put("location", deal.getVenue());
         }
@@ -528,11 +534,14 @@ public class GoogleCalendarService {
     }
 
 
-    private String buildDescription(Deal deal, String perDateEventType) {
+    private String buildDescription(Deal deal, String perDateEventType, String perDateTeam) {
         StringBuilder description = new StringBuilder();
         String resolvedEventType = StringUtils.hasText(perDateEventType) ? perDateEventType : deal.getEventType();
         if (StringUtils.hasText(resolvedEventType)) {
             description.append("Event Type: ").append(resolvedEventType).append("\n");
+        }
+        if (StringUtils.hasText(perDateTeam)) {
+            description.append("Team: ").append(perDateTeam).append("\n");
         }
         if (deal.getValue() != null) {
             description.append("Deal Value: ").append(deal.getValue()).append("\n");
@@ -550,7 +559,7 @@ public class GoogleCalendarService {
         return description.toString();
     }
 
-    private Map<String, String> getEventTypeByDate(Long dealId) {
+    private Map<String, DealCalendarEventType> getMappingsByDate(Long dealId) {
         if (dealId == null) {
             return Collections.emptyMap();
         }
@@ -558,13 +567,27 @@ public class GoogleCalendarService {
         if (mappings == null || mappings.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, String> map = new HashMap<>();
+        Map<String, DealCalendarEventType> map = new HashMap<>();
         for (DealCalendarEventType mapping : mappings) {
-            if (mapping.getEventDate() != null && StringUtils.hasText(mapping.getEventType())) {
-                map.put(mapping.getEventDate().toString(), mapping.getEventType());
+            if (mapping.getEventDate() != null) {
+                map.put(mapping.getEventDate().toString(), mapping);
             }
         }
         return map;
+    }
+
+    private Map<String, String> toEventTypeByDate(Map<String, DealCalendarEventType> mappingByDate) {
+        if (mappingByDate == null || mappingByDate.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, String> result = new HashMap<>();
+        for (Map.Entry<String, DealCalendarEventType> entry : mappingByDate.entrySet()) {
+            String eventType = entry.getValue() != null ? entry.getValue().getEventType() : null;
+            if (StringUtils.hasText(eventType)) {
+                result.put(entry.getKey(), eventType);
+            }
+        }
+        return result;
     }
 
     private String encode(String value) {
