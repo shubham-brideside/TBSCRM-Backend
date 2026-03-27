@@ -69,6 +69,7 @@ public class DealDtos {
         public String city; // optional
         public String notes; // optional: free-form notes about the deal
         public Boolean finalThankYouSent; // optional
+        public Boolean approved; // optional, defaults to false
         public Boolean eventDateAsked; // optional
         public Boolean contactNumberAsked; // optional
         public Boolean venueAsked; // optional
@@ -117,6 +118,7 @@ public class DealDtos {
         public String city;
         public String notes; // optional: free-form notes about the deal
         public Boolean finalThankYouSent;
+        public Boolean approved;
         public Boolean eventDateAsked;
         public Boolean contactNumberAsked;
         public Boolean venueAsked;
