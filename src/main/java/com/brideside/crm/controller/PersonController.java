@@ -51,7 +51,7 @@ public class PersonController {
         this.userRepository = userRepository;
     }
 
-    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING). Also supports duplicate checking with phone, instagramId, and excludeId parameters.")
+    @Operation(summary = "List persons", description = "Search and filter persons by label, owner, organization, category, source, dealSource, and lead date range. Supports multi-select filtering for categoryId, organizationId, ownerId, and label using comma-separated values (e.g., categoryId=1,2,3&label=BRIDAL_MAKEUP,BRIDAL_PLANNING). Also supports duplicate checking with phone, instagramId, and excludeId parameters. Does not apply role-based organization or pipeline scoping—all active users see the same result set for the same query filters (non-deleted persons only).")
     @GetMapping
     public Page<PersonDTO> list(
             @RequestParam(name = "q", required = false) String query,
@@ -90,10 +90,8 @@ public class PersonController {
     }
 
     @Operation(summary = "Search persons (unrestricted)", 
-            description = "Search persons without role-based access restrictions. " +
-                    "This endpoint is intended for use cases like 'create deal' where users need to search for any person " +
-                    "regardless of their role-based access restrictions. " +
-                    "Supports the same filters as /api/persons but does NOT apply role-based organization or pipeline filtering. " +
+            description = "Same filtering behavior as GET /api/persons (no role-based organization or pipeline scoping). " +
+                    "Kept for compatibility with flows such as 'create deal' person pickers. " +
                     "Still respects soft-delete filtering and all user-provided filters.")
     @GetMapping("/search")
     public Page<PersonDTO> searchUnrestricted(
@@ -118,7 +116,8 @@ public class PersonController {
     }
 
     @Operation(summary = "List persons with details", description = "Returns paginated persons with their associated deals and activities in a single optimized response. " +
-            "Uses JOINs to efficiently fetch related data. Supports all the same filters as /api/persons endpoint. " +
+            "Uses JOINs to efficiently fetch related data. Supports the same query filters as /api/persons plus optional pipelineId (comma-separated). " +
+            "Does not apply role-based organization or pipeline scoping. " +
             "Default page size is 200 (recommended for infinite scroll). " +
             "Response includes persons array, deals array (all deals for the persons in this page), activities array (all activities for the persons in this page), and pagination metadata.")
     @GetMapping("/with-details")
