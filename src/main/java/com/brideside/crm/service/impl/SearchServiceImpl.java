@@ -63,33 +63,24 @@ public class SearchServiceImpl implements SearchService {
         
         log.debug("Global search requested with query: '{}', limit: {}", query, searchLimit);
         
-        // Get accessible owner IDs based on current user's role for RBAC filtering
-        List<Long> accessibleOwnerIds = getAccessibleOwnerIds();
-        log.debug("RBAC filtering: accessible owner IDs: {}", accessibleOwnerIds);
-        
-        // Search persons - use focusedSearch to only match name, instagramId, and phone
-        // This avoids unrelated results from owner name, organization name, or email
+        // Persons: no role-based filter (same idea as GET /api/persons/search) — all non-deleted matches
         Specification<Person> personSpec = Specification.where(PersonSpecifications.notDeleted())
                 .and(PersonSpecifications.focusedSearch(query));
-        
-        // Apply RBAC filtering: filter by organization owner
-        if (accessibleOwnerIds != null) {
-            personSpec = personSpec.and(PersonSpecifications.hasOrganizationOwnerIn(accessibleOwnerIds));
-        }
         
         List<PersonDTO> persons = personRepository.findAll(personSpec, pageable)
                 .stream()
                 .map(PersonMapper::toDto)
                 .collect(Collectors.toList());
         
-        log.debug("Found {} persons matching query '{}' (after RBAC filtering)", persons.size(), query);
+        log.debug("Found {} persons matching query '{}' (unrestricted by role)", persons.size(), query);
         
-        // Search deals - use focusedSearch to only match deal name, phone number, and related person fields
-        // This avoids unrelated results from venue or organization name
+        // Deals: RBAC — filter by organization owner OR person owner (unchanged)
+        List<Long> accessibleOwnerIds = getAccessibleOwnerIds();
+        log.debug("Deal RBAC: accessible owner IDs: {}", accessibleOwnerIds);
+        
         Specification<Deal> dealSpec = Specification.where(DealSpecifications.notDeleted())
                 .and(DealSpecifications.focusedSearch(query));
         
-        // Apply RBAC filtering: filter by organization owner OR person owner
         if (accessibleOwnerIds != null) {
             dealSpec = dealSpec.and(DealSpecifications.hasOrganizationOrPersonOwnerIn(accessibleOwnerIds));
         }
@@ -103,13 +94,13 @@ public class SearchServiceImpl implements SearchService {
                 .map(this::toDealResponse)
                 .collect(Collectors.toList());
         
-        log.debug("Found {} deals matching query '{}' (after RBAC filtering)", deals.size(), query);
+        log.debug("Found {} deals matching query '{}' (after deal RBAC)", deals.size(), query);
         
         return new SearchDtos.GlobalSearchResponse(persons, deals);
     }
     
     /**
-     * Get accessible owner IDs based on the current user's role.
+     * Owner IDs used for deal RBAC in global search only (persons are unrestricted).
      * Returns null for Admin (no restrictions), or list of owner IDs for other roles.
      * Logic matches OrganizationServiceImpl.listAccessibleForCurrentUser:
      * - ADMIN: null (no restrictions)

@@ -29,8 +29,9 @@ public class SearchController {
         description = "Search across persons and deals by name, instagram_id, and phone_number. " +
                      "Returns matching persons and deals in a single response. " +
                      "Searches in: person name, instagram ID, phone, email; deal name, venue, phone number, and related person/organization names. " +
-                     "Results are filtered based on user role: Admin sees all, Category Manager sees their orgs and those of Sales/Presales under them, " +
-                     "Sales sees their orgs and those of Presales under them, Presales sees only their own orgs.",
+                     "Person results are not restricted by role (all non-deleted persons can match, same idea as GET /api/persons/search). " +
+                     "Deal results are filtered by role: Admin sees all; Category Manager sees their orgs and those of Sales/Presales under them; " +
+                     "Sales sees their orgs and those of Presales under them; Presales follows existing hierarchy rules.",
         security = @SecurityRequirement(name = "Bearer Authentication")
     )
     public ResponseEntity<ApiResponse<SearchDtos.GlobalSearchResponse>> globalSearch(
