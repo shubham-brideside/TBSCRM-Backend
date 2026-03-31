@@ -36,6 +36,7 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "left join fetch d.organization org " +
             "left join fetch d.dealCategory cat " +
             "left join fetch d.source src " +
+            "left join fetch d.owner " +
             "where d.status = com.brideside.crm.entity.DealStatus.WON " +
             "and (d.isDeleted = false or d.isDeleted is null) " +
             "and ( (d.wonAt is not null and d.wonAt >= :start and d.wonAt < :end) " +

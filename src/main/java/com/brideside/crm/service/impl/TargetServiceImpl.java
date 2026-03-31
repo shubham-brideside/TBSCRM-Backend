@@ -761,7 +761,7 @@ public class TargetServiceImpl implements TargetService {
         final Set<Long> finalAccessibleUserIdsForDeals = accessibleUserIds;
         List<Deal> wonDeals = allWonDeals.stream()
                 .filter(deal -> {
-                    User owner = resolveDealOwner(deal);
+                    User owner = resolveTargetAttributedOwner(deal);
                     if (owner == null || owner.getId() == null) {
                         return false;
                     }
@@ -843,7 +843,7 @@ public class TargetServiceImpl implements TargetService {
                 continue;
             }
 
-            User owner = resolveDealOwner(deal);
+            User owner = resolveTargetAttributedOwner(deal);
             if (owner != null && owner.getId() != null) {
                 Long ownerId = owner.getId();
                 // Only process deals for accessible users (already filtered above, but double-check)
@@ -1553,6 +1553,26 @@ public class TargetServiceImpl implements TargetService {
         return null;
     }
 
+    /**
+     * Sales user credited for a deal in Target dashboard / per-user detail.
+     * Uses the persisted {@code deals.owner_id} when set so attribution does not move when
+     * organization owner (or other relations) changes later; falls back to
+     * {@link #resolveDealOwner(Deal)} for older rows without {@code owner_id}.
+     */
+    private User resolveTargetAttributedOwner(Deal deal) {
+        if (deal == null) {
+            return null;
+        }
+        if (deal.getOwnerId() != null) {
+            User owner = deal.getOwner();
+            if (owner != null) {
+                return owner;
+            }
+            return userRepository.findById(deal.getOwnerId()).orElse(null);
+        }
+        return resolveDealOwner(deal);
+    }
+
     /** Reference date for a won deal: won_at when set, else updatedAt, else createdAt (for legacy data). */
     private LocalDateTime getDealWonReference(Deal deal) {
         if (deal.getWonAt() != null) {
@@ -2014,7 +2034,7 @@ public class TargetServiceImpl implements TargetService {
 
         Map<YearMonth, MonthlyDealAggregate> monthlyDeals = new HashMap<>();
         for (Deal deal : deals) {
-            User owner = resolveDealOwner(deal);
+            User owner = resolveTargetAttributedOwner(deal);
             if (owner == null || owner.getId() == null) {
                 continue;
             }
