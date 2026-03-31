@@ -320,6 +320,13 @@ public class DealController {
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();
+        if (d.getOwner() != null) {
+            r.ownerId = d.getOwner().getId();
+            r.ownerDisplayName = d.getOwner().getDisplayName();
+        } else if (d.getOwnerId() != null) {
+            r.ownerId = d.getOwnerId();
+            r.ownerDisplayName = null;
+        }
         return r;
     }
 

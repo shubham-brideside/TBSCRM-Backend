@@ -56,6 +56,9 @@ public class DealResponse {
     public CreatedByType createdBy; // USER or BOT - who created the deal
     public Long createdByUserId; // User ID if created by USER
     public String createdByName; // User name if created by USER
+    /** Sales owner for the deal (denormalized from person.owner or organization.owner). */
+    public Long ownerId;
+    public String ownerDisplayName;
 }
 
 

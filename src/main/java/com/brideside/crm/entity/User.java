@@ -95,6 +95,23 @@ public class User {
         this.lastName = lastName;
     }
 
+    /**
+     * Display name for API responses: trimmed "firstName lastName", or email if both names are blank.
+     */
+    public String getDisplayName() {
+        StringBuilder sb = new StringBuilder();
+        if (firstName != null) {
+            sb.append(firstName);
+        }
+        if (lastName != null && !lastName.isBlank()) {
+            if (!sb.isEmpty()) {
+                sb.append(" ");
+            }
+            sb.append(lastName);
+        }
+        return sb.isEmpty() ? email : sb.toString();
+    }
+
     public Role getRole() {
         return role;
     }

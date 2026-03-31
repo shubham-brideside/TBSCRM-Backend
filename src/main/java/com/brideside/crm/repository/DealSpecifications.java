@@ -106,16 +106,13 @@ public final class DealSpecifications {
     }
 
     /**
-     * Filter by manager ID (person's owner_id)
+     * Filter by manager ID (deal's denormalized owner_id).
      */
     public static Specification<Deal> hasManager(Long managerId) {
         if (managerId == null) {
             return null;
         }
-        return (root, query, cb) -> {
-            Join<Object, Object> personJoin = root.join("person", JoinType.INNER);
-            return cb.equal(personJoin.get("owner").get("id"), managerId);
-        };
+        return (root, query, cb) -> cb.equal(root.get("ownerId"), managerId);
     }
 
     /**
@@ -276,9 +273,15 @@ public final class DealSpecifications {
                 cb.isNotNull(personJoin.get("owner")),
                 personJoin.get("owner").get("id").in(ownerIds)
             );
+
+            // Condition 3: Deal's denormalized owner_id (kept in sync with person/org)
+            jakarta.persistence.criteria.Predicate dealOwnerMatch = cb.and(
+                cb.isNotNull(root.get("ownerId")),
+                root.get("ownerId").in(ownerIds)
+            );
             
-            // Return OR of both conditions
-            return cb.or(orgOwnerMatch, personOwnerMatch);
+            // Return OR of all conditions
+            return cb.or(orgOwnerMatch, personOwnerMatch, dealOwnerMatch);
         };
     }
 }

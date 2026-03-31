@@ -260,6 +260,13 @@ public class SearchServiceImpl implements SearchService {
         response.createdBy = deal.getCreatedBy();
         response.createdByUserId = deal.getCreatedByUserId();
         response.createdByName = deal.getCreatedByName();
+        if (deal.getOwner() != null) {
+            response.ownerId = deal.getOwner().getId();
+            response.ownerDisplayName = deal.getOwner().getDisplayName();
+        } else if (deal.getOwnerId() != null) {
+            response.ownerId = deal.getOwnerId();
+            response.ownerDisplayName = null;
+        }
         response.isDiverted = deal.getIsDiverted();
         response.referencedDealId = deal.getReferencedDeal() != null ? deal.getReferencedDeal().getId() : null;
         response.referencedPipelineId = deal.getReferencedPipeline() != null ? deal.getReferencedPipeline().getId() : null;

@@ -71,6 +71,16 @@ public class Deal {
     @Column(name = "organization_id", insertable = false, updatable = false)
     private Long organizationId;
 
+    /**
+     * Denormalized owner (sales user): from linked person.owner when present, else organization.owner.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id", nullable = true)
+    private User owner;
+
+    @Column(name = "owner_id", insertable = false, updatable = false)
+    private Long ownerId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = true)
     private Category dealCategory;
@@ -255,6 +265,9 @@ public class Deal {
     public Organization getOrganization() { return organization; }
     public void setOrganization(Organization organization) { this.organization = organization; }
     public Long getOrganizationId() { return organizationId; }
+    public User getOwner() { return owner; }
+    public void setOwner(User owner) { this.owner = owner; }
+    public Long getOwnerId() { return ownerId; }
     public Category getDealCategory() { return dealCategory; }
     public void setDealCategory(Category dealCategory) { this.dealCategory = dealCategory; }
     public Long getCategoryId() { return categoryId; }
@@ -363,6 +376,20 @@ public class Deal {
         if (this.personName == null) {
             this.personName = this.person != null ? this.person.getName() : null;
         }
+        syncDealOwnerFromLinkedEntitiesIfMissing();
+    }
+
+    private void syncDealOwnerFromLinkedEntitiesIfMissing() {
+        if (this.owner != null) {
+            return;
+        }
+        User resolved = null;
+        if (person != null && person.getOwner() != null) {
+            resolved = person.getOwner();
+        } else if (organization != null && organization.getOwner() != null) {
+            resolved = organization.getOwner();
+        }
+        this.owner = resolved;
     }
 }
 

@@ -450,6 +450,12 @@ public class DealServiceImpl implements DealService {
                 .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
             deal.setOrganization(organization);
         }
+        if (request.ownerId != null) {
+            User owner = userRepository.findById(request.ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Owner not found"));
+            // Explicit override for the deal row only; does not update person ownership.
+            deal.setOwner(owner);
+        }
         
         // Handle category
         if (request.categoryId != null || request.category != null) {
@@ -1521,10 +1527,11 @@ public class DealServiceImpl implements DealService {
     }
     
     private String getOwnerName(Deal deal) {
-        // Get owner from person if person has owner
+        if (deal.getOwner() != null) {
+            return deal.getOwner().getDisplayName();
+        }
         if (deal.getPerson() != null && deal.getPerson().getOwner() != null) {
-            com.brideside.crm.entity.User owner = deal.getPerson().getOwner();
-            return owner.getFirstName() + " " + owner.getLastName();
+            return deal.getPerson().getOwner().getDisplayName();
         }
         return null;
     }
@@ -2461,9 +2468,9 @@ public class DealServiceImpl implements DealService {
             params.add(categoryId);
         }
 
-        // Add manager filter (person's owner_id)
+        // Add manager filter (deal's owner_id)
         if (managerId != null) {
-            sql.append("  AND p.owner_id = ? ");
+            sql.append("  AND d.owner_id = ? ");
             params.add(managerId);
         }
 
