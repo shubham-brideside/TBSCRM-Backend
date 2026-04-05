@@ -65,7 +65,7 @@ public enum TargetCategory {
 
     /**
      * Try to infer the target category for the provided deal, looking at the
-     * deal's category entity, legacy category text, organization category and
+     * deal's category entity, organization category and
      * pipeline category fields. Returns null if the deal cannot be classified.
      */
     public static TargetCategory fromDeal(Deal deal) {
@@ -75,11 +75,6 @@ public enum TargetCategory {
 
         if (deal.getDealCategory() != null && deal.getDealCategory().getName() != null) {
             TargetCategory cat = fromValue(deal.getDealCategory().getName());
-            if (cat != null) return cat;
-        }
-
-        if (deal.getCategory() != null) {
-            TargetCategory cat = fromValue(deal.getCategory());
             if (cat != null) return cat;
         }
 

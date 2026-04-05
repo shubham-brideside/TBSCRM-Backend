@@ -99,10 +99,6 @@ public class Deal {
     @Column(name = "won", nullable = false)
     private Boolean legacyWon = false;
 
-    // Compatibility with existing DB where deals has a non-null 'category' column
-    @Column(nullable = true)
-    private String category;
-
     // Compatibility with existing DB where deals has a non-null 'contact_number' column
     @Column(name = "contact_number", nullable = true)
     private String contactNumber;
@@ -277,8 +273,6 @@ public class Deal {
     public void setStatus(DealStatus status) { this.status = status; }
     public Boolean getLegacyWon() { return legacyWon; }
     public void setLegacyWon(Boolean legacyWon) { this.legacyWon = legacyWon; }
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
     public String getContactNumber() { return contactNumber; }
     public void setContactNumber(String contactNumber) { this.contactNumber = contactNumber; }
     public String getUserName() { return userName; }

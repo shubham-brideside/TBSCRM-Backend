@@ -178,9 +178,6 @@ public class DealServiceImpl implements DealService {
         if (request.commissionAmount != null) {
             deal.setCommissionAmount(request.commissionAmount);
         }
-        if (deal.getCategory() == null) {
-            deal.setCategory("GENERAL");
-        }
         if (deal.getContactNumber() == null) {
             deal.setContactNumber("");
         }
