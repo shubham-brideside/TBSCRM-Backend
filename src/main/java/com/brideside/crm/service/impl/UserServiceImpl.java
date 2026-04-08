@@ -557,16 +557,16 @@ public class UserServiceImpl implements UserService {
 
     private Set<Role.RoleName> getAllowedManagerRoles(Role.RoleName roleName) {
         if (roleName == null) {
-            return Set.of(Role.RoleName.CATEGORY_MANAGER, Role.RoleName.SALES);
+            return Set.of(Role.RoleName.ADMIN, Role.RoleName.CATEGORY_MANAGER, Role.RoleName.SALES);
         }
         switch (roleName) {
             case ADMIN:
             case CATEGORY_MANAGER:
                 return Set.of();
             case SALES:
-                return Set.of(Role.RoleName.CATEGORY_MANAGER);
+                return Set.of(Role.RoleName.ADMIN, Role.RoleName.CATEGORY_MANAGER);
             case PRESALES:
-                return Set.of(Role.RoleName.SALES);
+                return Set.of(Role.RoleName.ADMIN, Role.RoleName.CATEGORY_MANAGER, Role.RoleName.SALES);
             default:
                 return Set.of();
         }
