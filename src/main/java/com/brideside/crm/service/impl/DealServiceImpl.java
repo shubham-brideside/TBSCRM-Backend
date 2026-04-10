@@ -65,6 +65,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
@@ -413,6 +414,8 @@ public class DealServiceImpl implements DealService {
         
         // Capture old stage before any updates
         Stage oldStage = deal.getStage();
+
+        boolean reassignActivitiesToNewOwner = false;
         
         // Update fields only if provided (partial update)
         if (request.name != null) {
@@ -462,10 +465,14 @@ public class DealServiceImpl implements DealService {
             deal.setOrganization(organization);
         }
         if (request.ownerId != null) {
+            Long previousOwnerId = deal.getOwner() != null ? deal.getOwner().getId() : null;
             User owner = userRepository.findById(request.ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Owner not found"));
             // Explicit override for the deal row only; does not update person ownership.
             deal.setOwner(owner);
+            if (!Objects.equals(previousOwnerId, owner.getId())) {
+                reassignActivitiesToNewOwner = true;
+            }
         }
         
         // Handle category
@@ -675,6 +682,10 @@ public class DealServiceImpl implements DealService {
         
         deal.setUpdatedAt(LocalDateTime.now());
         Deal savedDeal = dealRepository.save(deal);
+
+        if (reassignActivitiesToNewOwner) {
+            reassignIncompleteActivitiesToDealOwner(savedDeal);
+        }
         
         // Record stage change if stage was updated
         if (stageChanged && savedDeal.getStage() != null) {
@@ -2343,6 +2354,58 @@ public class DealServiceImpl implements DealService {
             return null;
         }
     }
+
+    /**
+     * When a deal's owner changes, update incomplete activities for this deal to match the new owner.
+     */
+    private void reassignIncompleteActivitiesToDealOwner(Deal deal) {
+        if (deal == null || deal.getId() == null) {
+            return;
+        }
+        User owner = deal.getOwner();
+        if (owner == null || owner.getId() == null) {
+            return;
+        }
+        List<Activity> activities = activityRepository.findByDealIdAndDoneFalse(deal.getId());
+        if (activities.isEmpty()) {
+            return;
+        }
+        String displayName = (owner.getFirstName() != null ? owner.getFirstName() : "") + " "
+                + (owner.getLastName() != null ? owner.getLastName() : "");
+        displayName = displayName.trim();
+        if (displayName.isEmpty() && owner.getEmail() != null) {
+            displayName = owner.getEmail();
+        }
+        // activities.assigned_user is varchar(255) per DDL
+        displayName = truncateActivityAssignedUser(displayName);
+        Long ownerId = owner.getId();
+        int updated = 0;
+        for (Activity a : activities) {
+            if (a.getStatus() == Activity.ActivityStatus.COMPLETED) {
+                continue;
+            }
+            if (a.getCompletedAt() != null) {
+                continue;
+            }
+            a.setAssignedUserId(ownerId);
+            a.setAssignedUser(displayName);
+            // Keep user_id in sync with assignee (same FK target as assigned_user_id in DDL)
+            a.setUserId(ownerId);
+            activityRepository.save(a);
+            updated++;
+        }
+        if (updated > 0) {
+            log.info("Reassigned {} incomplete activities to deal owner {} for deal {}", updated, ownerId, deal.getId());
+        }
+    }
+
+    /** Matches activities.assigned_user varchar(255). */
+    private static String truncateActivityAssignedUser(String s) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= 255 ? s : s.substring(0, 255);
+    }
     
     /**
      * Creates activities when a deal moves from "Lead In" to "Qualified" stage.
@@ -2552,6 +2615,8 @@ public class DealServiceImpl implements DealService {
                 log.debug("Activities already exist for Qualified stage deal {}, skipping creation", freshDeal.getId());
                 return;
             }
+
+            assignedUserName = truncateActivityAssignedUser(assignedUserName);
             
             // 5. Calculate today's date in DD/MM/YYYY format
             LocalDate today = LocalDate.now();
@@ -2570,6 +2635,7 @@ public class DealServiceImpl implements DealService {
                 makeFirstCall.setOrganization(organizationName);
                 makeFirstCall.setAssignedUser(assignedUserName);
                 makeFirstCall.setAssignedUserId(assignedUserId);
+                makeFirstCall.setUserId(assignedUserId);
                 makeFirstCall.setDate(todayStr);
                 makeFirstCall.setDone(false);
                 makeFirstCall.setDealName(freshDeal.getName());
@@ -2609,6 +2675,7 @@ public class DealServiceImpl implements DealService {
                 sendQuotes.setOrganization(organizationName);
                 sendQuotes.setAssignedUser(assignedUserName);
                 sendQuotes.setAssignedUserId(assignedUserId);
+                sendQuotes.setUserId(assignedUserId);
                 sendQuotes.setDate(todayStr);
                 sendQuotes.setDone(false);
                 sendQuotes.setDealName(freshDeal.getName());

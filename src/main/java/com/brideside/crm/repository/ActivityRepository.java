@@ -11,6 +11,9 @@ import java.util.List;
 
 public interface ActivityRepository extends JpaRepository<Activity, Long>, JpaSpecificationExecutor<Activity> {
     List<Activity> findByAssignedUserId(Long assignedUserId);
+
+    /** Open activities for a deal (done flag false). */
+    List<Activity> findByDealIdAndDoneFalse(Long dealId);
     
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE activities SET assigned_user_id = NULL WHERE assigned_user_id = :userId", nativeQuery = true)

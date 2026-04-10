@@ -70,6 +70,8 @@ public class Activity {
     @Column(length = 10, columnDefinition = "VARCHAR(10)")
     private PriorityLevel priority;  // HIGH, MEDIUM, LOW
     
+    /** Display / search string; DB column is varchar(255). */
+    @Column(name = "assigned_user", length = 255)
     private String assignedUser; // email or name, as used by UI
     @Column(length = 2000)
     private String notes;
@@ -144,6 +146,14 @@ public class Activity {
     @JoinColumn(name = "assigned_user_id", insertable = false, updatable = false)
     private User assignedUserRef;
 
+    /** Optional legacy / reporting column; FK to users.id (see activities.user_id in DDL). */
+    @Column(name = "user_id")
+    private Long userId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    private User userRef;
+
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 
@@ -214,6 +224,10 @@ public class Activity {
     public void setAssignedUserId(Long assignedUserId) { this.assignedUserId = assignedUserId; }
     public User getAssignedUserRef() { return assignedUserRef; }
     public void setAssignedUserRef(User assignedUserRef) { this.assignedUserRef = assignedUserRef; }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public User getUserRef() { return userRef; }
+    public void setUserRef(User userRef) { this.userRef = userRef; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
