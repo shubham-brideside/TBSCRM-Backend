@@ -147,6 +147,12 @@ public class DealServiceImpl implements DealService {
                 .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
             deal.setOrganization(organization);
         }
+        if (request.ownerId != null) {
+            User owner = userRepository.findById(request.ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Owner not found"));
+            // Explicit override for the deal row only; does not update person ownership.
+            deal.setOwner(owner);
+        }
         Category selectedCategory = resolveSelectedCategory(request);
         if (selectedCategory != null) {
             deal.setDealCategory(selectedCategory);
