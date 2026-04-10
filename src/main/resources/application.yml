@@ -70,6 +70,10 @@ app:
   email:
     from: ${MAIL_FROM:shubham@acceltancy.in}
     from-name: ${MAIL_FROM_NAME:Brideside CRM}
+  tbs:
+    # The Bride Side (Brideside) pipeline & org for auto-diverted deal copies
+    brideside-pipeline-id: ${TBS_BRIDESIDE_PIPELINE_ID:67}
+    brideside-organization-id: ${TBS_BRIDESIDE_ORGANIZATION_ID:68}
   reports:
     timezone: ${REPORT_TZ:Asia/Kolkata}
     daily:

@@ -166,6 +166,27 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             "GROUP BY d.stage.id, d.stage.name, o.category " +
             "ORDER BY d.stage.id")
     List<Object[]> countLostDealsByStageAndCategory();
+
+    /**
+     * Non-deleted deals in the pipeline for the same person (any deal row, not only auto-diverted).
+     */
+    @Query("SELECT COUNT(d) FROM Deal d WHERE d.pipeline.id = :pipelineId AND d.person.id = :personId "
+            + "AND (d.isDeleted = false OR d.isDeleted IS NULL)")
+    long countNonDeletedInPipelineWithPersonId(
+            @Param("pipelineId") Long pipelineId,
+            @Param("personId") Long personId);
+
+    /**
+     * Non-deleted deals in pipeline whose linked person has the same instagram_id (case-insensitive, trimmed).
+     */
+    @Query(value = "SELECT COUNT(*) FROM deals d INNER JOIN persons p ON d.person_id = p.id " +
+            "WHERE d.pipeline_id = :pipelineId " +
+            "AND (d.is_deleted IS NULL OR d.is_deleted = 0) " +
+            "AND p.instagram_id IS NOT NULL AND TRIM(p.instagram_id) <> '' " +
+            "AND LOWER(TRIM(p.instagram_id)) = LOWER(TRIM(:instagramId))", nativeQuery = true)
+    long countNonDeletedInPipelineWithPersonInstagramId(
+            @Param("pipelineId") Long pipelineId,
+            @Param("instagramId") String instagramId);
 }
 
 

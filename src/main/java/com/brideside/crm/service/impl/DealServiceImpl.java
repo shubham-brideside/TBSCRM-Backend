@@ -40,6 +40,7 @@ import com.brideside.crm.service.LabelService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -64,6 +65,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -98,6 +100,12 @@ public class DealServiceImpl implements DealService {
     private LabelRepository labelRepository;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Value("${app.tbs.brideside-pipeline-id:67}")
+    private Long tbsBridesidePipelineId;
+
+    @Value("${app.tbs.brideside-organization-id:68}")
+    private Long tbsBridesideOrganizationId;
 
     @Override
     public Deal create(DealDtos.CreateRequest request) {
@@ -681,6 +689,8 @@ public class DealServiceImpl implements DealService {
                 && "Qualified".equalsIgnoreCase(savedDeal.getStage().getName())) {
                 createQualifiedStageActivities(savedDeal);
             }
+
+            maybeCreateBridesideDivertedCopy(savedDeal, oldStage, savedDeal.getStage());
         }
         
         syncGoogleCalendarEvent(savedDeal);
@@ -1670,6 +1680,8 @@ public class DealServiceImpl implements DealService {
         } else {
             log.info("Skipping activity creation for deal {} - conditions not met", saved.getId());
         }
+
+        maybeCreateBridesideDivertedCopy(saved, oldStage, stage);
         
         return saved;
     }
@@ -1952,6 +1964,228 @@ public class DealServiceImpl implements DealService {
         } catch (Exception e) {
             return "[]";
         }
+    }
+
+    /**
+     * When a deal leaves Lead In / Qualified for Contact Made or a later stage in a non-Brideside pipeline,
+     * creates one mirrored deal in The Bride Side (TBS) pipeline at Qualified, unless a duplicate already exists.
+     */
+    private void maybeCreateBridesideDivertedCopy(Deal sourceDealAfterSave, Stage oldStage, Stage newStage) {
+        if (tbsBridesidePipelineId == null || tbsBridesideOrganizationId == null) {
+            return;
+        }
+        if (sourceDealAfterSave == null || newStage == null) {
+            return;
+        }
+        if (sourceDealAfterSave.getIsDeleted() != null && sourceDealAfterSave.getIsDeleted()) {
+            return;
+        }
+        Pipeline dealPipeline = sourceDealAfterSave.getPipeline();
+        if (dealPipeline == null || dealPipeline.getId() == null) {
+            return;
+        }
+        if (dealPipeline.getId().equals(tbsBridesidePipelineId)) {
+            return;
+        }
+        if (oldStage == null) {
+            return;
+        }
+        String oldName = oldStage.getName();
+        if (oldName == null) {
+            return;
+        }
+        boolean fromLeadInOrQualified = "Lead In".equalsIgnoreCase(oldName) || "Qualified".equalsIgnoreCase(oldName);
+        if (!fromLeadInOrQualified) {
+            return;
+        }
+        Pipeline newStagePipeline = newStage.getPipeline();
+        if (newStagePipeline == null || newStagePipeline.getId() == null
+            || !newStagePipeline.getId().equals(dealPipeline.getId())) {
+            log.debug("Skipping Brideside auto-divert: new stage pipeline does not match deal pipeline for deal {}",
+                sourceDealAfterSave.getId());
+            return;
+        }
+        if (!isContactMadeOrLaterStage(dealPipeline, newStage)) {
+            return;
+        }
+
+        Pipeline tbsPipeline = pipelineRepository.findById(tbsBridesidePipelineId).orElse(null);
+        if (tbsPipeline == null) {
+            log.warn("Brideside auto-divert: TBS pipeline id {} not found", tbsBridesidePipelineId);
+            return;
+        }
+        Organization tbsOrganization = organizationRepository.findById(tbsBridesideOrganizationId).orElse(null);
+        if (tbsOrganization == null) {
+            log.warn("Brideside auto-divert: TBS organization id {} not found", tbsBridesideOrganizationId);
+            return;
+        }
+
+        if (dealRepository.existsByReferencedDealAndPipeline(sourceDealAfterSave, tbsPipeline)) {
+            log.debug("Brideside auto-divert: deal {} already has a copy in TBS pipeline, skipping",
+                sourceDealAfterSave.getId());
+            return;
+        }
+
+        Long personId = sourceDealAfterSave.getPersonId();
+        if (personId != null) {
+            long dupByPerson = dealRepository.countNonDeletedInPipelineWithPersonId(
+                    tbsBridesidePipelineId, personId);
+            if (dupByPerson > 0) {
+                log.debug("Brideside auto-divert: pipeline {} already has a non-deleted deal for personId {}, "
+                        + "skipping copy for source deal {}",
+                    tbsBridesidePipelineId, personId, sourceDealAfterSave.getId());
+                return;
+            }
+        }
+
+        Person sourcePerson = null;
+        if (personId != null) {
+            sourcePerson = personRepository.findById(personId).orElse(null);
+        }
+        if (sourcePerson == null) {
+            sourcePerson = sourceDealAfterSave.getPerson();
+        }
+        if (sourcePerson != null) {
+            String ig = sourcePerson.getInstagramId();
+            if (ig != null && !ig.trim().isEmpty()) {
+                long dupByIg = dealRepository.countNonDeletedInPipelineWithPersonInstagramId(
+                    tbsBridesidePipelineId, ig.trim());
+                if (dupByIg > 0) {
+                    log.debug("Brideside auto-divert: pipeline {} already has a deal for instagram match, skipping copy for source deal {}",
+                        tbsBridesidePipelineId, sourceDealAfterSave.getId());
+                    return;
+                }
+            }
+        }
+
+        List<Stage> tbsStages = stageRepository.findByPipelineAndActiveTrueOrderByOrderIndexAsc(tbsPipeline);
+        Optional<Stage> qualifiedOnTbs = tbsStages.stream()
+            .filter(s -> "Qualified".equalsIgnoreCase(s.getName()))
+            .findFirst();
+        if (qualifiedOnTbs.isEmpty()) {
+            log.warn("Brideside auto-divert: no Active Qualified stage on TBS pipeline {}", tbsBridesidePipelineId);
+            return;
+        }
+
+        Deal copy = buildBridesideDivertedDeal(sourceDealAfterSave, sourcePerson, tbsPipeline, qualifiedOnTbs.get(), tbsOrganization);
+        Deal savedCopy = dealRepository.save(copy);
+
+        dealStageHistoryService.recordStageEntry(savedCopy, qualifiedOnTbs.get());
+        createQualifiedStageActivities(savedCopy);
+        syncGoogleCalendarEvent(savedCopy);
+        log.info("Brideside auto-divert: created deal {} from source {}", savedCopy.getId(), sourceDealAfterSave.getId());
+    }
+
+    private boolean isContactMadeOrLaterStage(Pipeline pipeline, Stage newStage) {
+        List<Stage> stages = stageRepository.findByPipelineAndActiveTrueOrderByOrderIndexAsc(pipeline);
+        Optional<Stage> contactMade = stages.stream()
+            .filter(s -> "Contact Made".equalsIgnoreCase(s.getName()))
+            .findFirst();
+        if (contactMade.isEmpty()) {
+            log.warn("isContactMadeOrLaterStage: pipeline {} has no Active Contact Made stage", pipeline.getId());
+            return false;
+        }
+        Integer cmOrder = contactMade.get().getOrderIndex();
+        Integer newOrder = newStage.getOrderIndex();
+        if (cmOrder == null || newOrder == null) {
+            return "Contact Made".equalsIgnoreCase(newStage.getName());
+        }
+        return newOrder >= cmOrder;
+    }
+
+    private Deal buildBridesideDivertedDeal(Deal source, Person resolvedPerson, Pipeline tbsPipeline, Stage qualifiedStage,
+                                            Organization tbsOrganization) {
+        Deal deal = new Deal();
+        deal.setName(buildBridesideDivertedDealName(source.getName()));
+        deal.setValue(source.getValue() != null ? source.getValue() : BigDecimal.ZERO);
+        deal.setPerson(resolvedPerson);
+        if (resolvedPerson != null) {
+            String phone = resolvedPerson.getPhone();
+            if (phone != null) {
+                deal.setContactNumber(phone);
+            }
+        }
+        if (deal.getContactNumber() == null && source.getContactNumber() != null) {
+            deal.setContactNumber(source.getContactNumber());
+        }
+        if (deal.getContactNumber() == null) {
+            deal.setContactNumber("");
+        }
+        deal.setPipeline(tbsPipeline);
+        deal.setStage(qualifiedStage);
+        deal.setOrganization(tbsOrganization);
+        User orgOwner = tbsOrganization.getOwner();
+        if (orgOwner != null) {
+            deal.setOwner(orgOwner);
+        }
+        deal.setSource(source.getSource());
+        deal.setDealCategory(source.getDealCategory());
+        deal.setEventType(source.getEventType());
+        deal.setVenue(source.getVenue());
+        deal.setPhoneNumber(source.getPhoneNumber());
+        deal.setCity(source.getCity());
+        deal.setNotes(source.getNotes());
+        deal.setEventDate(source.getEventDate());
+        deal.setEventDates(source.getEventDates());
+        deal.setUserName(source.getUserName() != null ? source.getUserName() : "");
+        deal.setStatus(DealStatus.IN_PROGRESS);
+        deal.setLegacyWon(false);
+        deal.setWonAt(null);
+        deal.setLostAt(null);
+        deal.setContractShared(null);
+        deal.setWhatsappGroupCreated(null);
+        deal.setLostReason(null);
+        deal.setClientBudget(null);
+        deal.setFinalThankYouSent(source.getFinalThankYouSent());
+        deal.setEventDateAsked(source.getEventDateAsked());
+        deal.setContactNumberAsked(source.getContactNumberAsked());
+        deal.setVenueAsked(source.getVenueAsked());
+        if (source.getCommissionAmount() != null) {
+            deal.setCommissionAmount(source.getCommissionAmount());
+        } else if (deal.getSource() != null) {
+            deal.setCommissionAmount(calculateCommission(deal.getValue(), deal.getSource()));
+        } else {
+            deal.setCommissionAmount(BigDecimal.ZERO);
+        }
+        deal.setDealSource(DealSource.DIVERT);
+        deal.setDealSubSource(null);
+        deal.setIsDiverted(Boolean.TRUE);
+        deal.setReenteredViaDirectMessage(Boolean.FALSE);
+        deal.setIsDeleted(Boolean.FALSE);
+        deal.setReferencedDeal(source);
+        Pipeline originalPipeline = getOriginalPipeline(source);
+        if (originalPipeline != null) {
+            deal.setReferencedPipeline(originalPipeline);
+        }
+        Pipeline sourcePipeline = getSourcePipeline(source);
+        if (sourcePipeline != null) {
+            deal.setSourcePipeline(sourcePipeline);
+        }
+        List<Long> pipelineHistory = getPipelineHistory(source);
+        if (source.getPipeline() != null) {
+            Long currentPipelineId = source.getPipeline().getId();
+            if (!pipelineHistory.contains(currentPipelineId)) {
+                pipelineHistory.add(currentPipelineId);
+            }
+        }
+        deal.setPipelineHistory(pipelineHistoryToJson(pipelineHistory));
+        deal.setCreatedBy(CreatedByType.BOT);
+        deal.setCreatedByUserId(null);
+        deal.setCreatedByName(null);
+        deal.setGoogleCalendarEventId(null);
+        deal.setGoogleCalendarEventIds(null);
+        return deal;
+    }
+
+    private static String buildBridesideDivertedDealName(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) {
+            return "(Diverted)";
+        }
+        String base = sourceName.trim();
+        if (base.endsWith(" (Diverted)")) {
+            return base;
+        }
+        return base + " (Diverted)";
     }
 
     @Override
