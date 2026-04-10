@@ -52,6 +52,7 @@ public class DealDtos {
         public String name;
         public BigDecimal value;
         public Long personId;
+        public Long ownerId; // optional: sets deals.owner_id on create/diversion (does not modify persons.owner_id)
         public Long pipelineId;
         public Long stageId;
         public Long sourceId;
