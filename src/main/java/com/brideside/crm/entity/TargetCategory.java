@@ -5,17 +5,20 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
- * Canonical list of categories used by the Target dashboard. The CRM currently
- * works with three business units – Photography, Makeup, and Planning & Decor.
- * This enum centralizes their codes plus a handful of legacy aliases so we can
- * safely reconcile values coming from various tables (deals, organizations, etc).
+ * Canonical list of categories used by the Target dashboard (Photography, Makeup,
+ * Planning, Decor, BTS, plus legacy Planning & Decor). This enum centralizes their
+ * codes plus a handful of legacy aliases so we can safely reconcile values coming
+ * from various tables (deals, organizations, etc).
  */
 public enum TargetCategory {
     PHOTOGRAPHY("Photography", new String[]{"PHOTOGRAPHY", "PHOTO", "PHOTOGRAPHERS"}),
     MAKEUP("Makeup", new String[]{"MAKEUP", "MUA"}),
+    PLANNING("Planning", new String[]{"PLANNING"}),
+    DECOR("Decor", new String[]{"DECOR"}),
+    BTS("BTS", new String[]{"BTS", "BEHIND THE SCENES", "BEHIND_THE_SCENES"}),
     PLANNING_AND_DECOR("Planning & Decor",
             new String[]{"PLANNING_AND_DECOR", "PLANNING & DECOR", "PLANNING AND DECOR",
-                    "PLANNING_DECOR", "PLANNING & DECORATION", "PLANNING AND DECORATION", "DECOR"});
+                    "PLANNING_DECOR", "PLANNING & DECORATION", "PLANNING AND DECORATION"});
 
     private final String label;
     private final String[] aliases;

@@ -1383,6 +1383,9 @@ public class ActivityService {
             switch (code) {
                 case "PHOTOGRAPHY" -> result.add(Organization.OrganizationCategory.PHOTOGRAPHY);
                 case "MAKEUP" -> result.add(Organization.OrganizationCategory.MAKEUP);
+                case "PLANNING" -> result.add(Organization.OrganizationCategory.PLANNING);
+                case "DECOR" -> result.add(Organization.OrganizationCategory.DECOR);
+                case "BTS" -> result.add(Organization.OrganizationCategory.BTS);
                 case "PLANNING_DECOR", "PLANNING_AND_DECOR" ->
                         result.add(Organization.OrganizationCategory.PLANNING_AND_DECOR);
                 default -> {

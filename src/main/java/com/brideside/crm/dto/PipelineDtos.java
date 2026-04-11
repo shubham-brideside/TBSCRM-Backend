@@ -385,6 +385,9 @@ public final class PipelineDtos {
         return java.util.List.of(
                 new CategoryOption("PHOTOGRAPHY", "Photography"),
                 new CategoryOption("MAKEUP", "Makeup"),
+                new CategoryOption("PLANNING", "Planning"),
+                new CategoryOption("DECOR", "Decor"),
+                new CategoryOption("BTS", "BTS"),
                 new CategoryOption("PLANNING_AND_DECOR", "Planning and Decor")
         );
     }

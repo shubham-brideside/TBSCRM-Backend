@@ -29,6 +29,9 @@ public class Organization {
     public enum OrganizationCategory {
         PHOTOGRAPHY("Photography"),
         MAKEUP("Makeup"),
+        PLANNING("Planning"),
+        DECOR("Decor"),
+        BTS("BTS"),
         PLANNING_AND_DECOR("Planning and Decor");
 
         private final String dbValue;
