@@ -86,7 +86,7 @@ public class ActivityDTO {
     @Schema(description = "Organization ID (FK to organizations.id). Preferred for filters and scoping", type = "integer", format = "int64")
     private Long organizationId;
 
-    @Schema(description = "Organization category (e.g. PHOTOGRAPHY, MAKEUP, PLANNING_AND_DECOR). Derived from the linked organization, if present")
+    @Schema(description = "Organization category (e.g. PHOTOGRAPHY, MAKEUP, PLANNING, DECOR, BTS, PLANNING_AND_DECOR). Derived from the linked organization, if present")
     private String organizationCategory;
 
     @Schema(description = "Organization owner user ID. Derived from the linked organization, if present", type = "integer", format = "int64")
@@ -127,7 +127,8 @@ public class ActivityDTO {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private java.time.Instant completedAt;
     
-    @Schema(description = "Service category (PHOTOGRAPHY, MAKEUP, PLANNING_DECOR). Optional/future", allowableValues = {"PHOTOGRAPHY", "MAKEUP", "PLANNING_DECOR"})
+    @Schema(description = "Service category (pipeline/org business unit codes). Optional/future",
+            allowableValues = {"PHOTOGRAPHY", "MAKEUP", "PLANNING", "DECOR", "BTS", "PLANNING_AND_DECOR", "PLANNING_DECOR"})
     private String serviceCategory;
     
     @Schema(description = "Duration in minutes. Optional, for Call tab only", type = "integer")

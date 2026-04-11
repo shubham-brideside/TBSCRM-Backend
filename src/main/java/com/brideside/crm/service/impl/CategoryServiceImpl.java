@@ -169,10 +169,13 @@ public class CategoryServiceImpl implements CategoryService {
         
         // If not found in database, assume it's a category name from PipelineDtos.allCategoryOptions()
         // Map common category codes to names
-        Map<String, String> categoryMap = Map.of(
-                "PHOTOGRAPHY", "Photography",
-                "MAKEUP", "Makeup",
-                "PLANNING_AND_DECOR", "Planning and Decor"
+        Map<String, String> categoryMap = Map.ofEntries(
+                Map.entry("PHOTOGRAPHY", "Photography"),
+                Map.entry("MAKEUP", "Makeup"),
+                Map.entry("PLANNING", "Planning"),
+                Map.entry("DECOR", "Decor"),
+                Map.entry("BTS", "BTS"),
+                Map.entry("PLANNING_AND_DECOR", "Planning and Decor")
         );
         
         if (categoryMap.containsKey(categoryIdentifier.toUpperCase())) {

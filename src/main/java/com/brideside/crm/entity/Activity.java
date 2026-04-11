@@ -118,8 +118,8 @@ public class Activity {
     // Canonical timestamp (optional for testing; can be null)
     private String dateTime; // ISO string (yyyy-MM-dd'T'HH:mm:ss) or agreed format
 
-    // Service category (business service type: Photography, Makeup, Planning & Decor)
-    private String serviceCategory; // PHOTOGRAPHY, MAKEUP, PLANNING_DECOR
+    // Service category (business unit codes: Photography, Makeup, Planning, Decor, BTS, Planning & Decor)
+    private String serviceCategory; // PHOTOGRAPHY, MAKEUP, PLANNING, DECOR, BTS, PLANNING_DECOR, ...
 
     // Duration in minutes (for Call tab)
     private Integer durationMinutes;
