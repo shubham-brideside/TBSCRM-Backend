@@ -108,6 +108,10 @@ public class DealServiceImpl implements DealService {
     @Value("${app.tbs.brideside-organization-id:68}")
     private Long tbsBridesideOrganizationId;
 
+    /** FK for deals.category_id on Brideside auto-diverted copies (default 4). */
+    @Value("${app.tbs.brideside-deal-category-id:4}")
+    private Long tbsBridesideDealCategoryId;
+
     @Override
     public Deal create(DealDtos.CreateRequest request) {
         Deal deal = new Deal();
@@ -2130,7 +2134,10 @@ public class DealServiceImpl implements DealService {
             deal.setOwner(orgOwner);
         }
         deal.setSource(source.getSource());
-        deal.setDealCategory(source.getDealCategory());
+        // deals.category_id — Brideside pipeline copy uses configured category (default 4), not the source deal's category
+        if (tbsBridesideDealCategoryId != null) {
+            deal.setDealCategory(categoryRepository.getReferenceById(tbsBridesideDealCategoryId));
+        }
         deal.setEventType(source.getEventType());
         deal.setVenue(source.getVenue());
         deal.setPhoneNumber(source.getPhoneNumber());
