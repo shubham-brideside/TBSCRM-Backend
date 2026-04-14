@@ -8,6 +8,7 @@ import com.brideside.crm.entity.DealSubSource;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.SalesTarget;
+import com.brideside.crm.entity.TeamMemberHistory;
 import com.brideside.crm.entity.TargetCategory;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
@@ -18,6 +19,7 @@ import com.brideside.crm.entity.Organization;
 import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.SalesTargetRepository;
+import com.brideside.crm.repository.TeamMemberHistoryRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.TargetService;
 import org.springframework.beans.factory.annotation.Value;
@@ -58,6 +60,7 @@ public class TargetServiceImpl implements TargetService {
     private final DealRepository dealRepository;
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
+    private final TeamMemberHistoryRepository teamMemberHistoryRepository;
     private final ZoneId zoneId = ZoneId.systemDefault();
     private static final EnumSet<TargetTimePreset> CATEGORY_PERIOD_PRESETS =
             EnumSet.of(TargetTimePreset.THIS_YEAR, TargetTimePreset.THIS_QUARTER, TargetTimePreset.HALF_YEAR, TargetTimePreset.CUSTOM_RANGE);
@@ -69,11 +72,13 @@ public class TargetServiceImpl implements TargetService {
     public TargetServiceImpl(SalesTargetRepository salesTargetRepository,
                              DealRepository dealRepository,
                              UserRepository userRepository,
-                             OrganizationRepository organizationRepository) {
+                             OrganizationRepository organizationRepository,
+                             TeamMemberHistoryRepository teamMemberHistoryRepository) {
         this.salesTargetRepository = salesTargetRepository;
         this.dealRepository = dealRepository;
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
+        this.teamMemberHistoryRepository = teamMemberHistoryRepository;
     }
 
     @Override
@@ -775,55 +780,15 @@ public class TargetServiceImpl implements TargetService {
                 Comparator.nullsLast(Comparator.naturalOrder())
         ).reversed());
 
-        // Pre-compute active PRESALES users grouped by their SALES manager so
-        // that diversion / deal counts can be mirrored onto Pre‑Sales target
-        // rows across all dashboard tables (main dashboard + category
-        // breakdowns). This keeps Pre‑Sales Achieved / Total Deals aligned
-        // with the diverted deals they help close, similar to the per-user
-        // logic in getUserMonthlyDetail.
-        // Only include PRESALES users related to the current user
-        Map<Long, List<User>> presalesByManagerId = new HashMap<>();
-        if (currentUserRole == Role.RoleName.ADMIN) {
-            // For ADMIN, include all PRESALES users, grouped by their SALES managers
-            List<User> allPresales = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.PRESALES);
-            for (User presalesUser : allPresales) {
-                if (presalesUser.getManager() != null 
-                        && presalesUser.getManager().getId() != null) {
-                    Long managerId = presalesUser.getManager().getId();
-                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(presalesUser);
-                }
-            }
-        } else if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
-            // For CATEGORY_MANAGER, include all PRESALES users under them, grouped by their SALES managers
-            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
-                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
-            for (User user : allActiveSalesAndPresales) {
-                if (user.getRole() != null 
-                        && user.getRole().getName() == Role.RoleName.PRESALES
-                        && isAccessibleForTargets(currentUser, user, currentUserRole)
-                        && user.getManager() != null 
-                        && user.getManager().getId() != null) {
-                    Long managerId = user.getManager().getId();
-                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(user);
-                }
-            }
-        } else if (currentUserRole == Role.RoleName.SALES) {
-            // For SALES users, include their PRESALES team members
-            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
-            List<User> presalesTeam = allSubordinates.stream()
-                    .filter(u -> u.getActive() != null && u.getActive()
-                            && u.getRole() != null 
-                            && u.getRole().getName() == Role.RoleName.PRESALES)
-                    .collect(Collectors.toList());
-            if (!presalesTeam.isEmpty()) {
-                presalesByManagerId.put(currentUserId, presalesTeam);
-            }
-        } else if (currentUserRole == Role.RoleName.PRESALES 
-                && currentUser.getManager() != null 
-                && currentUser.getManager().getId() != null) {
-            // For PRESALES users, only include themselves under their manager
-            presalesByManagerId.put(currentUser.getManager().getId(), List.of(currentUser));
-        }
+        // Current mapping (fallback when historical rows do not exist)
+        Map<Long, List<User>> presalesByManagerId = buildCurrentPresalesByManager(currentUser, currentUserRole, currentUserId);
+
+        // Historical mapping by won date. This keeps past months stable after team changes.
+        Map<Long, List<TeamMemberHistory>> historyByManagerId = buildHistoryByManagerForRange(
+                new ArrayList<>(finalAccessibleUserIdsForDeals),
+                dealsStart,
+                dealsEnd
+        );
 
         Map<YearMonth, Map<TargetCategory, Map<Long, DealAggregate>>> achievedMap = new HashMap<>();
         // For PRESALES users we also need deal aggregates that are independent
@@ -899,7 +864,13 @@ public class TargetServiceImpl implements TargetService {
                 }
 
                 // Mirror onto all PRESALES users reporting to this SALES owner.
-                List<User> presalesTeam = presalesByManagerId.get(ownerId);
+                LocalDateTime wonReference = getDealWonReference(deal);
+                List<User> presalesTeam = resolvePresalesForDeal(
+                        ownerId,
+                        wonReference,
+                        historyByManagerId,
+                        presalesByManagerId
+                );
                 if (presalesTeam != null && !presalesTeam.isEmpty()) {
                     for (User presalesUser : presalesTeam) {
                         Long presalesId = presalesUser.getId();
@@ -945,6 +916,106 @@ public class TargetServiceImpl implements TargetService {
         computation.dealSummaries = dealSummaries;
         computation.categoryFilter = categoryFilter;
         return computation;
+    }
+
+    private Map<Long, List<User>> buildCurrentPresalesByManager(User currentUser,
+                                                                 Role.RoleName currentUserRole,
+                                                                 Long currentUserId) {
+        Map<Long, List<User>> presalesByManagerId = new HashMap<>();
+        if (currentUserRole == Role.RoleName.ADMIN) {
+            List<User> allPresales = userRepository.findByRole_NameAndActiveTrue(Role.RoleName.PRESALES);
+            for (User presalesUser : allPresales) {
+                if (presalesUser.getManager() != null && presalesUser.getManager().getId() != null) {
+                    Long managerId = presalesUser.getManager().getId();
+                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(presalesUser);
+                }
+            }
+            return presalesByManagerId;
+        }
+
+        if (currentUserRole == Role.RoleName.CATEGORY_MANAGER) {
+            List<User> allActiveSalesAndPresales = userRepository.findByRole_NameInAndActiveTrue(
+                    Arrays.asList(Role.RoleName.SALES, Role.RoleName.PRESALES));
+            for (User user : allActiveSalesAndPresales) {
+                if (user.getRole() != null
+                        && user.getRole().getName() == Role.RoleName.PRESALES
+                        && isAccessibleForTargets(currentUser, user, currentUserRole)
+                        && user.getManager() != null
+                        && user.getManager().getId() != null) {
+                    Long managerId = user.getManager().getId();
+                    presalesByManagerId.computeIfAbsent(managerId, k -> new ArrayList<>()).add(user);
+                }
+            }
+            return presalesByManagerId;
+        }
+
+        if (currentUserRole == Role.RoleName.SALES) {
+            List<User> allSubordinates = userRepository.findByManagerId(currentUserId);
+            List<User> presalesTeam = allSubordinates.stream()
+                    .filter(u -> u.getActive() != null && u.getActive()
+                            && u.getRole() != null
+                            && u.getRole().getName() == Role.RoleName.PRESALES)
+                    .collect(Collectors.toList());
+            if (!presalesTeam.isEmpty()) {
+                presalesByManagerId.put(currentUserId, presalesTeam);
+            }
+            return presalesByManagerId;
+        }
+
+        if (currentUserRole == Role.RoleName.PRESALES
+                && currentUser != null
+                && currentUser.getManager() != null
+                && currentUser.getManager().getId() != null) {
+            presalesByManagerId.put(currentUser.getManager().getId(), List.of(currentUser));
+        }
+        return presalesByManagerId;
+    }
+
+    private Map<Long, List<TeamMemberHistory>> buildHistoryByManagerForRange(List<Long> managerIds,
+                                                                              LocalDateTime rangeStart,
+                                                                              LocalDateTime rangeEnd) {
+        if (managerIds == null || managerIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<TeamMemberHistory> rows = teamMemberHistoryRepository.findOverlappingByManagerIds(managerIds, rangeStart, rangeEnd);
+        if (rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return rows.stream()
+                .filter(row -> row.getMember() != null
+                        && row.getMember().getId() != null
+                        && row.getMember().getRole() != null
+                        && row.getMember().getRole().getName() == Role.RoleName.PRESALES)
+                .collect(Collectors.groupingBy(row -> row.getManager().getId()));
+    }
+
+    private List<User> resolvePresalesForDeal(Long managerId,
+                                              LocalDateTime wonReference,
+                                              Map<Long, List<TeamMemberHistory>> historyByManagerId,
+                                              Map<Long, List<User>> fallbackPresalesByManagerId) {
+        if (managerId == null) {
+            return Collections.emptyList();
+        }
+        List<TeamMemberHistory> rows = historyByManagerId.get(managerId);
+        if (rows != null && wonReference != null) {
+            List<User> historicalMembers = rows.stream()
+                    .filter(row -> !row.getEffectiveFrom().isAfter(wonReference)
+                            && (row.getEffectiveTo() == null || !row.getEffectiveTo().isBefore(wonReference)))
+                    .map(TeamMemberHistory::getMember)
+                    .filter(user -> user != null && user.getId() != null)
+                    .collect(Collectors.toMap(
+                            User::getId,
+                            user -> user,
+                            (left, right) -> left
+                    ))
+                    .values()
+                    .stream()
+                    .collect(Collectors.toList());
+            if (!historicalMembers.isEmpty()) {
+                return historicalMembers;
+            }
+        }
+        return fallbackPresalesByManagerId.getOrDefault(managerId, Collections.emptyList());
     }
 
     @Override
@@ -1964,9 +2035,8 @@ public class TargetServiceImpl implements TargetService {
         }
 
         // For PRESALES users, we attribute deals via their linked SALES manager.
-        // This ensures that the Pre‑Sales detail page can show a realistic Won
-        // Deals table (Direct, Divert, Instagram, Reference, Planner, etc.)
-        // even though the underlying deals are still owned by the SALES user.
+        // Membership is resolved by won-date using team_member_history so that
+        // old months stay correct after team member changes.
         User presalesManager = null;
         if (userRole == Role.RoleName.PRESALES
                 && user.getManager() != null
@@ -2028,6 +2098,14 @@ public class TargetServiceImpl implements TargetService {
         LocalDateTime dealsStart = startDate.atStartOfDay();
         LocalDateTime dealsEnd = endDate.plusDays(1).atStartOfDay();
         List<Deal> deals = dealRepository.findWonDealsUpdatedBetween(dealsStart, dealsEnd);
+        Map<Long, List<TeamMemberHistory>> presalesHistoryByManager = Collections.emptyMap();
+        if (userRole == Role.RoleName.PRESALES && presalesManager != null && presalesManager.getId() != null) {
+            presalesHistoryByManager = buildHistoryByManagerForRange(
+                    List.of(presalesManager.getId()),
+                    dealsStart,
+                    dealsEnd
+            );
+        }
 
         // Per-user won deals list for the detail page (Won Deals table)
         List<TargetDtos.DealSummary> userDeals = new ArrayList<>();
@@ -2043,8 +2121,20 @@ public class TargetServiceImpl implements TargetService {
             if (userRole == Role.RoleName.SALES) {
                 include = owner.getId().equals(userId);
             } else {
-                // PRESALES: include deals under their linked SALES manager
-                include = presalesManager != null && owner.getId().equals(presalesManager.getId());
+                // PRESALES: include only when this pre-sales user was mapped to
+                // the manager at the time the deal was won.
+                if (presalesManager == null || !owner.getId().equals(presalesManager.getId())) {
+                    include = false;
+                } else {
+                    LocalDateTime wonReference = getDealWonReference(deal);
+                    List<User> mappedPresales = resolvePresalesForDeal(
+                            presalesManager.getId(),
+                            wonReference,
+                            presalesHistoryByManager,
+                            Collections.emptyMap()
+                    );
+                    include = mappedPresales.stream().anyMatch(p -> p != null && Objects.equals(p.getId(), userId));
+                }
             }
             if (!include) {
                 continue;

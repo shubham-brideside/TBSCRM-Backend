@@ -4,10 +4,12 @@ import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Team;
+import com.brideside.crm.entity.TeamMemberHistory;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.PipelineRepository;
+import com.brideside.crm.repository.TeamMemberHistoryRepository;
 import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.TeamService;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -29,16 +32,19 @@ public class TeamServiceImpl implements TeamService {
     private final TeamRepository teamRepository;
     private final UserRepository userRepository;
     private final PipelineRepository pipelineRepository;
+    private final TeamMemberHistoryRepository teamMemberHistoryRepository;
     
     @PersistenceContext
     private EntityManager entityManager;
 
     public TeamServiceImpl(TeamRepository teamRepository,
                            UserRepository userRepository,
-                           PipelineRepository pipelineRepository) {
+                           PipelineRepository pipelineRepository,
+                           TeamMemberHistoryRepository teamMemberHistoryRepository) {
         this.teamRepository = teamRepository;
         this.userRepository = userRepository;
         this.pipelineRepository = pipelineRepository;
+        this.teamMemberHistoryRepository = teamMemberHistoryRepository;
     }
 
     @Override
@@ -55,7 +61,9 @@ public class TeamServiceImpl implements TeamService {
         team.setManager(resolveManager(request.getManagerId()));
         team.setMembers(resolveMembers(request.getMemberIds(), request.getManagerId()));
         ensureManagerAsMember(team);
-        return TeamDtos.toResponse(teamRepository.save(team));
+        Team savedTeam = teamRepository.save(team);
+        syncTeamMemberHistory(savedTeam, null, Set.of(), java.time.LocalDateTime.now());
+        return TeamDtos.toResponse(savedTeam);
     }
 
     @Override
@@ -76,6 +84,8 @@ public class TeamServiceImpl implements TeamService {
         Team team = request.getMemberIds() != null 
                 ? getOrThrowWithMembers(id) 
                 : getOrThrow(id);
+        Long previousManagerId = team.getManager() != null ? team.getManager().getId() : null;
+        Set<Long> previousPresalesMemberIds = extractPresalesMemberIds(team);
         // Track effective manager id during this update so we can exclude it from member validation
         Long effectiveManagerId = team.getManager() != null ? team.getManager().getId() : null;
 
@@ -110,12 +120,15 @@ public class TeamServiceImpl implements TeamService {
         }
         // Business rule: manager must always be a member (added if not already present)
         ensureManagerAsMember(team);
-        return TeamDtos.toResponse(teamRepository.save(team));
+        Team savedTeam = teamRepository.save(team);
+        syncTeamMemberHistory(savedTeam, previousManagerId, previousPresalesMemberIds, java.time.LocalDateTime.now());
+        return TeamDtos.toResponse(savedTeam);
     }
 
     @Override
     public void delete(Long id) {
-        Team team = getOrThrow(id);
+        Team team = getOrThrowWithMembers(id);
+        closeActiveHistory(team.getId(), java.time.LocalDateTime.now());
         // Detach this team from any pipelines that currently reference it
         List<Pipeline> pipelines = pipelineRepository.findByTeam(team);
         if (!pipelines.isEmpty()) {
@@ -246,6 +259,88 @@ public class TeamServiceImpl implements TeamService {
             team.setMembers(new HashSet<>());
         }
         team.getMembers().add(team.getManager());
+    }
+
+    private Set<Long> extractPresalesMemberIds(Team team) {
+        if (team == null || team.getMembers() == null || team.getMembers().isEmpty()) {
+            return Set.of();
+        }
+        return team.getMembers().stream()
+                .filter(member -> member != null
+                        && member.getId() != null
+                        && member.getRole() != null
+                        && member.getRole().getName() == Role.RoleName.PRESALES)
+                .map(User::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private void syncTeamMemberHistory(Team team,
+                                       Long previousManagerId,
+                                       Set<Long> previousPresalesMemberIds,
+                                       java.time.LocalDateTime now) {
+        if (team == null || team.getId() == null) {
+            return;
+        }
+
+        Long currentManagerId = team.getManager() != null ? team.getManager().getId() : null;
+        Set<Long> currentPresalesMemberIds = extractPresalesMemberIds(team);
+
+        if (currentManagerId == null) {
+            closeActiveHistory(team.getId(), now);
+            return;
+        }
+
+        if (previousManagerId != null && !previousManagerId.equals(currentManagerId)) {
+            closeActiveHistory(team.getId(), now);
+        } else {
+            List<TeamMemberHistory> activeRows = teamMemberHistoryRepository.findByTeam_IdAndEffectiveToIsNull(team.getId());
+            for (TeamMemberHistory row : activeRows) {
+                if (row.getMember() == null || row.getMember().getId() == null) {
+                    continue;
+                }
+                if (!currentPresalesMemberIds.contains(row.getMember().getId())) {
+                    row.setEffectiveTo(now);
+                }
+            }
+            if (!activeRows.isEmpty()) {
+                teamMemberHistoryRepository.saveAll(activeRows);
+            }
+        }
+
+        List<TeamMemberHistory> activeRows = teamMemberHistoryRepository.findByTeam_IdAndEffectiveToIsNull(team.getId());
+        Set<Long> activeMemberIds = activeRows.stream()
+                .map(TeamMemberHistory::getMember)
+                .filter(member -> member != null && member.getId() != null)
+                .map(User::getId)
+                .collect(Collectors.toSet());
+
+        for (Long memberId : currentPresalesMemberIds) {
+            boolean existedBefore = previousPresalesMemberIds.contains(memberId);
+            boolean activeNow = activeMemberIds.contains(memberId);
+            if (activeNow || (existedBefore && previousManagerId != null && previousManagerId.equals(currentManagerId))) {
+                continue;
+            }
+            User member = userRepository.findById(memberId)
+                    .orElseThrow(() -> new BadRequestException("Team member not found with id " + memberId));
+            TeamMemberHistory history = new TeamMemberHistory();
+            history.setTeam(team);
+            history.setManager(team.getManager());
+            history.setMember(member);
+            history.setEffectiveFrom(now);
+            history.setEffectiveTo(null);
+            teamMemberHistoryRepository.save(history);
+        }
+    }
+
+    private void closeActiveHistory(Long teamId, java.time.LocalDateTime now) {
+        List<TeamMemberHistory> activeRows = teamMemberHistoryRepository.findByTeam_IdAndEffectiveToIsNull(teamId);
+        if (activeRows.isEmpty()) {
+            return;
+        }
+        for (TeamMemberHistory row : activeRows) {
+            row.setEffectiveTo(now);
+        }
+        teamMemberHistoryRepository.saveAll(activeRows);
     }
 }
 
