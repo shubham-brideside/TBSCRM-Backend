@@ -102,10 +102,10 @@ public class DealServiceImpl implements DealService {
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${app.tbs.brideside-pipeline-id:67}")
+    @Value("${app.tbs.brideside-pipeline-id:105}")
     private Long tbsBridesidePipelineId;
 
-    @Value("${app.tbs.brideside-organization-id:68}")
+    @Value("${app.tbs.brideside-organization-id:109}")
     private Long tbsBridesideOrganizationId;
 
     /** FK for deals.category_id on Brideside auto-diverted copies (default 4). */
