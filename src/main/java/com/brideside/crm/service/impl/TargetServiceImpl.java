@@ -1011,9 +1011,10 @@ public class TargetServiceImpl implements TargetService {
                     .values()
                     .stream()
                     .collect(Collectors.toList());
-            if (!historicalMembers.isEmpty()) {
-                return historicalMembers;
-            }
+            // If we have historical team rows for this manager, treat them as source of truth
+            // (even when no member matches this won date). This avoids leaking current team
+            // members into past months and keeps dashboard attribution aligned with detail view.
+            return historicalMembers;
         }
         return fallbackPresalesByManagerId.getOrDefault(managerId, Collections.emptyList());
     }
