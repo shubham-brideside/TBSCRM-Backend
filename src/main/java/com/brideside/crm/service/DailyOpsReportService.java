@@ -79,29 +79,33 @@ public class DailyOpsReportService {
         sb.append(formatTable(List.of("created_by_name", "deals_created"), queryDealsCreatedByName(start, end)))
                 .append("\n\n");
 
-        sb.append("3) Deals WON / LOST (per account)\n");
+        sb.append("4) Deals diverted by user (diverted_by_name)\n");
+        sb.append(formatTable(List.of("diverted_by_name", "deals_diverted"), queryDealsDivertedByName(start, end)))
+                .append("\n\n");
+
+        sb.append("5) Deals WON / LOST (per account)\n");
         sb.append(formatOrgMultiTable(queryWonLostPerOrg(start, end),
                 List.of("won_count", "lost_count"))).append("\n\n");
 
-        sb.append("4) Calls done by sales reps (count + minutes)\n");
+        sb.append("6) Calls done by sales reps (count + minutes)\n");
         sb.append(formatUserCallsTable(queryCallsPerRep(start, end))).append("\n\n");
 
-        sb.append("5) Meetings completed (per organization + user)\n");
+        sb.append("7) Meetings completed (per organization + user)\n");
         sb.append(formatTable(
                 List.of("organization_name", "user_name", "meetings_completed"),
                 queryMeetingsCompletedPerOrg(start, end))).append("\n\n");
 
-        sb.append("6) City wise distribution of leads coming in\n");
+        sb.append("8) City wise distribution of leads coming in\n");
         sb.append(formatCityTable(queryCityDistribution(start, end))).append("\n\n");
 
-        sb.append("7) Deals moved from Qualified to Contact Made (per account)\n");
+        sb.append("9) Deals moved from Qualified to Contact Made (per account)\n");
         sb.append(formatOrgTable(queryMovedQualifiedToContactMadePerOrg(start, end), "moved_qualified_to_contact_made"))
                 .append("\n\n");
 
-        sb.append("8) Deals in Qualified (IN_PROGRESS) rotting for 2-3 days (per account)\n");
+        sb.append("10) Deals in Qualified (IN_PROGRESS) rotting for 2-3 days (per account)\n");
         sb.append(formatOrgTable(queryQualifiedRotting2to3DaysPerOrg(end), "rotting_2_to_3_days")).append("\n");
 
-        sb.append("\n9) Deals moved to ").append(STAGE_MEETING_SCHEDULED).append(" (by org + user)\n");
+        sb.append("\n11) Deals moved to ").append(STAGE_MEETING_SCHEDULED).append(" (by org + user)\n");
         sb.append(formatTable(
                 List.of("organization_name", "deals_moved"),
                 queryMovedToStageByOrg(start, end, STAGE_MEETING_SCHEDULED)
@@ -112,7 +116,7 @@ public class DailyOpsReportService {
                 queryMovedToStageDetails(start, end, STAGE_MEETING_SCHEDULED)
         )).append("\n\n");
 
-        sb.append("10) Deals moved to ").append(STAGE_CONTRACT_SHARED).append(" (by org + user)\n");
+        sb.append("12) Deals moved to ").append(STAGE_CONTRACT_SHARED).append(" (by org + user)\n");
         sb.append(formatTable(
                 List.of("organization_name", "deals_moved"),
                 queryMovedToStageByOrg(start, end, STAGE_CONTRACT_SHARED)
@@ -130,6 +134,7 @@ public class DailyOpsReportService {
         List<Map<String, Object>> newDeals = queryNewDealsPerOrg(start, end);
         List<Map<String, Object>> botVsManual = queryBotVsManualPerOrg(start, end);
         List<Map<String, Object>> creators = queryDealsCreatedByName(start, end);
+        List<Map<String, Object>> divertedBy = queryDealsDivertedByName(start, end);
         List<Map<String, Object>> wonLost = queryWonLostPerOrg(start, end);
         List<Map<String, Object>> calls = queryCallsPerRep(start, end);
         List<Map<String, Object>> meetingsCompleted = queryMeetingsCompletedPerOrg(start, end);
@@ -151,6 +156,7 @@ public class DailyOpsReportService {
         long totalMeetingsCompleted = sumLong(meetingsCompleted, "meetings_completed");
         long totalMeetingScheduled = queryTotalDealsMovedToStage(start, end, STAGE_MEETING_SCHEDULED);
         long totalContractShared = queryTotalDealsMovedToStage(start, end, STAGE_CONTRACT_SHARED);
+        long totalDivertedByUser = sumLong(divertedBy, "deals_diverted");
 
         String content = ""
                 + sectionKpis(totalNewDeals, totalBotDeals, totalManual, totalWon, totalLost, totalCalls, totalCallMinutes, totalMeetingsCompleted)
@@ -169,55 +175,62 @@ public class DailyOpsReportService {
                         hideZeroRows,
                         1000))
                 + section("3) Deals created by user (created_by_name)",
-                "Counts by created_by_name (previous day only)",
+                "USER-created deals only — counts by created_by_name (previous day only)",
                 htmlTable(creators,
                         List.of("created_by_name", "deals_created"),
                         List.of("deals_created"),
                         true,
                         maxRowsPerTable))
-                + section("3) Deals WON / LOST per account",
+                + section("4) Deals diverted by user (diverted_by_name)",
+                "Manual pipeline diversions — Total: " + fmt(totalDivertedByUser),
+                htmlTable(divertedBy,
+                        List.of("diverted_by_name", "deals_diverted"),
+                        List.of("deals_diverted"),
+                        true,
+                        maxRowsPerTable))
+                + section("5) Deals WON / LOST per account",
                 "Won: " + fmt(totalWon) + " • Lost: " + fmt(totalLost),
                 htmlTable(wonLost,
                         List.of("organization_id", "organization_name", "won_count", "lost_count"),
                         List.of("won_count", "lost_count"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("4) Calls done by sales reps",
+                + section("6) Calls done by sales reps",
                 "Calls: " + fmt(totalCalls) + " • Minutes: " + fmt(totalCallMinutes),
                 htmlTable(calls,
                         List.of("user_id", "user_name", "role_name", "calls_done", "total_call_minutes"),
                         List.of("calls_done", "total_call_minutes"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("5) Meetings completed (per organization + user)",
+                + section("7) Meetings completed (per organization + user)",
                 "Total: " + fmt(totalMeetingsCompleted),
                 htmlTable(meetingsCompleted,
                         List.of("organization_name", "user_name", "meetings_completed"),
                         List.of("meetings_completed"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("6) City-wise distribution of leads",
+                + section("8) City-wise distribution of leads",
                 "Total new deals: " + fmt(totalNewDeals),
                 htmlTable(cities,
                         List.of("city", "deals_created"),
                         List.of("deals_created"),
                         true,
                         maxRowsPerTable))
-                + section("7) Deals moved Qualified → Contact Made (per account)",
+                + section("9) Deals moved Qualified → Contact Made (per account)",
                 "Window: previous day only",
                 htmlTable(moved,
                         List.of("organization_id", "organization_name", "moved_qualified_to_contact_made"),
                         List.of("moved_qualified_to_contact_made"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("8) Qualified rotting (IN_PROGRESS) 2–3 days (per account)",
+                + section("10) Qualified rotting (IN_PROGRESS) 2–3 days (per account)",
                 "As-of: end of previous day",
                 htmlTable(rotting,
                         List.of("organization_id", "organization_name", "rotting_2_to_3_days"),
                         List.of("rotting_2_to_3_days"),
                         hideZeroRows,
                         maxRowsPerTable))
-                + section("9) Deals moved to " + STAGE_MEETING_SCHEDULED,
+                + section("11) Deals moved to " + STAGE_MEETING_SCHEDULED,
                 "Total deals moved: " + fmt(totalMeetingScheduled),
                 "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
                         + htmlTable(meetingSchedSummary,
@@ -231,7 +244,7 @@ public class DailyOpsReportService {
                         List.of("deal_value"),
                         true,
                         maxRowsPerTable))
-                + section("10) Deals moved to " + STAGE_CONTRACT_SHARED,
+                + section("12) Deals moved to " + STAGE_CONTRACT_SHARED,
                 "Total deals moved: " + fmt(totalContractShared),
                 "<div style=\"color:#111827;font-size:12px;font-weight:800;margin:4px 0 8px 0;\">By organization</div>"
                         + htmlTable(contractSharedSummary,
@@ -305,9 +318,26 @@ public class DailyOpsReportService {
                   COUNT(*) AS deals_created
                 FROM deals d
                 WHERE (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                  AND d.created_by = 'USER'
+                  AND (d.diverted_by_user_id IS NULL)
                   AND d.created_at >= ? AND d.created_at < ?
                 GROUP BY created_by_name
                 ORDER BY deals_created DESC, created_by_name ASC
+                """;
+        return jdbcTemplate.queryForList(sql, start, end);
+    }
+
+    private List<Map<String, Object>> queryDealsDivertedByName(LocalDateTime start, LocalDateTime end) {
+        String sql = """
+                SELECT
+                  COALESCE(NULLIF(TRIM(d.diverted_by_name), ''), '(unknown)') AS diverted_by_name,
+                  COUNT(*) AS deals_diverted
+                FROM deals d
+                WHERE (d.is_deleted = 0 OR d.is_deleted IS NULL)
+                  AND d.diverted_by_user_id IS NOT NULL
+                  AND d.created_at >= ? AND d.created_at < ?
+                GROUP BY diverted_by_name
+                ORDER BY deals_diverted DESC, diverted_by_name ASC
                 """;
         return jdbcTemplate.queryForList(sql, start, end);
     }
@@ -366,11 +396,12 @@ public class DailyOpsReportService {
                     o.name AS organization_name,
                     COALESCE(SUM(CASE
                       WHEN d.id IS NOT NULL
-                       AND TRIM(UPPER(COALESCE(d.created_by_name,''))) = 'BOT'
+                       AND d.created_by = 'BOT'
+                       AND d.diverted_by_user_id IS NULL
                       THEN 1 ELSE 0 END), 0) AS bot_deals,
                     COALESCE(SUM(CASE
                       WHEN d.id IS NOT NULL
-                       AND TRIM(UPPER(COALESCE(d.created_by_name,''))) <> 'BOT'
+                       AND (d.created_by = 'USER' OR d.diverted_by_user_id IS NOT NULL)
                       THEN 1 ELSE 0 END), 0) AS manual_deals
                   FROM organizations o
                   LEFT JOIN deals d
@@ -385,10 +416,12 @@ public class DailyOpsReportService {
                     0 AS organization_id,
                     '(no organization)' AS organization_name,
                     COALESCE(SUM(CASE
-                      WHEN TRIM(UPPER(COALESCE(d2.created_by_name,''))) = 'BOT'
+                      WHEN d2.created_by = 'BOT'
+                       AND d2.diverted_by_user_id IS NULL
                       THEN 1 ELSE 0 END), 0) AS bot_deals,
                     COALESCE(SUM(CASE
-                      WHEN TRIM(UPPER(COALESCE(d2.created_by_name,''))) <> 'BOT'
+                      WHEN d2.created_by = 'USER'
+                       OR d2.diverted_by_user_id IS NOT NULL
                       THEN 1 ELSE 0 END), 0) AS manual_deals
                   FROM deals d2
                   LEFT JOIN organizations o2 ON o2.id = d2.organization_id

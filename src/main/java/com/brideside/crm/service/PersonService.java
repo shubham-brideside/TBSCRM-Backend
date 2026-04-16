@@ -321,6 +321,8 @@ public class PersonService {
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();
+        r.divertedByUserId = d.getDivertedByUserId();
+        r.divertedByName = d.getDivertedByName();
         return r;
     }
 

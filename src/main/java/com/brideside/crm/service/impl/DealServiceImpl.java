@@ -117,9 +117,8 @@ public class DealServiceImpl implements DealService {
         Deal deal = new Deal();
         deal.setName(request.name);
         
-        // Don't save deal value when creating a diverted deal
-        boolean isDivertedDeal = request.label != null && 
-            DealLabel.fromString(request.label) == DealLabel.DIVERT;
+        // Manual diversion: frontend may send referencedDealId / source "Divert" / custom labelIds without legacy `label` string.
+        boolean isDivertedDeal = isManualDiversionCreate(request);
         
         if (isDivertedDeal) {
             deal.setValue(BigDecimal.ZERO); // Set to zero for diverted deals
@@ -353,44 +352,48 @@ public class DealServiceImpl implements DealService {
             // If source is cleared, also clear subSource
             deal.setDealSubSource(null);
         }
-        
-        // Handle createdBy fields
-        if (request.createdBy != null) {
-            deal.setCreatedBy(request.createdBy);
-        } else {
-            // Default to USER if not specified
-            deal.setCreatedBy(CreatedByType.USER);
+
+        if (isDivertedDeal) {
+            deal.setIsDiverted(Boolean.TRUE);
         }
         
-        // If created by USER, get user info from authentication context or request
-        if (deal.getCreatedBy() == CreatedByType.USER) {
-            User user = null;
-            
-            // First, try to get from request if provided
-            if (request.createdByUserId != null) {
-                user = userRepository.findById(request.createdByUserId).orElse(null);
-            }
-            
-            // If not in request, try to get from authentication context
-            if (user == null) {
-                Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-                if (authentication != null && authentication.getPrincipal() instanceof UserDetails) {
-                    String email = ((UserDetails) authentication.getPrincipal()).getUsername();
-                    user = userRepository.findByEmail(email).orElse(null);
-                }
-            }
-            
-            // Set user info if found
-            if (user != null) {
-                deal.setCreatedByUserId(user.getId());
-                deal.setCreatedByName(user.getFirstName() + " " + user.getLastName());
-            } else {
-                log.warn("Could not determine user for USER-created deal. createdByUserId and createdByName will be null.");
-            }
-        } else if (deal.getCreatedBy() == CreatedByType.BOT) {
-            // For bot-created deals, set createdByUserId to null
+        // Manual diversion: diverting user on diverted_by_* only; created_by is USER (no duplicate snapshot on created_by_user_id).
+        if (isDivertedDeal) {
+            deal.setCreatedBy(CreatedByType.USER);
             deal.setCreatedByUserId(null);
             deal.setCreatedByName(null);
+            User diverting = resolveActingUser(request.createdByUserId);
+            if (diverting != null) {
+                deal.setDivertedByUserId(diverting.getId());
+                deal.setDivertedByName(diverting.getFirstName() + " " + diverting.getLastName());
+            } else {
+                log.warn("Could not determine user for diverted deal. divertedByUserId and divertedByName will be null.");
+            }
+        } else {
+            // Handle createdBy fields
+            if (request.createdBy != null) {
+                deal.setCreatedBy(request.createdBy);
+            } else {
+                // Default to USER if not specified
+                deal.setCreatedBy(CreatedByType.USER);
+            }
+
+            // If created by USER, get user info from authentication context or request
+            if (deal.getCreatedBy() == CreatedByType.USER) {
+                User user = resolveActingUser(request.createdByUserId);
+
+                // Set user info if found
+                if (user != null) {
+                    deal.setCreatedByUserId(user.getId());
+                    deal.setCreatedByName(user.getFirstName() + " " + user.getLastName());
+                } else {
+                    log.warn("Could not determine user for USER-created deal. createdByUserId and createdByName will be null.");
+                }
+            } else if (deal.getCreatedBy() == CreatedByType.BOT) {
+                // For bot-created deals, set createdByUserId to null
+                deal.setCreatedByUserId(null);
+                deal.setCreatedByName(null);
+            }
         }
         
         Deal savedDeal = dealRepository.save(deal);
@@ -2190,9 +2193,61 @@ public class DealServiceImpl implements DealService {
         deal.setCreatedBy(CreatedByType.BOT);
         deal.setCreatedByUserId(null);
         deal.setCreatedByName(null);
+        deal.setDivertedByUserId(null);
+        deal.setDivertedByName(null);
         deal.setGoogleCalendarEventId(null);
         deal.setGoogleCalendarEventIds(null);
         return deal;
+    }
+
+    /**
+     * True when this create request is a manual pipeline diversion. Clients may omit the legacy {@code label}
+     * string and instead send {@code referencedDealId}, {@code source} Divert, and/or a custom "Divert" label id.
+     */
+    private boolean isManualDiversionCreate(DealDtos.CreateRequest request) {
+        if (request.referencedDealId != null) {
+            return true;
+        }
+        if (request.label != null && DealLabel.fromString(request.label) == DealLabel.DIVERT) {
+            return true;
+        }
+        if (request.source != null && !request.source.trim().isEmpty()) {
+            DealSource ds = DealSource.fromString(request.source);
+            if (ds == DealSource.DIVERT) {
+                return true;
+            }
+        }
+        List<Long> labelIdList = request.labelIds != null && !request.labelIds.isEmpty()
+                ? request.labelIds
+                : (request.labelId != null ? List.of(request.labelId) : null);
+        if (labelIdList != null) {
+            for (Long lid : labelIdList) {
+                com.brideside.crm.entity.Label lb = labelRepository.findById(lid).orElse(null);
+                if (lb != null && !Boolean.TRUE.equals(lb.getIsDeleted())
+                        && DealLabel.fromString(lb.getCode()) == DealLabel.DIVERT) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Resolves the acting user from {@code createdByUserId} on the request, else the authenticated principal.
+     */
+    private User resolveActingUser(Long requestUserId) {
+        User user = null;
+        if (requestUserId != null) {
+            user = userRepository.findById(requestUserId).orElse(null);
+        }
+        if (user == null) {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof UserDetails) {
+                String email = ((UserDetails) authentication.getPrincipal()).getUsername();
+                user = userRepository.findByEmail(email).orElse(null);
+            }
+        }
+        return user;
     }
 
     private static String buildBridesideDivertedDealName(String sourceName) {

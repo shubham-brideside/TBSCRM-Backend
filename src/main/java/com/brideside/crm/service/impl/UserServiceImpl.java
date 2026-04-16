@@ -414,6 +414,13 @@ public class UserServiceImpl implements UserService {
             dealRepository.save(deal);
         });
 
+        // Clear divertedByUser references (diverted_by_user_id FK)
+        dealRepository.findByDivertedByUserId(id).forEach(deal -> {
+            deal.setDivertedByUserId(null);
+            deal.setDivertedByUser(null);
+            dealRepository.save(deal);
+        });
+
         // Explicitly flush to ensure all updates and deletes are persisted before user deletion
         entityManager.flush();
 

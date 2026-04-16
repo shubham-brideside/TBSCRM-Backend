@@ -143,6 +143,8 @@ public class DealEditRequestController {
         r.createdBy = d.getCreatedBy();
         r.createdByUserId = d.getCreatedByUserId();
         r.createdByName = d.getCreatedByName();
+        r.divertedByUserId = d.getDivertedByUserId();
+        r.divertedByName = d.getDivertedByName();
         if (d.getOwner() != null) {
             r.ownerId = d.getOwner().getId();
             r.ownerDisplayName = d.getOwner().getDisplayName();

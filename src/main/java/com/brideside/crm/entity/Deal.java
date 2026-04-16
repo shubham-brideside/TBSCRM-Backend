@@ -230,6 +230,16 @@ public class Deal {
     @JoinColumn(name = "created_by_user_id", insertable = false, updatable = false)
     private User createdByUser;
 
+    @Column(name = "diverted_by_user_id")
+    private Long divertedByUserId;
+
+    @Column(name = "diverted_by_name", length = 255)
+    private String divertedByName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "diverted_by_user_id", insertable = false, updatable = false)
+    private User divertedByUser;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -355,6 +365,15 @@ public class Deal {
 
     public User getCreatedByUser() { return createdByUser; }
     public void setCreatedByUser(User createdByUser) { this.createdByUser = createdByUser; }
+
+    public Long getDivertedByUserId() { return divertedByUserId; }
+    public void setDivertedByUserId(Long divertedByUserId) { this.divertedByUserId = divertedByUserId; }
+
+    public String getDivertedByName() { return divertedByName; }
+    public void setDivertedByName(String divertedByName) { this.divertedByName = divertedByName; }
+
+    public User getDivertedByUser() { return divertedByUser; }
+    public void setDivertedByUser(User divertedByUser) { this.divertedByUser = divertedByUser; }
 
     @PrePersist
     public void prePersist() {

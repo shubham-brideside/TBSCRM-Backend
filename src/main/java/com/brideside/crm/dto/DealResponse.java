@@ -56,6 +56,9 @@ public class DealResponse {
     public CreatedByType createdBy; // USER or BOT - who created the deal
     public Long createdByUserId; // User ID if created by USER
     public String createdByName; // User name if created by USER
+    /** Set when this deal was created by manual diversion (who diverted from another pipeline). */
+    public Long divertedByUserId;
+    public String divertedByName;
     /** Sales owner for the deal (denormalized from person.owner or organization.owner). */
     public Long ownerId;
     public String ownerDisplayName;

@@ -30,6 +30,8 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findByDealCategory(Category category);
     List<Deal> findByCreatedByUserId(Long createdByUserId);
 
+    List<Deal> findByDivertedByUserId(Long divertedByUserId);
+
     @Query("select distinct d from Deal d " +
             "left join fetch d.person p " +
             "left join fetch p.owner owner " +
@@ -107,29 +109,29 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
     List<Deal> findAllDivertedDealsForReport(@Param("divertSource") DealSource divertSource);
 
     /**
-     * Count diverted deals (non-deleted, isDiverted=true or dealSource=DIVERT) grouped by createdByUser,
+     * Count diverted deals (non-deleted, isDiverted=true or dealSource=DIVERT) grouped by divertedByUser,
      * ordered by count descending (most to least). Returns [userId, firstName, lastName, email, count].
-     * Excludes deals with no createdByUser.
+     * Excludes deals with no divertedByUser.
      */
-    @Query("SELECT d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, COUNT(d) " +
-            "FROM Deal d INNER JOIN d.createdByUser " +
+    @Query("SELECT d.divertedByUser.id, d.divertedByUser.firstName, d.divertedByUser.lastName, d.divertedByUser.email, COUNT(d) " +
+            "FROM Deal d INNER JOIN d.divertedByUser " +
             "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
             "AND (d.isDiverted = true OR d.dealSource = :divertSource) " +
-            "GROUP BY d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email " +
+            "GROUP BY d.divertedByUser.id, d.divertedByUser.firstName, d.divertedByUser.lastName, d.divertedByUser.email " +
             "ORDER BY COUNT(d) DESC")
     List<Object[]> countDivertedDealsByDivertedByUser(@Param("divertSource") DealSource divertSource);
 
     /**
-     * Count diverted deals by createdByUser and month for a given year (using createdAt).
+     * Count diverted deals by divertedByUser and month for a given year (using createdAt).
      * Returns [userId, firstName, lastName, email, month, count] ordered by month, then count descending.
      */
-    @Query("SELECT d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, " +
+    @Query("SELECT d.divertedByUser.id, d.divertedByUser.firstName, d.divertedByUser.lastName, d.divertedByUser.email, " +
             "FUNCTION('MONTH', d.createdAt), COUNT(d) " +
-            "FROM Deal d INNER JOIN d.createdByUser " +
+            "FROM Deal d INNER JOIN d.divertedByUser " +
             "WHERE (d.isDeleted = false OR d.isDeleted IS NULL) " +
             "AND (d.isDiverted = true OR d.dealSource = :divertSource) " +
             "AND FUNCTION('YEAR', d.createdAt) = :year " +
-            "GROUP BY d.createdByUser.id, d.createdByUser.firstName, d.createdByUser.lastName, d.createdByUser.email, FUNCTION('MONTH', d.createdAt) " +
+            "GROUP BY d.divertedByUser.id, d.divertedByUser.firstName, d.divertedByUser.lastName, d.divertedByUser.email, FUNCTION('MONTH', d.createdAt) " +
             "ORDER BY FUNCTION('MONTH', d.createdAt), COUNT(d) DESC")
     List<Object[]> countDivertedDealsByDivertedByUserMonthly(@Param("divertSource") DealSource divertSource, @Param("year") Integer year);
 
