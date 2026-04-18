@@ -3,6 +3,7 @@ package com.brideside.crm.integration.calendar;
 import com.brideside.crm.config.GoogleCalendarProperties;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealCalendarEventType;
+import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.repository.DealCalendarEventTypeRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -336,6 +337,9 @@ public class GoogleCalendarService {
 
     private boolean shouldSync(Deal deal) {
         if (deal == null) {
+            return false;
+        }
+        if (deal.getStatus() != DealStatus.WON) {
             return false;
         }
         Map<String, String> eventTypeByDate = toEventTypeByDate(getMappingsByDate(deal.getId()));
