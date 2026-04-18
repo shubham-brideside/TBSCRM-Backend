@@ -2359,6 +2359,12 @@ public class DealServiceImpl implements DealService {
             return;
         }
         try {
+            if (deal.getStatus() != DealStatus.WON) {
+                if (StringUtils.hasText(deal.getGoogleCalendarEventIds()) || StringUtils.hasText(deal.getGoogleCalendarEventId())) {
+                    removeGoogleCalendarEvent(deal);
+                }
+                return;
+            }
             boolean hasCalendar = deal.getOrganization() != null
                     && StringUtils.hasText(deal.getOrganization().getGoogleCalendarId());
             LocalDate firstEventDate = getFirstEventDate(deal);

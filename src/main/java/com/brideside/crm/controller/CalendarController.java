@@ -4,6 +4,7 @@ import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.CalendarDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealCalendarEventType;
+import com.brideside.crm.entity.DealStatus;
 import com.brideside.crm.entity.VendorCalendarEvent;
 import com.brideside.crm.integration.calendar.GoogleCalendarService;
 import com.brideside.crm.repository.DealCalendarEventTypeRepository;
@@ -235,6 +236,13 @@ public class CalendarController {
 
     private void syncDealEventsIfEnabled(Deal deal) {
         if (deal == null || googleCalendarService.isEmpty()) {
+            return;
+        }
+        if (deal.getStatus() != DealStatus.WON) {
+            googleCalendarService.get().deleteDealEvents(deal);
+            deal.setGoogleCalendarEventIds(null);
+            deal.setGoogleCalendarEventId(null);
+            dealRepository.save(deal);
             return;
         }
         googleCalendarService.get().upsertDealEvents(deal).ifPresent(map -> persistGoogleEventIds(deal, map));
