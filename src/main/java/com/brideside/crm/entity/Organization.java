@@ -104,6 +104,13 @@ public class Organization {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * Last pipeline that received an auto-diverted mirror deal when using round-robin across this org's pipelines.
+     * Used only for organizations listed in {@code app.tbs.round-robin-mirror-organization-ids}.
+     */
+    @Column(name = "round_robin_last_pipeline_id")
+    private Long roundRobinLastPipelineId;
+
     @PrePersist
     public void onCreate() {
         Instant now = Instant.now();
@@ -136,5 +143,9 @@ public class Organization {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public Long getRoundRobinLastPipelineId() { return roundRobinLastPipelineId; }
+    public void setRoundRobinLastPipelineId(Long roundRobinLastPipelineId) {
+        this.roundRobinLastPipelineId = roundRobinLastPipelineId;
+    }
 }
 

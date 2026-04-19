@@ -51,6 +51,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
@@ -66,6 +67,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -116,6 +118,19 @@ public class DealServiceImpl implements DealService {
     /** FK for deals.category_id on Brideside auto-diverted copies (default 4). */
     @Value("${app.tbs.brideside-deal-category-id:4}")
     private Long tbsBridesideDealCategoryId;
+
+    /**
+     * Comma-separated organization IDs for round-robin auto-mirrors (see application.yml / TBS_ROUND_ROBIN_MIRROR_ORG_IDS).
+     */
+    @Value("${app.tbs.round-robin-mirror-organization-ids:45}")
+    private String roundRobinMirrorOrganizationIdsCsv;
+
+    private List<Long> roundRobinMirrorOrganizationIds = List.of();
+
+    @PostConstruct
+    private void initRoundRobinMirrorOrganizationIds() {
+        this.roundRobinMirrorOrganizationIds = parseCommaSeparatedLongIds(roundRobinMirrorOrganizationIdsCsv);
+    }
 
     @Override
     public Deal create(DealDtos.CreateRequest request) {
@@ -2040,44 +2055,55 @@ public class DealServiceImpl implements DealService {
 
     /**
      * When a deal leaves Lead In / Qualified for Contact Made or a later stage in a non-Brideside pipeline,
-     * creates one mirrored deal in The Bride Side (TBS) pipeline at Qualified, unless a duplicate already exists.
+     * may create a mirrored deal in the configured TBS pipeline (Qualified) and/or round-robin targets.
      */
     private void maybeCreateBridesideDivertedCopy(Deal sourceDealAfterSave, Stage oldStage, Stage newStage) {
-        if (tbsBridesidePipelineId == null || tbsBridesideOrganizationId == null) {
+        if (!passesAutoDivertCommonEligibility(sourceDealAfterSave, oldStage, newStage)) {
             return;
         }
+        maybeCreateClassicTbsBridesideMirror(sourceDealAfterSave);
+        maybeCreateRoundRobinOrganizationMirrors(sourceDealAfterSave);
+    }
+
+    private boolean passesAutoDivertCommonEligibility(Deal sourceDealAfterSave, Stage oldStage, Stage newStage) {
         if (sourceDealAfterSave == null || newStage == null) {
-            return;
+            return false;
         }
         if (sourceDealAfterSave.getIsDeleted() != null && sourceDealAfterSave.getIsDeleted()) {
-            return;
+            return false;
         }
         Pipeline dealPipeline = sourceDealAfterSave.getPipeline();
         if (dealPipeline == null || dealPipeline.getId() == null) {
-            return;
+            return false;
         }
-        if (dealPipeline.getId().equals(tbsBridesidePipelineId)) {
-            return;
+        if (tbsBridesidePipelineId != null && dealPipeline.getId().equals(tbsBridesidePipelineId)) {
+            return false;
         }
         if (oldStage == null) {
-            return;
+            return false;
         }
         String oldName = oldStage.getName();
         if (oldName == null) {
-            return;
+            return false;
         }
         boolean fromLeadInOrQualified = "Lead In".equalsIgnoreCase(oldName) || "Qualified".equalsIgnoreCase(oldName);
         if (!fromLeadInOrQualified) {
-            return;
+            return false;
         }
-        Pipeline newStagePipeline = newStage.getPipeline();
-        if (newStagePipeline == null || newStagePipeline.getId() == null
-            || !newStagePipeline.getId().equals(dealPipeline.getId())) {
-            log.debug("Skipping Brideside auto-divert: new stage pipeline does not match deal pipeline for deal {}",
-                sourceDealAfterSave.getId());
-            return;
+        // Use id+pipeline lookup so we do not rely on newStage.getPipeline() being initialized or aligned with the deal graph
+        if (!stageRepository.findByIdAndPipeline(newStage.getId(), dealPipeline).isPresent()) {
+            log.debug("Skipping auto-divert: stage {} is not on deal pipeline {} for deal {}",
+                newStage.getId(), dealPipeline.getId(), sourceDealAfterSave.getId());
+            return false;
         }
-        if (!isContactMadeOrLaterStage(dealPipeline, newStage)) {
+        return isContactMadeOrLaterStage(dealPipeline, newStage);
+    }
+
+    /**
+     * Original single-pipeline mirror into {@code tbsBridesidePipelineId} / {@code tbsBridesideOrganizationId}.
+     */
+    private void maybeCreateClassicTbsBridesideMirror(Deal sourceDealAfterSave) {
+        if (tbsBridesidePipelineId == null || tbsBridesideOrganizationId == null) {
             return;
         }
 
@@ -2130,12 +2156,9 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        List<Stage> tbsStages = stageRepository.findByPipelineAndActiveTrueOrderByOrderIndexAsc(tbsPipeline);
-        Optional<Stage> qualifiedOnTbs = tbsStages.stream()
-            .filter(s -> "Qualified".equalsIgnoreCase(s.getName()))
-            .findFirst();
+        Optional<Stage> qualifiedOnTbs = resolveQualifiedStageForMirror(tbsPipeline);
         if (qualifiedOnTbs.isEmpty()) {
-            log.warn("Brideside auto-divert: no Active Qualified stage on TBS pipeline {}", tbsBridesidePipelineId);
+            log.warn("Brideside auto-divert: no Qualified stage on TBS pipeline {}", tbsBridesidePipelineId);
             return;
         }
 
@@ -2148,13 +2171,155 @@ public class DealServiceImpl implements DealService {
         log.info("Brideside auto-divert: created deal {} from source {}", savedCopy.getId(), sourceDealAfterSave.getId());
     }
 
+    /**
+     * For each configured organization, creates at most one mirror on the next pipeline in a stable round-robin
+     * (pipelines discovered dynamically: non-deleted, linked to the org, ordered by id).
+     */
+    private void maybeCreateRoundRobinOrganizationMirrors(Deal sourceDealAfterSave) {
+        if (roundRobinMirrorOrganizationIds == null || roundRobinMirrorOrganizationIds.isEmpty()) {
+            return;
+        }
+        Pipeline dealPipeline = sourceDealAfterSave.getPipeline();
+        Long personId = sourceDealAfterSave.getPersonId();
+        Person sourcePerson = null;
+        if (personId != null) {
+            sourcePerson = personRepository.findById(personId).orElse(null);
+        }
+        if (sourcePerson == null) {
+            sourcePerson = sourceDealAfterSave.getPerson();
+        }
+        for (Long orgId : roundRobinMirrorOrganizationIds) {
+            tryCreateRoundRobinMirrorForOrganization(sourceDealAfterSave, dealPipeline, sourcePerson, personId, orgId);
+        }
+    }
+
+    private void tryCreateRoundRobinMirrorForOrganization(Deal sourceDealAfterSave, Pipeline dealPipeline,
+                                                          Person sourcePerson, Long personId, Long orgId) {
+        if (dealBelongsToTargetMirrorOrganization(sourceDealAfterSave, dealPipeline, orgId)) {
+            log.debug("Round-robin auto-divert: source deal {} already belongs to organization {}, skipping",
+                sourceDealAfterSave.getId(), orgId);
+            return;
+        }
+        Organization org = organizationRepository.findByIdForUpdate(orgId).orElse(null);
+        if (org == null) {
+            log.warn("Round-robin auto-divert: organization {} not found", orgId);
+            return;
+        }
+
+        List<Pipeline> pipelines = pipelineRepository.findDistinctNonDeletedPipelinesForOrganization(orgId);
+        if (pipelines.isEmpty()) {
+            log.warn("Round-robin auto-divert: organization {} has no resolvable pipelines (check organization_id on pipelines and/or deals.organization_id)", orgId);
+            return;
+        }
+
+        if (dealRepository.existsNonDeletedMirrorForReferencedDealInOrganization(sourceDealAfterSave, orgId)) {
+            log.info("Round-robin auto-divert: deal {} already has a referenced copy in organization {}, skipping",
+                sourceDealAfterSave.getId(), orgId);
+            return;
+        }
+
+        // Per-pipeline duplicate checks (aligned with Brideside single-pipeline mirror), scanning round-robin order
+        Optional<Pipeline> chosenOpt = chooseRoundRobinPipelineForMirror(org, pipelines, personId, sourcePerson);
+        if (chosenOpt.isEmpty()) {
+            log.warn("Round-robin auto-divert: no eligible pipeline in org {} for source {} "
+                    + "(same person/instagram on every candidate pipeline, or missing Qualified stage)",
+                orgId, sourceDealAfterSave.getId());
+            return;
+        }
+        Pipeline chosen = chosenOpt.get();
+        Optional<Stage> qualified = resolveQualifiedStageForMirror(chosen);
+        if (qualified.isEmpty()) {
+            log.warn("Round-robin auto-divert: no Qualified stage on pipeline {} (org {})", chosen.getId(), orgId);
+            return;
+        }
+
+        Deal copy = buildBridesideDivertedDeal(sourceDealAfterSave, sourcePerson, chosen, qualified.get(), org);
+        Deal savedCopy = dealRepository.save(copy);
+        org.setRoundRobinLastPipelineId(chosen.getId());
+        organizationRepository.save(org);
+
+        dealStageHistoryService.recordStageEntry(savedCopy, qualified.get());
+        createQualifiedStageActivities(savedCopy);
+        syncGoogleCalendarEvent(savedCopy);
+        log.info("Round-robin auto-divert: created deal {} on pipeline {} (org {}) from source {}",
+            savedCopy.getId(), chosen.getId(), orgId, sourceDealAfterSave.getId());
+    }
+
+    /**
+     * Starting after {@link Organization#getRoundRobinLastPipelineId()}, picks the first pipeline that has a
+     * Qualified stage and does not already have a non-deleted deal for the same person / instagram handle.
+     */
+    private Optional<Pipeline> chooseRoundRobinPipelineForMirror(Organization org, List<Pipeline> pipelines,
+                                                                   Long personId, Person sourcePerson) {
+        if (pipelines.isEmpty()) {
+            return Optional.empty();
+        }
+        final int n = pipelines.size();
+        int startIdx = 0;
+        Long lastId = org.getRoundRobinLastPipelineId();
+        if (lastId != null) {
+            for (int i = 0; i < n; i++) {
+                if (lastId.equals(pipelines.get(i).getId())) {
+                    startIdx = (i + 1) % n;
+                    break;
+                }
+            }
+        }
+        for (int k = 0; k < n; k++) {
+            Pipeline p = pipelines.get((startIdx + k) % n);
+            if (resolveQualifiedStageForMirror(p).isEmpty()) {
+                continue;
+            }
+            if (personId != null && dealRepository.countNonDeletedInPipelineWithPersonId(p.getId(), personId) > 0) {
+                continue;
+            }
+            if (sourcePerson != null) {
+                String ig = sourcePerson.getInstagramId();
+                if (ig != null && !ig.trim().isEmpty()
+                        && dealRepository.countNonDeletedInPipelineWithPersonInstagramId(p.getId(), ig.trim()) > 0) {
+                    continue;
+                }
+            }
+            return Optional.of(p);
+        }
+        return Optional.empty();
+    }
+
+    private static boolean dealBelongsToTargetMirrorOrganization(Deal deal, Pipeline dealPipeline, Long orgId) {
+        if (deal.getOrganizationId() != null && deal.getOrganizationId().equals(orgId)) {
+            return true;
+        }
+        Organization po = dealPipeline.getOrganization();
+        return po != null && po.getId() != null && po.getId().equals(orgId);
+    }
+
+    private static List<Long> parseCommaSeparatedLongIds(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> out = new LinkedHashSet<>();
+        for (String part : raw.split(",")) {
+            String s = part.trim();
+            if (s.isEmpty()) {
+                continue;
+            }
+            try {
+                out.add(Long.parseLong(s));
+            } catch (NumberFormatException ignored) {
+                // skip invalid token
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
     private boolean isContactMadeOrLaterStage(Pipeline pipeline, Stage newStage) {
-        List<Stage> stages = stageRepository.findByPipelineAndActiveTrueOrderByOrderIndexAsc(pipeline);
+        // Include inactive stage rows so ordering still works if "Contact Made" was toggled inactive in admin
+        List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(pipeline);
         Optional<Stage> contactMade = stages.stream()
             .filter(s -> "Contact Made".equalsIgnoreCase(s.getName()))
             .findFirst();
         if (contactMade.isEmpty()) {
-            log.warn("isContactMadeOrLaterStage: pipeline {} has no Active Contact Made stage", pipeline.getId());
+            log.warn("isContactMadeOrLaterStage: pipeline {} has no Contact Made stage", pipeline.getId());
             return false;
         }
         Integer cmOrder = contactMade.get().getOrderIndex();
@@ -2163,6 +2328,23 @@ public class DealServiceImpl implements DealService {
             return "Contact Made".equalsIgnoreCase(newStage.getName());
         }
         return newOrder >= cmOrder;
+    }
+
+    /**
+     * Prefer an active Qualified stage; fall back to any Qualified row for mirror placement.
+     */
+    private Optional<Stage> resolveQualifiedStageForMirror(Pipeline pipeline) {
+        List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(pipeline);
+        Optional<Stage> active = stages.stream()
+            .filter(s -> "Qualified".equalsIgnoreCase(s.getName())
+                && (s.getActive() == null || Boolean.TRUE.equals(s.getActive())))
+            .findFirst();
+        if (active.isPresent()) {
+            return active;
+        }
+        return stages.stream()
+            .filter(s -> "Qualified".equalsIgnoreCase(s.getName()))
+            .findFirst();
     }
 
     private Deal buildBridesideDivertedDeal(Deal source, Person resolvedPerson, Pipeline tbsPipeline, Stage qualifiedStage,

@@ -26,6 +26,16 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
     // Pipelines belonging to a given organization
     List<Pipeline> findByOrganization(com.brideside.crm.entity.Organization organization);
 
+    /**
+     * Pipelines linked to an organization either by {@link Pipeline#getOrganization()} or by non-deleted deals
+     * with that organization (covers pipelines that only have {@code team_id} set in legacy data).
+     */
+    @Query("SELECT DISTINCT p FROM Pipeline p WHERE (p.deleted = false OR p.deleted IS NULL) AND ("
+            + "(p.organization IS NOT NULL AND p.organization.id = :orgId) OR "
+            + "p.id IN (SELECT d.pipeline.id FROM Deal d WHERE d.organization.id = :orgId AND d.pipeline IS NOT NULL "
+            + "AND (d.isDeleted = false OR d.isDeleted IS NULL))) ORDER BY p.id ASC")
+    List<Pipeline> findDistinctNonDeletedPipelinesForOrganization(@Param("orgId") Long orgId);
+
     List<Pipeline> findByDeletedFalseAndOrganization_IdIn(Collection<Long> organizationIds);
     
     // Pipelines assigned to teams with given IDs

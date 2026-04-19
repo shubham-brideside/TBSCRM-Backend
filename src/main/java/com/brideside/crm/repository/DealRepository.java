@@ -49,6 +49,10 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
             @Param("end") LocalDateTime end);
     List<Deal> findByReferencedDeal(Deal referencedDeal);
     boolean existsByReferencedDealAndPipeline(Deal referencedDeal, Pipeline pipeline);
+
+    @Query("SELECT CASE WHEN COUNT(d) > 0 THEN true ELSE false END FROM Deal d WHERE d.referencedDeal = :ref "
+            + "AND d.organization.id = :orgId AND (d.isDeleted = false OR d.isDeleted IS NULL)")
+    boolean existsNonDeletedMirrorForReferencedDealInOrganization(@Param("ref") Deal ref, @Param("orgId") Long orgId);
     
     // Methods that exclude deleted deals
     List<Deal> findByIsDeletedFalse();

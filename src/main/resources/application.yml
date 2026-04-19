@@ -77,6 +77,10 @@ app:
     brideside-organization-id: ${TBS_BRIDESIDE_ORGANIZATION_ID:109}
     # deals.category_id for those copies (FK to categories.id)
     brideside-deal-category-id: ${TBS_BRIDESIDE_DEAL_CATEGORY_ID:4}
+    # Comma-separated organization IDs: same auto-divert as Brideside, but one copy per org using round-robin
+    # across that org's non-deleted pipelines (Qualified stage). Cursor stored on organizations.round_robin_last_pipeline_id.
+    # Example later: "45,68". Empty disables.
+    round-robin-mirror-organization-ids: ${TBS_ROUND_ROBIN_MIRROR_ORG_IDS:45}
   reports:
     timezone: ${REPORT_TZ:Asia/Kolkata}
     daily:
