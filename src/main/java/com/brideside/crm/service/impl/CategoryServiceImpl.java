@@ -7,10 +7,9 @@ import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.repository.*;
 import com.brideside.crm.service.CategoryService;
+import com.brideside.crm.service.DealAccessScope;
+import com.brideside.crm.service.PipelineAccessService;
 import com.brideside.crm.service.PipelineService;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,30 +22,30 @@ public class CategoryServiceImpl implements CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final PipelineRepository pipelineRepository;
-    private final TeamRepository teamRepository;
     private final DealRepository dealRepository;
     private final PersonRepository personRepository;
     private final UserRepository userRepository;
     private final StageRepository stageRepository;
     private final PipelineService pipelineService;
+    private final PipelineAccessService pipelineAccessService;
 
     public CategoryServiceImpl(
             CategoryRepository categoryRepository,
             PipelineRepository pipelineRepository,
-            TeamRepository teamRepository,
             DealRepository dealRepository,
             PersonRepository personRepository,
             UserRepository userRepository,
             StageRepository stageRepository,
-            PipelineService pipelineService) {
+            PipelineService pipelineService,
+            PipelineAccessService pipelineAccessService) {
         this.categoryRepository = categoryRepository;
         this.pipelineRepository = pipelineRepository;
-        this.teamRepository = teamRepository;
         this.dealRepository = dealRepository;
         this.personRepository = personRepository;
         this.userRepository = userRepository;
         this.stageRepository = stageRepository;
         this.pipelineService = pipelineService;
+        this.pipelineAccessService = pipelineAccessService;
     }
 
     @Override
@@ -210,100 +209,20 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     /**
-     * Filter pipelines by user permissions (same logic as PipelineServiceImpl.getFilteredPipelines)
+     * Filter pipelines by the same visibility rules as {@link com.brideside.crm.service.PipelineAccessService}.
      */
     private List<Pipeline> filterPipelinesByUserPermissions(List<Pipeline> pipelines) {
-        Optional<User> currentUserOpt = getCurrentUser();
-        
-        if (currentUserOpt.isEmpty() || currentUserOpt.get().getRole() == null) {
-            return Collections.emptyList();
-        }
-
-        User currentUser = currentUserOpt.get();
-        Role.RoleName roleName = currentUser.getRole().getName();
-
-        // Admin sees all pipelines
-        if (roleName == Role.RoleName.ADMIN) {
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        if (scope.fullAccess()) {
             return pipelines;
         }
-
-        // Get team IDs based on role
-        Set<Long> allowedTeamIds = getAllowedTeamIds(currentUser, roleName);
-        
-        // If no teams are allowed, return empty list
-        if (allowedTeamIds.isEmpty()) {
+        if (scope.allowedPipelineIds().isEmpty()) {
             return Collections.emptyList();
         }
-
-        // Filter pipelines to only those with allowed team IDs
+        Set<Long> allowed = scope.allowedPipelineIds();
         return pipelines.stream()
-                .filter(p -> p.getTeam() != null && p.getTeam().getId() != null && allowedTeamIds.contains(p.getTeam().getId()))
+                .filter(p -> p.getId() != null && allowed.contains(p.getId()))
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * Get allowed team IDs based on user role (same logic as PipelineServiceImpl.getAllowedTeamIds)
-     */
-    private Set<Long> getAllowedTeamIds(User currentUser, Role.RoleName roleName) {
-        Set<Long> teamIds = new HashSet<>();
-
-        if (roleName == Role.RoleName.CATEGORY_MANAGER) {
-            // Category Manager: Find all Sales users reporting to them
-            // Then find teams where those Sales users are managers
-            List<User> allUsers = userRepository.findAll();
-            Set<Long> salesManagerIds = new HashSet<>();
-            
-            for (User user : allUsers) {
-                if (user.getId() == null || user.getRole() == null) continue;
-                
-                // Direct reports (Sales users directly under Category Manager)
-                if (user.getManager() != null && 
-                    currentUser.getId().equals(user.getManager().getId()) &&
-                    user.getRole().getName() == Role.RoleName.SALES) {
-                    salesManagerIds.add(user.getId());
-                }
-            }
-            
-            // Find teams where these Sales Managers are team managers
-            for (Long salesManagerId : salesManagerIds) {
-                List<Team> teams = teamRepository.findByManager_Id(salesManagerId);
-                for (Team team : teams) {
-                    if (team.getId() != null) {
-                        teamIds.add(team.getId());
-                    }
-                }
-            }
-        } else if (roleName == Role.RoleName.SALES) {
-            // Sales Manager: Find teams where they are the team manager
-            List<Team> teams = teamRepository.findByManager_Id(currentUser.getId());
-            for (Team team : teams) {
-                if (team.getId() != null) {
-                    teamIds.add(team.getId());
-                }
-            }
-        } else if (roleName == Role.RoleName.PRESALES) {
-            // Pre-Sales: Find teams where they are members
-            List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
-            for (Team team : teams) {
-                if (team.getId() != null) {
-                    teamIds.add(team.getId());
-                }
-            }
-        }
-
-        return teamIds;
-    }
-
-    /**
-     * Get the current logged-in user from SecurityContext
-     */
-    private Optional<User> getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetails)) {
-            return Optional.empty();
-        }
-        String email = ((UserDetails) authentication.getPrincipal()).getUsername();
-        return userRepository.findByEmail(email);
     }
 
     /**

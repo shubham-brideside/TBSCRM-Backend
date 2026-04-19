@@ -2,6 +2,7 @@ package com.brideside.crm.controller;
 
 import com.brideside.crm.dto.ApiResponse;
 import com.brideside.crm.dto.CreateUserRequest;
+import com.brideside.crm.dto.PatchManagedCategoryRequest;
 import com.brideside.crm.dto.SetPasswordRequest;
 import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.dto.UpdateUserRequest;
@@ -109,13 +110,46 @@ public class UserController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Update user", description = "Update user details including manager assignment. Only accessible by ADMIN.")
+    @Operation(summary = "Update user", description = "Update user details including manager assignment. Only accessible by ADMIN. "
+            + "For CATEGORY_MANAGER, send managedCategoryId to set the vertical; omit the field to leave the current value unchanged. "
+            + "Use PATCH /api/users/{id}/managed-category to set or clear user_managed_category_id explicitly.")
     @SecurityRequirement(name = "Bearer Authentication")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
             @PathVariable Long id,
             @Valid @RequestBody UpdateUserRequest request) {
         UserResponse response = userService.updateUser(id, request);
         return ResponseEntity.ok(ApiResponse.success("User updated successfully", response));
+    }
+
+    @PatchMapping("/me/managed-category")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Set or clear my managed category",
+            description = "Same as PATCH /api/users/{id}/managed-category but uses the logged-in user's id. "
+                    + "Category managers set their own vertical; admins set their own row when they are a category manager.")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public ResponseEntity<ApiResponse<UserResponse>> patchMyManagedCategory(
+            @RequestBody PatchManagedCategoryRequest request) {
+        if (request == null) {
+            request = new PatchManagedCategoryRequest();
+        }
+        UserResponse response = userService.patchMyManagedCategory(request, getCurrentUserEmail());
+        return ResponseEntity.ok(ApiResponse.success("Managed category updated", response));
+    }
+
+    @PatchMapping("/{id}/managed-category")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Set or clear managed category (category managers)",
+            description = "Sets users.user_managed_category_id (categories.id) for a CATEGORY_MANAGER, or clears it when managedCategoryId is null. "
+                    + "ADMIN may set this for any category manager; a CATEGORY_MANAGER may set or clear only their own.")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public ResponseEntity<ApiResponse<UserResponse>> patchManagedCategory(
+            @PathVariable Long id,
+            @RequestBody PatchManagedCategoryRequest request) {
+        if (request == null) {
+            request = new PatchManagedCategoryRequest();
+        }
+        UserResponse response = userService.patchManagedCategory(id, request, getCurrentUserEmail());
+        return ResponseEntity.ok(ApiResponse.success("Managed category updated", response));
     }
 
     @DeleteMapping("/{id}")

@@ -5,6 +5,8 @@ import com.brideside.crm.dto.DealDtos;
 import com.brideside.crm.dto.DealEditRequestDtos;
 import com.brideside.crm.dto.DealResponse;
 import com.brideside.crm.entity.DealEditRequest;
+import com.brideside.crm.mapper.DealOwnerResponseMapper;
+import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.DealEditRequestService;
 import com.brideside.crm.service.DealService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +31,9 @@ public class DealEditRequestController {
 
     @Autowired
     private DealService dealService;
+
+    @Autowired
+    private UserRepository userRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -145,12 +150,7 @@ public class DealEditRequestController {
         r.createdByName = d.getCreatedByName();
         r.divertedByUserId = d.getDivertedByUserId();
         r.divertedByName = d.getDivertedByName();
-        if (d.getOwner() != null) {
-            r.ownerId = d.getOwner().getId();
-            r.ownerDisplayName = d.getOwner().getDisplayName();
-        } else if (d.getOwnerId() != null) {
-            r.ownerId = d.getOwnerId();
-        }
+        DealOwnerResponseMapper.populateOwner(r, d, userRepository);
         return r;
     }
 }

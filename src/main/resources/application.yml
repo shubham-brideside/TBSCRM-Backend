@@ -3,7 +3,8 @@ spring:
     name: brideside-crm-backend
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:thebrideside.mysql.database.azure.com:3306}/${DB_DATABASE:thebrideside}?useSSL=${DB_SSL:true}&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata&characterEncoding=UTF-8&useUnicode=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&createDatabaseIfNotExist=true&tcpKeepAlive=true&tcpNoDelay=true&connectTimeout=30000&socketTimeout=60000
+    # nullCatalogMeansCurrent helps JDBC clients (including IDE database tools) resolve columns to the current schema.
+    url: jdbc:mysql://${DB_HOST:thebrideside.mysql.database.azure.com:3306}/${DB_DATABASE:thebrideside}?useSSL=${DB_SSL:true}&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata&characterEncoding=UTF-8&useUnicode=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10&createDatabaseIfNotExist=true&tcpKeepAlive=true&tcpNoDelay=true&connectTimeout=30000&socketTimeout=60000&nullCatalogMeansCurrent=true
     username: ${DB_USER:thebrideside}
     password: ${DB_PASSWORD:TheBride@260799}
     driver-class-name: com.mysql.cj.jdbc.Driver

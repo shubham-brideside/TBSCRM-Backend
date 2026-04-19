@@ -20,6 +20,7 @@ import com.brideside.crm.entity.User;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.mapper.PipelineMapper;
 import com.brideside.crm.exception.BadRequestException;
+import com.brideside.crm.exception.ForbiddenException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.integration.calendar.GoogleCalendarService;
 import com.brideside.crm.repository.ActivityRepository;
@@ -34,9 +35,11 @@ import com.brideside.crm.repository.SourceRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.repository.UserRepository;
 import org.springframework.data.jpa.domain.Specification;
+import com.brideside.crm.service.DealAccessScope;
 import com.brideside.crm.service.DealService;
 import com.brideside.crm.service.DealStageHistoryService;
 import com.brideside.crm.service.LabelService;
+import com.brideside.crm.service.PipelineAccessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -99,6 +102,8 @@ public class DealServiceImpl implements DealService {
     private LabelService labelService;
     @Autowired
     private LabelRepository labelRepository;
+    @Autowired
+    private PipelineAccessService pipelineAccessService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -472,7 +477,13 @@ public class DealServiceImpl implements DealService {
             deal.setOrganization(organization);
         }
         if (request.ownerId != null) {
+            User actingUser = resolveActingUser(null);
             Long previousOwnerId = deal.getOwner() != null ? deal.getOwner().getId() : null;
+            if (actingUser != null && actingUser.getRole() != null
+                    && actingUser.getRole().getName() == Role.RoleName.PRESALES
+                    && !Objects.equals(previousOwnerId, request.ownerId)) {
+                throw new ForbiddenException("Pre-sales users cannot change deal owner");
+            }
             User owner = userRepository.findById(request.ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Owner not found"));
             // Explicit override for the deal row only; does not update person ownership.
@@ -725,6 +736,10 @@ public class DealServiceImpl implements DealService {
         if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
             throw new ResourceNotFoundException("Deal not found");
         }
+        DealAccessScope accessScope = pipelineAccessService.resolveDealAccessScope();
+        if (!pipelineAccessService.canAccessDeal(deal, accessScope)) {
+            throw new ResourceNotFoundException("Deal not found");
+        }
         // Ensure API-required relationships are initialized within a transaction
         initializeForApi(List.of(deal));
         return deal;
@@ -786,7 +801,13 @@ public class DealServiceImpl implements DealService {
             }
         }
         spec = spec.and(DealSpecifications.createdBetween(fromDate, toDate));
-        
+
+        DealAccessScope accessScope = pipelineAccessService.resolveDealAccessScope();
+        Specification<Deal> accessSpec = DealSpecifications.restrictedToDealAccessScope(accessScope);
+        if (accessSpec != null) {
+            spec = spec.and(accessSpec);
+        }
+
         return spec;
     }
 
@@ -978,48 +999,50 @@ public class DealServiceImpl implements DealService {
     @Transactional(readOnly = true)
     public DealDtos.LostDealsByStageResponse getLostDealsByStage() {
         log.debug("Lost deals by stage requested");
-        // Overall lost count per stage
-        List<Object[]> rows = dealRepository.countLostDealsByStage();
-        Map<Long, DealDtos.LostDealsByStageItem> byStage = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            Long stageId = row[0] instanceof Number ? ((Number) row[0]).longValue() : null;
-            String stageName = (String) row[1];
-            Long lostCount = row[2] instanceof Number ? ((Number) row[2]).longValue() : 0L;
-            DealDtos.LostDealsByStageItem item = new DealDtos.LostDealsByStageItem(stageId, stageName, lostCount);
-            item.categories = new ArrayList<>();
-            if (stageId != null) {
-                byStage.put(stageId, item);
-            }
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        Specification<Deal> spec = Specification.where(DealSpecifications.notDeleted())
+                .and((root, q, cb) -> cb.equal(root.get("status"), DealStatus.LOST));
+        Specification<Deal> accessSpec = DealSpecifications.restrictedToDealAccessScope(scope);
+        if (accessSpec != null) {
+            spec = spec.and(accessSpec);
         }
+        List<Deal> lostDeals = dealRepository.findAll(spec);
 
-        // Category-wise lost count per stage
-        List<Object[]> catRows = dealRepository.countLostDealsByStageAndCategory();
-        for (Object[] row : catRows) {
-            Long stageId = row[0] instanceof Number ? ((Number) row[0]).longValue() : null;
-            Object catEnum = row[2];
-            Long lostCount = row[3] instanceof Number ? ((Number) row[3]).longValue() : 0L;
+        Map<Long, DealDtos.LostDealsByStageItem> byStage = new LinkedHashMap<>();
+        Map<Long, Map<String, Long>> categoryAgg = new HashMap<>();
 
-            if (stageId == null) {
+        for (Deal d : lostDeals) {
+            if (d.getStage() == null || d.getStage().getId() == null) {
                 continue;
             }
-            DealDtos.LostDealsByStageItem parent = byStage.get(stageId);
-            if (parent == null) {
-                // In case stage wasn't present in overall query for some reason
-                String stageName = (String) row[1];
-                parent = new DealDtos.LostDealsByStageItem(stageId, stageName, 0L);
-                parent.categories = new ArrayList<>();
-                byStage.put(stageId, parent);
-            }
+            Long stageId = d.getStage().getId();
+            DealDtos.LostDealsByStageItem item = byStage.computeIfAbsent(stageId, sid -> {
+                DealDtos.LostDealsByStageItem i = new DealDtos.LostDealsByStageItem(
+                        sid, d.getStage().getName(), 0L);
+                i.categories = new ArrayList<>();
+                return i;
+            });
+            item.lostCount = (item.lostCount == null ? 0L : item.lostCount) + 1;
 
             String categoryKey = null;
-            if (catEnum instanceof Organization.OrganizationCategory orgCat) {
-                categoryKey = orgCat.getDbValue();
+            if (d.getOrganization() != null && d.getOrganization().getCategory() != null) {
+                categoryKey = d.getOrganization().getCategory().getDbValue();
             }
-            parent.categories.add(new DealDtos.LostDealsByStageCategoryItem(categoryKey, lostCount));
+            categoryAgg.computeIfAbsent(stageId, k -> new HashMap<>())
+                    .merge(categoryKey, 1L, Long::sum);
+        }
+
+        for (Map.Entry<Long, Map<String, Long>> e : categoryAgg.entrySet()) {
+            DealDtos.LostDealsByStageItem parent = byStage.get(e.getKey());
+            if (parent == null) {
+                continue;
+            }
+            for (Map.Entry<String, Long> ce : e.getValue().entrySet()) {
+                parent.categories.add(new DealDtos.LostDealsByStageCategoryItem(ce.getKey(), ce.getValue()));
+            }
         }
 
         // Average days from creation to LOST per stage
-        List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
         Map<Long, long[]> durationAgg = new HashMap<>(); // stageId -> [sumDays, count]
         for (Deal d : lostDeals) {
             if (d.getStage() == null || d.getStage().getId() == null || d.getCreatedAt() == null) {
@@ -1049,7 +1072,9 @@ public class DealServiceImpl implements DealService {
             }
         }
 
-        return new DealDtos.LostDealsByStageResponse(new ArrayList<>(byStage.values()));
+        List<DealDtos.LostDealsByStageItem> stages = new ArrayList<>(byStage.values());
+        stages.sort(Comparator.comparing(s -> s.stageId, Comparator.nullsLast(Long::compareTo)));
+        return new DealDtos.LostDealsByStageResponse(stages);
     }
 
     /**
@@ -1322,6 +1347,12 @@ public class DealServiceImpl implements DealService {
             }
             if (deal.getOrganization() != null) {
                 deal.getOrganization().getName();
+                if (deal.getOrganization().getOwner() != null) {
+                    deal.getOrganization().getOwner().getDisplayName();
+                }
+            }
+            if (deal.getOwner() != null) {
+                deal.getOwner().getDisplayName();
             }
             if (deal.getPipeline() != null) {
                 deal.getPipeline().getName();
@@ -1621,13 +1652,27 @@ public class DealServiceImpl implements DealService {
     }
 
     @Override
-    public List<Deal> listWon() { 
-        return dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON); 
+    public List<Deal> listWon() {
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        Specification<Deal> spec = Specification.where(DealSpecifications.notDeleted())
+                .and((root, q, cb) -> cb.equal(root.get("status"), DealStatus.WON));
+        Specification<Deal> accessSpec = DealSpecifications.restrictedToDealAccessScope(scope);
+        if (accessSpec != null) {
+            spec = spec.and(accessSpec);
+        }
+        return dealRepository.findAll(spec);
     }
 
     @Override
-    public List<Deal> listByStatus(DealStatus status) { 
-        return dealRepository.findByStatusAndIsDeletedFalse(status); 
+    public List<Deal> listByStatus(DealStatus status) {
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        Specification<Deal> spec = Specification.where(DealSpecifications.notDeleted())
+                .and((root, q, cb) -> cb.equal(root.get("status"), status));
+        Specification<Deal> accessSpec = DealSpecifications.restrictedToDealAccessScope(scope);
+        if (accessSpec != null) {
+            spec = spec.and(accessSpec);
+        }
+        return dealRepository.findAll(spec);
     }
 
     @Override
@@ -1638,21 +1683,30 @@ public class DealServiceImpl implements DealService {
         if (Boolean.TRUE.equals(person.getIsDeleted())) {
             throw new ResourceNotFoundException("Person not found");
         }
-        return dealRepository.findByPersonAndIsDeletedFalse(person);
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        return dealRepository.findByPersonAndIsDeletedFalse(person).stream()
+                .filter(d -> pipelineAccessService.canAccessDeal(d, scope))
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<Deal> listByOrganization(Long organizationId) {
         Organization organization = organizationRepository.findById(organizationId)
             .orElseThrow(() -> new ResourceNotFoundException("Organization not found"));
-        return dealRepository.findByOrganizationAndIsDeletedFalse(organization);
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        return dealRepository.findByOrganizationAndIsDeletedFalse(organization).stream()
+                .filter(d -> pipelineAccessService.canAccessDeal(d, scope))
+                .collect(Collectors.toList());
     }
 
     @Override
     public List<Deal> listByCategory(Long categoryId) {
         Category category = categoryRepository.findById(categoryId)
             .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
-        return dealRepository.findByDealCategoryAndIsDeletedFalse(category);
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        return dealRepository.findByDealCategoryAndIsDeletedFalse(category).stream()
+                .filter(d -> pipelineAccessService.canAccessDeal(d, scope))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -2271,6 +2325,11 @@ public class DealServiceImpl implements DealService {
         if (deal.getIsDeleted() != null && deal.getIsDeleted()) {
             throw new ResourceNotFoundException("Deal not found with id " + dealId);
         }
+
+        DealAccessScope accessScope = pipelineAccessService.resolveDealAccessScope();
+        if (!pipelineAccessService.canAccessDeal(deal, accessScope)) {
+            throw new ResourceNotFoundException("Deal not found with id " + dealId);
+        }
         
         // Get pipeline history - all pipelines this deal has been in
         List<Long> pipelineHistory = getPipelineHistory(deal);
@@ -2283,8 +2342,18 @@ public class DealServiceImpl implements DealService {
             }
         }
         
-        // Get all active pipelines
-        List<Pipeline> allPipelines = pipelineRepository.findByDeletedFalseOrderByNameAsc();
+        // Pipelines the current user may divert into
+        List<Pipeline> allPipelines;
+        if (accessScope.fullAccess()) {
+            allPipelines = pipelineRepository.findByDeletedFalseOrderByNameAsc();
+        } else {
+            if (accessScope.allowedPipelineIds().isEmpty()) {
+                return Collections.emptyList();
+            }
+            allPipelines = new ArrayList<>(pipelineRepository.findAllById(accessScope.allowedPipelineIds()));
+            allPipelines.removeIf(p -> Boolean.TRUE.equals(p.getDeleted()));
+            allPipelines.sort(Comparator.comparing(Pipeline::getName, String.CASE_INSENSITIVE_ORDER));
+        }
         
         // Get all deals in the diversion chain (current deal + all deals it references)
         List<Deal> dealsInChain = getAllDealsInChain(deal);
@@ -2795,6 +2864,11 @@ public class DealServiceImpl implements DealService {
         // Validate pipeline exists
         Pipeline pipeline = pipelineRepository.findById(pipelineId)
             .orElseThrow(() -> new ResourceNotFoundException("Pipeline not found with id " + pipelineId));
+
+        DealAccessScope accessScope = pipelineAccessService.resolveDealAccessScope();
+        if (!pipelineAccessService.canAccessPipeline(pipelineId, accessScope)) {
+            throw new ResourceNotFoundException("Pipeline not found with id " + pipelineId);
+        }
 
         // Get all stages for the pipeline (ordered by orderIndex)
         List<Stage> stages = stageRepository.findByPipelineOrderByOrderIndexAsc(pipeline);

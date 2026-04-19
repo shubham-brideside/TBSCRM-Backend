@@ -19,6 +19,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificationExecutor<Deal> {
@@ -83,6 +84,18 @@ public interface DealRepository extends JpaRepository<Deal, Long>, JpaSpecificat
      */
     @Query("select distinct d.person.id from Deal d where d.id in :dealIds and d.person is not null")
     List<Long> findDistinctPersonIdsByDealIds(@Param("dealIds") List<Long> dealIds);
+
+    /**
+     * Pipelines that appear on deals in these organizations (e.g. category manager UI when
+     * {@link com.brideside.crm.entity.Pipeline#getOrganization()} is not set on the pipeline row).
+     */
+    @Query("SELECT DISTINCT d.pipelineId FROM Deal d WHERE d.organizationId IN :orgIds AND d.pipelineId IS NOT NULL "
+            + "AND (d.isDeleted IS NULL OR d.isDeleted = false)")
+    List<Long> findDistinctPipelineIdsByDealOrganizationIds(@Param("orgIds") Collection<Long> orgIds);
+
+    @Query("SELECT DISTINCT d.pipelineId FROM Deal d WHERE d.categoryId = :categoryId AND d.pipelineId IS NOT NULL "
+            + "AND (d.isDeleted IS NULL OR d.isDeleted = false)")
+    List<Long> findDistinctPipelineIdsByDealCategoryId(@Param("categoryId") Long categoryId);
 
     /** WON, non-deleted deals that are diverted (isDiverted=true or dealSource=DIVERT), with pipeline/refPipeline/refDeal/org/owner loaded. */
     @Query("SELECT DISTINCT d FROM Deal d " +

@@ -13,6 +13,8 @@ import com.brideside.crm.repository.DealRepository;
 import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.service.CategoryManagerDashboardService;
+import com.brideside.crm.service.DealAccessScope;
+import com.brideside.crm.service.PipelineAccessService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,21 +37,24 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
     private final PipelineRepository pipelineRepository;
+    private final PipelineAccessService pipelineAccessService;
 
     public CategoryManagerDashboardServiceImpl(DealRepository dealRepository,
                                                UserRepository userRepository,
                                                ActivityRepository activityRepository,
-                                               PipelineRepository pipelineRepository) {
+                                               PipelineRepository pipelineRepository,
+                                               PipelineAccessService pipelineAccessService) {
         this.dealRepository = dealRepository;
         this.userRepository = userRepository;
         this.activityRepository = activityRepository;
         this.pipelineRepository = pipelineRepository;
+        this.pipelineAccessService = pipelineAccessService;
     }
 
     @Override
     @Transactional(readOnly = true)
     public CategoryManagerDashboardDtos.SummaryResponse getDashboardSummary(User categoryManager) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
 
         long salesManagersCount = 0L;
         long presalesCount = 0L;
@@ -84,8 +89,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
 
         List<Deal> wonDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON);
         for (Deal deal : wonDeals) {
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
             totalWonDeals++;
@@ -100,8 +104,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
 
         List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
         for (Deal deal : lostDeals) {
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
             totalLostDeals++;
@@ -112,8 +115,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getStatus() != DealStatus.IN_PROGRESS) {
                 continue;
             }
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
             totalInProgressDeals++;
@@ -141,7 +143,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (dateTo.isBefore(dateFrom)) {
             throw new IllegalArgumentException("dateTo must be on or after dateFrom");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         LocalDateTime fromDateTime = dateFrom.atStartOfDay();
         LocalDateTime toDateTime = dateTo.plusDays(1).atStartOfDay();
 
@@ -153,10 +155,10 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         Map<Long, PipelineRevenueAggregate> byPipeline = new HashMap<>();
 
         for (Deal deal : wonDeals) {
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
+            User owner = resolveOwnerFromDeal(deal);
             LocalDateTime reference = deal.getWonAt() != null ? deal.getWonAt()
                     : (deal.getUpdatedAt() != null ? deal.getUpdatedAt() : deal.getCreatedAt());
             if (reference == null || reference.isBefore(fromDateTime) || !reference.isBefore(toDateTime)) {
@@ -174,8 +176,10 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
                 byCategory.computeIfAbsent(categoryKey, k -> new CategoryRevenueAggregate())
                         .add(value);
             }
-            Long userId = owner.getId();
-            byUser.computeIfAbsent(userId, id -> new UserRevenueAggregate(owner)).add(value);
+            if (owner != null && owner.getId() != null) {
+                Long userId = owner.getId();
+                byUser.computeIfAbsent(userId, id -> new UserRevenueAggregate(owner)).add(value);
+            }
             if (deal.getPipeline() != null && deal.getPipeline().getId() != null) {
                 Long pipelineId = deal.getPipeline().getId();
                 byPipeline.computeIfAbsent(pipelineId, id -> new PipelineRevenueAggregate(deal)).add(value);
@@ -223,13 +227,16 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Override
     @Transactional(readOnly = true)
     public AdminDashboardDtos.WonDealsBySalesUserResponse getWonDealsBySalesUser(User categoryManager) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> wonDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.WON);
         Map<Long, AdminDashboardDtos.SalesUserWonDealsRow> aggregateByUserId = new HashMap<>();
 
         for (Deal deal : wonDeals) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (owner == null || owner.getId() == null) {
                 continue;
             }
             Long userId = owner.getId();
@@ -264,7 +271,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (year == null) {
             throw new IllegalArgumentException("year is required");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
 
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
@@ -294,8 +301,11 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
                 continue;
             }
 
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (owner == null || owner.getId() == null) {
                 continue;
             }
             if (owner.getRole() == null || owner.getRole().getName() != Role.RoleName.SALES) {
@@ -381,13 +391,16 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Override
     @Transactional(readOnly = true)
     public AdminDashboardDtos.LostDealsBySalesUserResponse getLostDealsBySalesUser(User categoryManager) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> lostDeals = dealRepository.findByStatusAndIsDeletedFalse(DealStatus.LOST);
         Map<Long, AdminDashboardDtos.SalesUserLostDealsRow> aggregateByUserId = new HashMap<>();
 
         for (Deal deal : lostDeals) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (owner == null || owner.getId() == null) {
                 continue;
             }
             Long userId = owner.getId();
@@ -418,7 +431,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (year == null) {
             throw new IllegalArgumentException("year is required");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> deals = dealRepository.findByIsDeletedFalse();
         Map<Integer, StatusMonthlyAggregate> aggregates = new HashMap<>();
 
@@ -426,10 +439,10 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getStatus() == null) {
                 continue;
             }
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
+            User owner = resolveOwnerFromDeal(deal);
             LocalDateTime reference = getReferenceDateForStatus(deal);
             if (reference == null || reference.getYear() != year) {
                 continue;
@@ -493,7 +506,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (year == null) {
             throw new IllegalArgumentException("year is required");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> deals = dealRepository.findByIsDeletedFalse();
         // userId -> (month -> aggregate for that month)
         Map<Long, Map<Integer, StatusByUser>> byUserByMonth = new HashMap<>();
@@ -503,8 +516,11 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getStatus() == null) {
                 continue;
             }
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (owner == null || owner.getId() == null) {
                 continue;
             }
             LocalDateTime reference = getReferenceDateForStatus(deal);
@@ -571,7 +587,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (year == null) {
             throw new IllegalArgumentException("year is required");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> deals = dealRepository.findByIsDeletedFalse();
         // pipelineId -> (month -> aggregate for that month)
         Map<Long, Map<Integer, StatusByPipeline>> byPipelineByMonth = new HashMap<>();
@@ -580,8 +596,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getStatus() == null || deal.getPipeline() == null || deal.getPipeline().getId() == null) {
                 continue;
             }
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
             LocalDateTime reference = getReferenceDateForStatus(deal);
@@ -643,7 +658,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Transactional(readOnly = true)
     public AdminDashboardDtos.LostReasonSummaryResponse getLostReasonSummary(User categoryManager,
             String category, Long userId, Long pipelineId) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -656,17 +671,17 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getLostReason() == null) {
                 continue;
             }
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
+            User owner = resolveOwnerFromDeal(deal);
             if (categoryFilter != null) {
                 Organization org = deal.getOrganization();
                 if (org == null || org.getCategory() == null || org.getCategory() != categoryFilter) {
                     continue;
                 }
             }
-            if (userId != null && !userId.equals(owner.getId())) {
+            if (userId != null && (owner == null || owner.getId() == null || !userId.equals(owner.getId()))) {
                 continue;
             }
             if (pipelineId != null && (deal.getPipeline() == null || deal.getPipeline().getId() == null
@@ -701,7 +716,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Transactional(readOnly = true)
     public AdminDashboardDtos.LostReasonsByPipelineResponse getLostReasonsByPipeline(
             User categoryManager, String category) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -716,8 +731,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getLostReason() == null || deal.getPipeline() == null || deal.getPipeline().getId() == null) {
                 continue;
             }
-            User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
                 continue;
             }
             if (categoryFilter != null) {
@@ -766,7 +780,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Transactional(readOnly = true)
     public AdminDashboardDtos.LostReasonsByUserResponse getLostReasonsByUser(
             User categoryManager, String category) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         Organization.OrganizationCategory categoryFilter = null;
         if (category != null && !category.trim().isEmpty()) {
             categoryFilter = Organization.OrganizationCategory.fromDbValue(category);
@@ -781,8 +795,11 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
             if (deal.getLostReason() == null) {
                 continue;
             }
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             User owner = resolveOwnerFromDeal(deal);
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (owner == null || owner.getId() == null) {
                 continue;
             }
             if (categoryFilter != null) {
@@ -835,7 +852,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
     @Override
     @Transactional(readOnly = true)
     public AdminDashboardDtos.SalesPipelinesResponse getSalesUsersWithPipelines(User categoryManager) {
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         // Fetch all active pipelines
         java.util.List<com.brideside.crm.entity.Pipeline> pipelines =
                 pipelineRepository.findByDeletedFalseOrderByNameAsc();
@@ -849,7 +866,7 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
                 continue;
             }
             User owner = pipeline.getOrganization().getOwner();
-            if (owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
+            if (!pipelineAccessService.canAccessPipeline(pipeline.getId(), dealScope)) {
                 continue;
             }
             if (owner.getRole() == null || owner.getRole().getName() != Role.RoleName.SALES) {
@@ -1269,20 +1286,19 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
         if (year == null) {
             throw new IllegalArgumentException("year is required");
         }
-        Set<Long> allowedOwnerIds = getAllowedOwnerIdsForCategoryManager(categoryManager);
+        DealAccessScope dealScope = pipelineAccessService.resolveDealAccessScopeForUser(categoryManager);
         List<Deal> deals = dealRepository.findByIsDeletedFalse();
         Map<Long, OrganizationAggregate> aggregates = new HashMap<>();
 
         for (Deal deal : deals) {
+            if (!pipelineAccessService.canAccessDeal(deal, dealScope)) {
+                continue;
+            }
             if (deal.getOrganization() == null || deal.getOrganization().getId() == null) {
                 continue;
             }
             Organization org = deal.getOrganization();
-            // Filter: only include organizations owned by users in Category Manager's scope
             User owner = org.getOwner();
-            if (owner == null || owner.getId() == null || !allowedOwnerIds.contains(owner.getId())) {
-                continue;
-            }
 
             Long orgId = org.getId();
             String orgName = org.getName();
@@ -1291,11 +1307,11 @@ public class CategoryManagerDashboardServiceImpl implements CategoryManagerDashb
                 if (org.getCategory() != null) {
                     category = org.getCategory().getDbValue();
                 }
-                Long ownerId = owner.getId();
-                String firstName = owner.getFirstName() != null ? owner.getFirstName() : "";
-                String lastName = owner.getLastName() != null ? owner.getLastName() : "";
+                Long ownerId = owner != null ? owner.getId() : null;
+                String firstName = owner != null && owner.getFirstName() != null ? owner.getFirstName() : "";
+                String lastName = owner != null && owner.getLastName() != null ? owner.getLastName() : "";
                 String ownerName = (firstName + " " + lastName).trim();
-                String ownerEmail = owner.getEmail();
+                String ownerEmail = owner != null ? owner.getEmail() : null;
                 return new OrganizationAggregate(orgName, category, ownerId, ownerName, ownerEmail);
             });
 

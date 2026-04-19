@@ -1,0 +1,24 @@
+### Set your managed category (category manager) — uses native SQL on the server; works even if DB UI is read-only
+### Replace host and Bearer token after login.
+
+@host = http://localhost:8080
+@token = YOUR_JWT_HERE
+
+PATCH {{host}}/api/users/me/managed-category
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "managedCategoryId": 1
+}
+
+###
+### Clear managed category (null)
+
+PATCH {{host}}/api/users/me/managed-category
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "managedCategoryId": null
+}

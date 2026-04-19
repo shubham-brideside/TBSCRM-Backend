@@ -4,7 +4,6 @@ import com.brideside.crm.dto.PipelineDtos;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Pipeline;
-import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Stage;
 import com.brideside.crm.entity.Team;
 import com.brideside.crm.entity.User;
@@ -17,6 +16,7 @@ import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.StageRepository;
 import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.service.PipelineAccessService;
 import com.brideside.crm.service.PipelineService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -46,19 +46,22 @@ public class PipelineServiceImpl implements PipelineService {
     private final TeamRepository teamRepository;
     private final DealRepository dealRepository;
     private final UserRepository userRepository;
+    private final PipelineAccessService pipelineAccessService;
 
     public PipelineServiceImpl(PipelineRepository pipelineRepository,
                                StageRepository stageRepository,
                                OrganizationRepository organizationRepository,
                                TeamRepository teamRepository,
                                DealRepository dealRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               PipelineAccessService pipelineAccessService) {
         this.pipelineRepository = pipelineRepository;
         this.stageRepository = stageRepository;
         this.organizationRepository = organizationRepository;
         this.teamRepository = teamRepository;
         this.dealRepository = dealRepository;
         this.userRepository = userRepository;
+        this.pipelineAccessService = pipelineAccessService;
     }
 
     @Override
@@ -469,94 +472,16 @@ public class PipelineServiceImpl implements PipelineService {
     }
 
     /**
-     * Get filtered pipelines based on the current user's role
-     * Visibility rules:
-     * 1. Admin: Sees all pipelines
-     * 2. Category Manager: Sees pipelines linked to teams where their Sales Managers (users who report to them) are team managers
-     * 3. Sales Manager (SALES role): Sees pipelines linked to teams they manage
-     * 4. Pre-Sales (PRESALES role): Sees pipelines linked to teams where their Sales Manager (their manager) is the team manager
+     * Get filtered pipelines based on the current user's role (delegates to {@link PipelineAccessService}).
      */
     private List<Pipeline> getFilteredPipelines() {
         Optional<User> currentUserOpt = getCurrentUser();
-        
-        // If no user is logged in, return empty list (or all pipelines - depends on security requirements)
-        // For now, returning empty list for unauthenticated users
+
         if (currentUserOpt.isEmpty() || currentUserOpt.get().getRole() == null) {
             return Collections.emptyList();
         }
 
-        User currentUser = currentUserOpt.get();
-        Role.RoleName roleName = currentUser.getRole().getName();
-
-        // Admin sees all pipelines
-        if (roleName == Role.RoleName.ADMIN) {
-            return pipelineRepository.findByDeletedFalseOrderByNameAsc();
-        }
-
-        // Get team IDs based on role
-        Set<Long> allowedTeamIds = getAllowedTeamIds(currentUser, roleName);
-        
-        // If no teams are allowed, return empty list
-        if (allowedTeamIds.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // Return pipelines linked to allowed teams
-        return pipelineRepository.findByDeletedFalseAndTeam_IdInOrderByNameAsc(new ArrayList<>(allowedTeamIds));
-    }
-
-    /**
-     * Get allowed team IDs based on user role
-     */
-    private Set<Long> getAllowedTeamIds(User currentUser, Role.RoleName roleName) {
-        Set<Long> teamIds = new HashSet<>();
-
-        if (roleName == Role.RoleName.CATEGORY_MANAGER) {
-            // Category Manager: Find all Sales users reporting to them
-            // Then find teams where those Sales users are managers
-            List<User> allUsers = userRepository.findAll();
-            Set<Long> salesManagerIds = new HashSet<>();
-            
-            for (User user : allUsers) {
-                if (user.getId() == null || user.getRole() == null) continue;
-                
-                // Direct reports (Sales users directly under Category Manager)
-                if (user.getManager() != null && 
-                    currentUser.getId().equals(user.getManager().getId()) &&
-                    user.getRole().getName() == Role.RoleName.SALES) {
-                    salesManagerIds.add(user.getId());
-                }
-            }
-            
-            // Find teams where these Sales Managers are team managers
-            for (Long salesManagerId : salesManagerIds) {
-                List<Team> teams = teamRepository.findByManager_Id(salesManagerId);
-                for (Team team : teams) {
-                    if (team.getId() != null) {
-                        teamIds.add(team.getId());
-                    }
-                }
-            }
-        } else if (roleName == Role.RoleName.SALES) {
-            // Sales Manager: Find teams where they are the team manager
-            List<Team> teams = teamRepository.findByManager_Id(currentUser.getId());
-            for (Team team : teams) {
-                if (team.getId() != null) {
-                    teamIds.add(team.getId());
-                }
-            }
-        } else if (roleName == Role.RoleName.PRESALES) {
-            // Pre-Sales: Find teams where they are members
-            // With multiple team membership enabled, they see pipelines for all teams they belong to
-            List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
-            for (Team team : teams) {
-                if (team.getId() != null) {
-                    teamIds.add(team.getId());
-                }
-            }
-        }
-
-        return teamIds;
+        return pipelineAccessService.listAccessiblePipelinesOrdered();
     }
 }
 

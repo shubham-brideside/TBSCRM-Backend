@@ -24,6 +24,9 @@ public class CreateUserRequest {
     
     private Long managerId; // Optional: for assigning manager in hierarchy
 
+    /** When role is CATEGORY_MANAGER, {@code categories.id} for pipeline/deal visibility (e.g. Photography). */
+    private Long managedCategoryId;
+
     // Getters and Setters
     public String getEmail() {
         return email;
@@ -63,6 +66,14 @@ public class CreateUserRequest {
 
     public void setManagerId(Long managerId) {
         this.managerId = managerId;
+    }
+
+    public Long getManagedCategoryId() {
+        return managedCategoryId;
+    }
+
+    public void setManagedCategoryId(Long managedCategoryId) {
+        this.managedCategoryId = managedCategoryId;
     }
 }
 

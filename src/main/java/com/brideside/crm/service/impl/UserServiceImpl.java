@@ -1,5 +1,6 @@
 package com.brideside.crm.service.impl;
 
+import com.brideside.crm.dto.PatchManagedCategoryRequest;
 import com.brideside.crm.dto.CreateUserRequest;
 import com.brideside.crm.dto.SetPasswordRequest;
 import com.brideside.crm.dto.TeamDtos;
@@ -14,7 +15,9 @@ import com.brideside.crm.entity.User;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.constants.PageName;
+import com.brideside.crm.entity.Category;
 import com.brideside.crm.repository.ActivityRepository;
+import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.InvitationTokenRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PageAccessRepository;
@@ -24,8 +27,14 @@ import com.brideside.crm.repository.SalesTargetRepository;
 import com.brideside.crm.repository.TeamRepository;
 import com.brideside.crm.repository.UserRepository;
 import com.brideside.crm.repository.DealRepository;
+import com.brideside.crm.repository.DealSpecifications;
+import com.brideside.crm.service.DealAccessScope;
 import com.brideside.crm.service.EmailService;
+import com.brideside.crm.service.PipelineAccessService;
 import com.brideside.crm.service.UserService;
+import com.brideside.crm.exception.ForbiddenException;
+import jakarta.persistence.criteria.JoinType;
+import org.springframework.data.jpa.domain.Specification;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,6 +90,12 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private DealRepository dealRepository;
 
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
+    private PipelineAccessService pipelineAccessService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -117,6 +132,13 @@ public class UserServiceImpl implements UserService {
         user.setPassword("TEMPORARY_PASSWORD"); // Temporary, will be set when user accepts invitation
 
         user.setManager(resolveManagerForRole(roleName, request.getManagerId(), null));
+
+        if (roleName == Role.RoleName.CATEGORY_MANAGER && request.getManagedCategoryId() != null) {
+            Category cat = categoryRepository.findById(request.getManagedCategoryId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Category not found with id: " + request.getManagedCategoryId()));
+            user.setManagedCategory(cat);
+        }
 
         user = userRepository.save(user);
 
@@ -174,9 +196,14 @@ public class UserServiceImpl implements UserService {
         
         // Check if current user has access to view this user
         if (!canAccessUser(currentUser, requestedUser)) {
-            throw new com.brideside.crm.exception.ForbiddenException("You don't have permission to view this user");
+            boolean presalesDealOwnerContext = currentUser.getRole() != null
+                    && currentUser.getRole().getName() == Role.RoleName.PRESALES
+                    && isPresalesViewingDealOwnerInScope(requestedUser.getId());
+            if (!presalesDealOwnerContext) {
+                throw new ForbiddenException("You don't have permission to view this user");
+            }
         }
-        
+
         return convertToResponse(requestedUser);
     }
 
@@ -276,8 +303,56 @@ public class UserServiceImpl implements UserService {
         }
         user.setManager(newManager);
 
+        if (roleName == Role.RoleName.CATEGORY_MANAGER) {
+            if (request.getManagedCategoryId() != null) {
+                Category cat = categoryRepository.findById(request.getManagedCategoryId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Category not found with id: " + request.getManagedCategoryId()));
+                user.setManagedCategory(cat);
+            }
+            // If managedCategoryId is omitted/null in JSON, keep existing user_managed_category_id (do not clear).
+        } else {
+            user.setManagedCategory(null);
+        }
+
         user = userRepository.save(user);
         return convertToResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse patchManagedCategory(Long userId, PatchManagedCategoryRequest request, String callerEmail) {
+        User caller = getCurrentUser(callerEmail);
+        boolean isAdmin = caller.getRole() != null && caller.getRole().getName() == Role.RoleName.ADMIN;
+        boolean isSelfCategoryManager = caller.getRole() != null
+                && caller.getRole().getName() == Role.RoleName.CATEGORY_MANAGER
+                && caller.getId().equals(userId);
+        if (!isAdmin && !isSelfCategoryManager) {
+            throw new ForbiddenException(
+                    "Only an administrator or the category manager themself may set managed category");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+        if (user.getRole() == null || user.getRole().getName() != Role.RoleName.CATEGORY_MANAGER) {
+            throw new BadRequestException("managed category can only be set for users with role CATEGORY_MANAGER");
+        }
+        Long categoryId = request.getManagedCategoryId();
+        if (categoryId != null) {
+            categoryRepository.findById(categoryId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + categoryId));
+        }
+        userRepository.updateManagedCategoryId(userId, categoryId);
+        User reloaded = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+        return convertToResponse(reloaded);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse patchMyManagedCategory(PatchManagedCategoryRequest request, String callerEmail) {
+        User caller = getCurrentUser(callerEmail);
+        return patchManagedCategory(caller.getId(), request, callerEmail);
     }
 
     /**
@@ -468,9 +543,42 @@ public class UserServiceImpl implements UserService {
             }
             return false;
         }
-        
-        // Presales can only see themselves (already handled above)
+
+        if (currentRole == Role.RoleName.PRESALES) {
+            if (currentUser.getManager() != null && currentUser.getManager().getId().equals(targetUser.getId())) {
+                return true;
+            }
+            return false;
+        }
+
         return false;
+    }
+
+    /**
+     * Pre-sales may open {@code GET /api/users/:id} for users shown as the owner on a deal they can read
+     * (deal row owner, person owner, or organization owner), for read-only UI labels.
+     */
+    private boolean isPresalesViewingDealOwnerInScope(Long targetUserId) {
+        DealAccessScope scope = pipelineAccessService.resolveDealAccessScope();
+        if (scope == null || scope.fullAccess()) {
+            return false;
+        }
+        Specification<com.brideside.crm.entity.Deal> inScope = Specification
+                .where(DealSpecifications.notDeleted())
+                .and(DealSpecifications.restrictedToDealAccessScope(scope));
+        Specification<com.brideside.crm.entity.Deal> ownerMatchesTarget = (root, query, cb) -> {
+            var dealOwnerJoin = root.join("owner", JoinType.LEFT);
+            var personJoin = root.join("person", JoinType.LEFT);
+            var personOwnerJoin = personJoin.join("owner", JoinType.LEFT);
+            var orgJoin = root.join("organization", JoinType.LEFT);
+            var orgOwnerJoin = orgJoin.join("owner", JoinType.LEFT);
+            return cb.or(
+                    cb.equal(root.get("ownerId"), targetUserId),
+                    cb.equal(dealOwnerJoin.get("id"), targetUserId),
+                    cb.equal(personOwnerJoin.get("id"), targetUserId),
+                    cb.equal(orgOwnerJoin.get("id"), targetUserId));
+        };
+        return dealRepository.count(Specification.where(inScope).and(ownerMatchesTarget)) > 0;
     }
     
     /**
@@ -602,6 +710,10 @@ public class UserServiceImpl implements UserService {
         if (user.getManager() != null) {
             response.setManagerId(user.getManager().getId());
             response.setManagerName(user.getManager().getFirstName() + " " + user.getManager().getLastName());
+        }
+        if (user.getManagedCategory() != null) {
+            response.setManagedCategoryId(user.getManagedCategory().getId());
+            response.setManagedCategoryName(user.getManagedCategory().getName());
         }
         return response;
     }

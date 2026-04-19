@@ -78,6 +78,12 @@ jwt:
   expiration: 86400000 # 24 hours
 ```
 
+### Database IDE: “Column is read-only: No corresponding table column”
+
+That message comes from **IntelliJ / DataGrip / Cursor database tools**, not from this Spring app or MySQL. Renaming columns does not fix it.
+
+**Workaround:** edit data via **`UPDATE ...` in a SQL console** or **`PATCH /api/users/me/managed-category`** — see **[docs/FIX_DATAGRIP_READONLY.md](docs/FIX_DATAGRIP_READONLY.md)**.
+
 ### Frontend URL
 
 Set the frontend URL for invitation links:

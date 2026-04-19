@@ -8,6 +8,8 @@ import com.brideside.crm.dto.LabelDtos;
 import com.brideside.crm.dto.PersonDTO;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.DealStatus;
+import com.brideside.crm.repository.UserRepository;
+import com.brideside.crm.mapper.DealOwnerResponseMapper;
 import com.brideside.crm.service.DealService;
 import com.brideside.crm.service.DealStageHistoryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,6 +38,9 @@ public class DealController {
     
     @Autowired
     private DealStageHistoryService dealStageHistoryService;
+
+    @Autowired
+    private UserRepository userRepository;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -322,13 +327,7 @@ public class DealController {
         r.createdByName = d.getCreatedByName();
         r.divertedByUserId = d.getDivertedByUserId();
         r.divertedByName = d.getDivertedByName();
-        if (d.getOwner() != null) {
-            r.ownerId = d.getOwner().getId();
-            r.ownerDisplayName = d.getOwner().getDisplayName();
-        } else if (d.getOwnerId() != null) {
-            r.ownerId = d.getOwnerId();
-            r.ownerDisplayName = null;
-        }
+        DealOwnerResponseMapper.populateOwner(r, d, userRepository);
         return r;
     }
 

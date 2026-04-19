@@ -17,6 +17,9 @@ public class UserResponse {
     private Boolean passwordSet;
     private Long managerId; // Manager's ID (for checking subordinates)
     private String managerName; // Manager's full name
+    /** {@code categories.id} when role is CATEGORY_MANAGER (vertical scope). */
+    private Long managedCategoryId;
+    private String managedCategoryName;
     private LocalDateTime createdAt;
     private LocalDateTime lastLoginAt;
 
@@ -107,6 +110,22 @@ public class UserResponse {
 
     public void setManagerName(String managerName) {
         this.managerName = managerName;
+    }
+
+    public Long getManagedCategoryId() {
+        return managedCategoryId;
+    }
+
+    public void setManagedCategoryId(Long managedCategoryId) {
+        this.managedCategoryId = managedCategoryId;
+    }
+
+    public String getManagedCategoryName() {
+        return managedCategoryName;
+    }
+
+    public void setManagedCategoryName(String managedCategoryName) {
+        this.managedCategoryName = managedCategoryName;
     }
 }
 

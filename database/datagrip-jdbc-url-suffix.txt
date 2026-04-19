@@ -1,0 +1,3 @@
+Append this to your IntelliJ/DataGrip MySQL JDBC URL (no line breaks):
+
+&nullCatalogMeansCurrent=true&useInformationSchema=true

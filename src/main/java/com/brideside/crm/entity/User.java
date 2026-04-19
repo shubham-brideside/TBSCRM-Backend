@@ -37,6 +37,15 @@ public class User {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "manager_id", nullable = true)
     private User manager; // For hierarchy: Category Manager > Manager > Salesrep
+
+    /**
+     * For {@link Role.RoleName#CATEGORY_MANAGER}: vertical (e.g. Photography) — scopes pipelines/deals
+     * to that category when set. References {@code categories.id}.
+     * Column {@code users.user_managed_category_id} (replaces legacy {@code managed_category_id}).
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "user_managed_category_id", nullable = true)
+    private Category managedCategory;
     
     @Column(nullable = false)
     private Boolean active = false; // User must accept invitation first
@@ -126,6 +135,19 @@ public class User {
 
     public void setManager(User manager) {
         this.manager = manager;
+    }
+
+    /** Convenience: FK id without navigating {@link #managedCategory}. */
+    public Long getManagedCategoryId() {
+        return managedCategory != null ? managedCategory.getId() : null;
+    }
+
+    public Category getManagedCategory() {
+        return managedCategory;
+    }
+
+    public void setManagedCategory(Category managedCategory) {
+        this.managedCategory = managedCategory;
     }
 
     public Boolean getActive() {

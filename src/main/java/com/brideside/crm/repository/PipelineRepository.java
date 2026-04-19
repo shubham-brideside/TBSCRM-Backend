@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +25,8 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
 
     // Pipelines belonging to a given organization
     List<Pipeline> findByOrganization(com.brideside.crm.entity.Organization organization);
+
+    List<Pipeline> findByDeletedFalseAndOrganization_IdIn(Collection<Long> organizationIds);
     
     // Pipelines assigned to teams with given IDs
     @Query("SELECT p FROM Pipeline p WHERE p.deleted = false AND p.team IS NOT NULL AND p.team.id IN :teamIds ORDER BY p.name ASC")
@@ -32,4 +35,7 @@ public interface PipelineRepository extends JpaRepository<Pipeline, Long> {
     // Pipelines with a specific category
     @Query("SELECT p FROM Pipeline p WHERE p.deleted = false AND p.category = :category ORDER BY p.name ASC")
     List<Pipeline> findByDeletedFalseAndCategoryOrderByNameAsc(@Param("category") String category);
+
+    /** Case-insensitive match on {@link Pipeline#getCategory()} (same as {@code categories.name} in typical data). */
+    List<Pipeline> findByDeletedFalseAndCategoryIgnoreCase(String category);
 }

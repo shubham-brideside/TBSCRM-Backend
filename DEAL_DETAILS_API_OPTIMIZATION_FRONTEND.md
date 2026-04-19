@@ -595,6 +595,17 @@ const DealDetailPage: React.FC = () => {
 export default DealDetailPage;
 ```
 
+## Deal owner on the response (`ownerId` / `ownerDisplayName`)
+
+The `deal` object includes **deal owner** (the sales / account owner) for all roles, including **PRESALES**. The backend fills these in this order:
+
+1. `deals.owner_id` → `User` (denormalized row)  
+2. If the `User` row is not loaded, **look up** by `deals.owner_id`  
+3. Else **person.owner** (lead owner)  
+4. Else **organization.owner** (vendor org owner)  
+
+So the details page can always show a name when one of these is present, not only when the lazy `owner` entity was loaded.
+
 ## Notes
 
 - The API endpoint URL remains the same: `GET /api/deals/{id}`
