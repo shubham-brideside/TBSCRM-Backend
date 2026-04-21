@@ -181,10 +181,10 @@ public class ActivityScopeService {
             }
         } else if (roleName == Role.RoleName.PRESALES) {
             // Presales user sees:
-            // 1. Organizations: All organizations owned by their Sales manager
+            // 1. Organizations: All organizations owned by SALES users in their team(s)
             //    (These appear in "All Organizations" filter dropdown for filtering purposes)
             //    NOTE: Activities are NOT shown based on organization ownership - only by assignment
-            // 2. Users: Themselves + their Sales manager
+            // 2. Users: Themselves + all SALES users in their team(s)
             //    Activities assigned to these users will be visible
             //    Activities assigned to other users are NOT visible
             
@@ -193,32 +193,42 @@ public class ActivityScopeService {
             addEmail(userEmails, currentUser.getEmail());
             addUserName(userNames, currentUser);
 
-            // Find their Sales manager via teams and add to assigned user IDs
+            // Find teams where this presales user is a member, then include all SALES users
+            // from those teams (manager and members).
             List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
-            Set<Long> managerIds = teams.stream()
-                    .map(Team::getManager)
-                    .filter(mgr -> mgr != null && mgr.getId() != null)
+            Set<Long> salesIds = teams.stream()
+                    .flatMap(team -> {
+                        Set<User> teamUsers = new HashSet<>();
+                        if (team.getManager() != null) {
+                            teamUsers.add(team.getManager());
+                        }
+                        if (team.getMembers() != null && !team.getMembers().isEmpty()) {
+                            teamUsers.addAll(team.getMembers());
+                        }
+                        return teamUsers.stream();
+                    })
+                    .filter(user -> user != null && user.getId() != null)
+                    .filter(user -> user.getRole() != null && user.getRole().getName() == Role.RoleName.SALES)
                     .map(User::getId)
                     .collect(Collectors.toSet());
 
-            // Add Sales manager(s) to the assigned user IDs so Presales can see their activities
-            for (Long managerId : managerIds) {
-                userIds.add(managerId);
-                // Also add the manager's email and name if available
-                userRepository.findById(managerId).ifPresent(manager -> {
-                    if (manager.getEmail() != null) {
-                        addEmail(userEmails, manager.getEmail());
+            // Add scoped SALES users to assignment visibility for presales.
+            for (Long salesId : salesIds) {
+                userIds.add(salesId);
+                userRepository.findById(salesId).ifPresent(salesUser -> {
+                    if (salesUser.getEmail() != null) {
+                        addEmail(userEmails, salesUser.getEmail());
                     }
-                    addUserName(userNames, manager);
+                    addUserName(userNames, salesUser);
                 });
             }
 
-            // Get all organizations owned by their Sales manager(s)
+            // Get all organizations owned by scoped SALES users.
             // NOTE: These are included for filter dropdown purposes, but NOT used for activity visibility
-            if (!managerIds.isEmpty()) {
+            if (!salesIds.isEmpty()) {
                 List<Organization> organizations = organizationRepository.findAll().stream()
                         .filter(org -> org.getOwner() != null && org.getOwner().getId() != null)
-                        .filter(org -> managerIds.contains(org.getOwner().getId()))
+                        .filter(org -> salesIds.contains(org.getOwner().getId()))
                         .collect(Collectors.toList());
                 organizations.forEach(org -> {
                     if (org.getId() != null) {
@@ -264,11 +274,13 @@ public class ActivityScopeService {
                 ? List.of()
                 : organizationRepository.findAllById(scope.organizationIds());
         
-        // For Presales: return empty users list since they don't have users under them
-        // "All Users" filter should be hidden/disabled for Presales
+        // For Presales: include all SALES users from the same team(s) so they can
+        // assign/filter activities to all eligible sales teammates.
         List<User> users;
         if (roleName == Role.RoleName.PRESALES) {
-            users = List.of(); // Empty list - Presales don't have users under them
+            users = scope.assignedUserIds().isEmpty()
+                    ? List.of(currentUser)
+                    : userRepository.findAllById(scope.assignedUserIds());
         } else {
             users = scope.assignedUserIds().isEmpty()
                     ? List.of(currentUser)
