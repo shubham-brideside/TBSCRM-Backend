@@ -212,19 +212,38 @@ public class UserServiceImpl implements UserService {
         User currentUser = getCurrentUser(currentUserEmail);
 
         // Special handling for PRESALES:
-        // For Activities page filters, frontend expects:
-        // - the logged‑in Presales user
-        // - their Sales manager (user with id = presales.managerId)
+        // For Activities page assignment/filter dropdowns, include:
+        // - the logged-in Presales user
+        // - all SALES users in the same team(s)
         if (currentUser.getRole() != null
                 && currentUser.getRole().getName() == Role.RoleName.PRESALES) {
-            // Always include the Presales user themselves
             List<User> scopedUsers = new java.util.ArrayList<>();
-            scopedUsers.add(currentUser);
+            scopedUsers.add(currentUser); // Always include self
 
-            // Include their Sales manager if configured
-            User manager = currentUser.getManager();
-            if (manager != null) {
-                scopedUsers.add(manager);
+            // Find all teams where this presales user is a member, then include
+            // all SALES users from those teams (manager and members).
+            List<Team> teams = teamRepository.findByMembers_Id(currentUser.getId());
+            java.util.Set<Long> salesUserIds = new java.util.LinkedHashSet<>();
+            for (Team team : teams) {
+                User manager = team.getManager();
+                if (manager != null && manager.getId() != null
+                        && manager.getRole() != null
+                        && manager.getRole().getName() == Role.RoleName.SALES) {
+                    salesUserIds.add(manager.getId());
+                }
+                if (team.getMembers() != null) {
+                    for (User member : team.getMembers()) {
+                        if (member != null && member.getId() != null
+                                && member.getRole() != null
+                                && member.getRole().getName() == Role.RoleName.SALES) {
+                            salesUserIds.add(member.getId());
+                        }
+                    }
+                }
+            }
+
+            if (!salesUserIds.isEmpty()) {
+                scopedUsers.addAll(userRepository.findAllById(salesUserIds));
             }
 
             return scopedUsers.stream()
