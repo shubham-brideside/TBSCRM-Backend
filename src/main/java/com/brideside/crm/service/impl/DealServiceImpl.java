@@ -2524,18 +2524,9 @@ public class DealServiceImpl implements DealService {
             }
         }
         
-        // Pipelines the current user may divert into
-        List<Pipeline> allPipelines;
-        if (accessScope.fullAccess()) {
-            allPipelines = pipelineRepository.findByDeletedFalseOrderByNameAsc();
-        } else {
-            if (accessScope.allowedPipelineIds().isEmpty()) {
-                return Collections.emptyList();
-            }
-            allPipelines = new ArrayList<>(pipelineRepository.findAllById(accessScope.allowedPipelineIds()));
-            allPipelines.removeIf(p -> Boolean.TRUE.equals(p.getDeleted()));
-            allPipelines.sort(Comparator.comparing(Pipeline::getName, String.CASE_INSENSITIVE_ORDER));
-        }
+        // Diversion popup requirement: always show all active pipelines (org-first grouping is handled by frontend).
+        // User access restrictions are intentionally not applied for destination list in this endpoint.
+        List<Pipeline> allPipelines = pipelineRepository.findByDeletedFalseOrderByNameAsc();
         
         // Get all deals in the diversion chain (current deal + all deals it references)
         List<Deal> dealsInChain = getAllDealsInChain(deal);
