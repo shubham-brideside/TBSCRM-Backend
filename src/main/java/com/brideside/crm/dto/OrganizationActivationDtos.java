@@ -1,7 +1,5 @@
 package com.brideside.crm.dto;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
-
 import java.time.LocalDateTime;
 
 public final class OrganizationActivationDtos {
@@ -27,6 +25,8 @@ public final class OrganizationActivationDtos {
         private Boolean clientContractReady;
         private Boolean adSetReady;
         private Boolean adBudgetReady;
+        private String instaId;
+        private String instaPassword;
 
         public Boolean getVendorContract() { return vendorContract; }
         public void setVendorContract(Boolean vendorContract) { this.vendorContract = vendorContract; }
@@ -62,6 +62,10 @@ public final class OrganizationActivationDtos {
         public void setAdSetReady(Boolean adSetReady) { this.adSetReady = adSetReady; }
         public Boolean getAdBudgetReady() { return adBudgetReady; }
         public void setAdBudgetReady(Boolean adBudgetReady) { this.adBudgetReady = adBudgetReady; }
+        public String getInstaId() { return instaId; }
+        public void setInstaId(String instaId) { this.instaId = instaId; }
+        public String getInstaPassword() { return instaPassword; }
+        public void setInstaPassword(String instaPassword) { this.instaPassword = instaPassword; }
     }
 
     public static class ProgressResponse {

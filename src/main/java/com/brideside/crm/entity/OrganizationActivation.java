@@ -85,6 +85,9 @@ public class OrganizationActivation {
     @Column(name = "ad_budget_ready", nullable = false)
     private Boolean adBudgetReady = Boolean.FALSE;
 
+    @Column(name = "insta_password", length = 255)
+    private String instaPassword;
+
     @Column(name = "completed_count", nullable = false)
     private Integer completedCount = 0;
 
@@ -183,6 +186,9 @@ public class OrganizationActivation {
 
     public Boolean getAdBudgetReady() { return adBudgetReady; }
     public void setAdBudgetReady(Boolean adBudgetReady) { this.adBudgetReady = adBudgetReady; }
+
+    public String getInstaPassword() { return instaPassword; }
+    public void setInstaPassword(String instaPassword) { this.instaPassword = instaPassword; }
 
     public Integer getCompletedCount() { return completedCount; }
     public void setCompletedCount(Integer completedCount) { this.completedCount = completedCount; }

@@ -15,5 +15,7 @@ public interface BridesideVendorRepository extends JpaRepository<BridesideVendor
     boolean existsByUsername(String username);
 
     Optional<BridesideVendor> findByUsername(String username);
+
+    Optional<BridesideVendor> findFirstByOrganization_IdOrderByIdAsc(Long organizationId);
 }
 
