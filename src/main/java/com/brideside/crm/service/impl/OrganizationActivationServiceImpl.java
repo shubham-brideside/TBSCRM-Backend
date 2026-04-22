@@ -1,9 +1,11 @@
 package com.brideside.crm.service.impl;
 
 import com.brideside.crm.dto.OrganizationActivationDtos;
+import com.brideside.crm.entity.BridesideVendor;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.OrganizationActivation;
 import com.brideside.crm.entity.User;
+import com.brideside.crm.repository.BridesideVendorRepository;
 import com.brideside.crm.exception.BadRequestException;
 import com.brideside.crm.exception.ResourceNotFoundException;
 import com.brideside.crm.repository.OrganizationActivationRepository;
@@ -30,6 +32,7 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
     private static final int TOTAL_COUNT = 17;
 
     private final OrganizationActivationRepository activationRepository;
+    private final BridesideVendorRepository bridesideVendorRepository;
     private final OrganizationRepository organizationRepository;
     private final EmailService emailService;
 
@@ -40,9 +43,11 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
     private static final String EMAIL_MARKETING = "marketing@acceltancy.in";
 
     public OrganizationActivationServiceImpl(OrganizationActivationRepository activationRepository,
+                                             BridesideVendorRepository bridesideVendorRepository,
                                              OrganizationRepository organizationRepository,
                                              EmailService emailService) {
         this.activationRepository = activationRepository;
+        this.bridesideVendorRepository = bridesideVendorRepository;
         this.organizationRepository = organizationRepository;
         this.emailService = emailService;
     }
@@ -91,6 +96,7 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
         // organizations.is_active must match organization_activation.activated (1 / 0)
         org.setIsActive(Boolean.TRUE.equals(saved.getActivated()));
         organizationRepository.save(org);
+        syncVendorInstaIdIfProvided(organizationId, checklist, rawBody);
 
         if (firstActivationRowCreated) {
             sendMissingSectionEmailsAndMarkSent(saved, org);
@@ -145,6 +151,7 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
         activation.setClientContractReady(booleanOrFalse(checklist.getClientContractReady()));
         activation.setAdSetReady(booleanOrFalse(checklist.getAdSetReady()));
         activation.setAdBudgetReady(booleanOrFalse(checklist.getAdBudgetReady()));
+        activation.setInstaPassword(trimToNull(checklist.getInstaPassword()));
     }
 
     private int computeCompletedCount(OrganizationActivation a) {
@@ -171,6 +178,36 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
 
     private boolean booleanOrFalse(Boolean value) {
         return value != null && value;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void syncVendorInstaIdIfProvided(Long organizationId, OrganizationActivationDtos.Checklist checklist, JsonNode rawBody) {
+        if (rawBody == null || rawBody.isNull()) return;
+        boolean instaIdProvided = rawBody.has("instaId") || rawBody.has("instagramId");
+        if (!instaIdProvided) return;
+
+        String incoming = null;
+        if (rawBody.has("instaId")) {
+            incoming = rawBody.get("instaId").isNull() ? null : rawBody.get("instaId").asText();
+        } else if (rawBody.has("instagramId")) {
+            incoming = rawBody.get("instagramId").isNull() ? null : rawBody.get("instagramId").asText();
+        } else if (checklist != null) {
+            incoming = checklist.getInstaId();
+        }
+        String normalized = trimToNull(incoming);
+        if (normalized == null) {
+            throw new BadRequestException("instaId cannot be blank");
+        }
+
+        BridesideVendor vendor = bridesideVendorRepository.findFirstByOrganization_IdOrderByIdAsc(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("No brideside vendor found for organization id " + organizationId));
+        vendor.setUsername(normalized);
+        bridesideVendorRepository.save(vendor);
     }
 
     /** Vendor contract + onboarding fee + Gmail/credentials + phone/SIM — drives activated + organizations.is_active only. */
@@ -222,9 +259,20 @@ public class OrganizationActivationServiceImpl implements OrganizationActivation
         checklist.setClientContractReady(activation.getClientContractReady());
         checklist.setAdSetReady(activation.getAdSetReady());
         checklist.setAdBudgetReady(activation.getAdBudgetReady());
+        checklist.setInstaId(resolveInstaId(activation));
+        checklist.setInstaPassword(activation.getInstaPassword());
 
         response.setChecklist(checklist);
         return response;
+    }
+
+    private String resolveInstaId(OrganizationActivation activation) {
+        if (activation == null || activation.getOrganization() == null || activation.getOrganization().getId() == null) {
+            return null;
+        }
+        return bridesideVendorRepository.findFirstByOrganization_IdOrderByIdAsc(activation.getOrganization().getId())
+                .map(BridesideVendor::getUsername)
+                .orElse(null);
     }
 
     private void sendMissingSectionEmailsAndMarkSent(OrganizationActivation activation, Organization org) {

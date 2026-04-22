@@ -38,8 +38,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/organizations")
@@ -157,6 +160,37 @@ public class OrganizationController {
         OrganizationActivationDtos.ProgressResponse response =
                 organizationActivationService.saveChecklist(id, checklist, body);
         return ResponseEntity.ok(ApiResponse.success("Organization activation checklist saved", response));
+    }
+
+    @PatchMapping("/{id:\\d+}/activation-checklist")
+    @Operation(summary = "Partially update organization activation checklist",
+            description = "Updates only provided activation checklist fields for the organization and preserves all other existing values.")
+    public ResponseEntity<ApiResponse<OrganizationActivationDtos.ProgressResponse>> patchActivationChecklist(
+            @PathVariable("id") Long id,
+            @RequestBody(required = false) JsonNode body) {
+        if (body == null || body.isNull()) {
+            body = objectMapper.createObjectNode();
+        }
+
+        OrganizationActivationDtos.ProgressResponse current = organizationActivationService.getActivationProgress(id);
+        OrganizationActivationDtos.Checklist existingChecklist = current.getChecklist() != null
+                ? current.getChecklist()
+                : new OrganizationActivationDtos.Checklist();
+        ObjectNode merged = objectMapper.valueToTree(existingChecklist);
+
+        if (body.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = body.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                merged.set(entry.getKey(), entry.getValue());
+            }
+        }
+
+        OrganizationActivationDtos.Checklist checklist =
+                objectMapper.convertValue(merged, OrganizationActivationDtos.Checklist.class);
+        OrganizationActivationDtos.ProgressResponse response =
+                organizationActivationService.saveChecklist(id, checklist, merged);
+        return ResponseEntity.ok(ApiResponse.success("Organization activation checklist patched", response));
     }
 
     @GetMapping("/{id:\\d+}/progress/debug")
