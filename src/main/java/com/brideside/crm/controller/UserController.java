@@ -63,7 +63,9 @@ public class UserController {
                 roleName = Role.RoleName.valueOf(forRole.toUpperCase());
             } catch (IllegalArgumentException ex) {
                 return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Invalid role value. Allowed: ADMIN, CATEGORY_MANAGER, SALES, PRESALES"));
+                        .body(ApiResponse.error(
+                                "Invalid role value. Allowed: ADMIN, CATEGORY_MANAGER, SALES, PRESALES, "
+                                        + "TBS_PRESALES, TBS_REL_MANAGER, TBS_SVC_MANAGER"));
             }
         }
         return ResponseEntity.ok(ApiResponse.success("Managers fetched", userService.managerOptions(roleName)));

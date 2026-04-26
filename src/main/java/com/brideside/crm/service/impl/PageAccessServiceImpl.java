@@ -249,7 +249,10 @@ public class PageAccessServiceImpl implements PageAccessService {
                 defaults.put(PageName.REPORTS_DEAL_DURATION, true);
                 break;
             case SALES:
-                // Sales: Default pages for sales role
+            case TBS_PRESALES:
+            case TBS_REL_MANAGER:
+            case TBS_SVC_MANAGER:
+                // Sales and TBS: default CRM pages (TBS scope is enforced in pipeline/deal services)
                 defaults.put(PageName.PERSONS, true);
                 defaults.put(PageName.DEALS, true);
                 defaults.put(PageName.CALENDAR, true);

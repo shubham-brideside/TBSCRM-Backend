@@ -3,6 +3,7 @@ package com.brideside.crm.service;
 import com.brideside.crm.dto.ActivityDTO;
 import com.brideside.crm.dto.ActivityDtos;
 import com.brideside.crm.entity.Activity;
+import com.brideside.crm.constants.TbsRoles;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.exception.BadRequestException;
@@ -1188,10 +1189,11 @@ public class ActivityService {
         boolean hasUserEmails = !scope.assignedUserEmails().isEmpty();
         boolean hasUserNames = !scope.assignedUserNames().isEmpty();
 
-        // For SALES, CATEGORY_MANAGER, and PRESALES users, skip organization-based filtering - only show by assignment
-        boolean restrictsByOrg = (currentUserRole != Role.RoleName.SALES && 
-                                  currentUserRole != Role.RoleName.CATEGORY_MANAGER && 
-                                  currentUserRole != Role.RoleName.PRESALES) && (hasOrgIds || hasOrgNames);
+        // For SALES, CATEGORY_MANAGER, PRESALES, and TBS roles, skip organization-based filtering - only show by assignment
+        boolean restrictsByOrg = (currentUserRole != Role.RoleName.SALES
+                                  && currentUserRole != Role.RoleName.CATEGORY_MANAGER
+                                  && currentUserRole != Role.RoleName.PRESALES
+                                  && !TbsRoles.isTbs(currentUserRole)) && (hasOrgIds || hasOrgNames);
         boolean restrictsByUser = hasUserIds || hasUserEmails || hasUserNames;
 
         if (restrictsByOrg || restrictsByUser) {

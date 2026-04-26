@@ -12,6 +12,16 @@ public interface PipelineService {
      * since the org cannot be active yet. Used internally when creating the default vendor/pipeline.
      */
     PipelineDtos.PipelineResponse createPipelineForBootstrap(PipelineDtos.PipelineRequest request);
+
+    /**
+     * Creates a pipeline with explicit stage names (in order). Used for TBS user onboarding.
+     *
+     * @param requireOrganizationActive when false, inactive organizations are allowed (same as bootstrap).
+     */
+    PipelineDtos.PipelineResponse createPipelineWithNamedStages(
+            PipelineDtos.PipelineRequest request,
+            List<String> stageNames,
+            boolean requireOrganizationActive);
     List<PipelineDtos.PipelineResponse> listPipelines(boolean includeStages);
     List<PipelineDtos.PipelineResponse> listArchivedPipelines(boolean includeStages);
     PipelineDtos.PipelineResponse getPipeline(Long pipelineId, boolean includeStages);

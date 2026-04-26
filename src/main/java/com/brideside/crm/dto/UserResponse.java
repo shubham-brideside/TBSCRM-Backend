@@ -23,6 +23,10 @@ public class UserResponse {
     private LocalDateTime createdAt;
     private LocalDateTime lastLoginAt;
 
+    private Boolean isTbsUser;
+    private Long tbsHomeOrganizationId;
+    private Long tbsDefaultPipelineId;
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -126,6 +130,30 @@ public class UserResponse {
 
     public void setManagedCategoryName(String managedCategoryName) {
         this.managedCategoryName = managedCategoryName;
+    }
+
+    public Boolean getIsTbsUser() {
+        return isTbsUser;
+    }
+
+    public void setIsTbsUser(Boolean isTbsUser) {
+        this.isTbsUser = isTbsUser;
+    }
+
+    public Long getTbsHomeOrganizationId() {
+        return tbsHomeOrganizationId;
+    }
+
+    public void setTbsHomeOrganizationId(Long tbsHomeOrganizationId) {
+        this.tbsHomeOrganizationId = tbsHomeOrganizationId;
+    }
+
+    public Long getTbsDefaultPipelineId() {
+        return tbsDefaultPipelineId;
+    }
+
+    public void setTbsDefaultPipelineId(Long tbsDefaultPipelineId) {
+        this.tbsDefaultPipelineId = tbsDefaultPipelineId;
     }
 }
 

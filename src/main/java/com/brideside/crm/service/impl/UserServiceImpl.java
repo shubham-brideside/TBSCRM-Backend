@@ -1,12 +1,18 @@
 package com.brideside.crm.service.impl;
 
+import com.brideside.crm.config.TbsRoleProvisioning;
+import com.brideside.crm.constants.TbsPipelineStageTemplates;
+import com.brideside.crm.constants.TbsRoles;
+import com.brideside.crm.constants.TbsUserOnboardingProperties;
 import com.brideside.crm.dto.PatchManagedCategoryRequest;
 import com.brideside.crm.dto.CreateUserRequest;
+import com.brideside.crm.dto.PipelineDtos;
 import com.brideside.crm.dto.SetPasswordRequest;
 import com.brideside.crm.dto.TeamDtos;
 import com.brideside.crm.dto.UpdateUserRequest;
 import com.brideside.crm.dto.UserResponse;
 import com.brideside.crm.entity.InvitationToken;
+import com.brideside.crm.entity.Pipeline;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Person;
 import com.brideside.crm.entity.Role;
@@ -21,6 +27,7 @@ import com.brideside.crm.repository.CategoryRepository;
 import com.brideside.crm.repository.InvitationTokenRepository;
 import com.brideside.crm.repository.OrganizationRepository;
 import com.brideside.crm.repository.PageAccessRepository;
+import com.brideside.crm.repository.PipelineRepository;
 import com.brideside.crm.repository.PersonRepository;
 import com.brideside.crm.repository.RoleRepository;
 import com.brideside.crm.repository.SalesTargetRepository;
@@ -31,12 +38,14 @@ import com.brideside.crm.repository.DealSpecifications;
 import com.brideside.crm.service.DealAccessScope;
 import com.brideside.crm.service.EmailService;
 import com.brideside.crm.service.PipelineAccessService;
+import com.brideside.crm.service.PipelineService;
 import com.brideside.crm.service.UserService;
 import com.brideside.crm.exception.ForbiddenException;
 import jakarta.persistence.criteria.JoinType;
 import org.springframework.data.jpa.domain.Specification;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.util.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -96,6 +105,18 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private PipelineAccessService pipelineAccessService;
 
+    @Autowired
+    private PipelineService pipelineService;
+
+    @Autowired
+    private PipelineRepository pipelineRepository;
+
+    @Autowired
+    private TbsUserOnboardingProperties tbsUserOnboardingProperties;
+
+    @Autowired
+    private TbsRoleProvisioning tbsRoleProvisioning;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -119,6 +140,19 @@ public class UserServiceImpl implements UserService {
             throw new BadRequestException("Invalid role: " + request.getRole());
         }
 
+        boolean tbsFlow = Boolean.TRUE.equals(request.getIsTbsUser());
+        if (tbsFlow != TbsRoles.isTbs(roleName)) {
+            if (tbsFlow) {
+                throw new BadRequestException(
+                        "TBS user creation requires role TBS_PRESALES, TBS_REL_MANAGER, or TBS_SVC_MANAGER");
+            }
+            throw new BadRequestException("TBS roles require isTbsUser: true on the create-user request");
+        }
+
+        if (tbsFlow) {
+            return createTbsFlowUser(request, roleName);
+        }
+
         Role role = roleRepository.findByName(roleName)
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + request.getRole()));
 
@@ -130,6 +164,7 @@ public class UserServiceImpl implements UserService {
         user.setActive(false); // User will be activated after accepting invitation
         user.setPasswordSet(false);
         user.setPassword("TEMPORARY_PASSWORD"); // Temporary, will be set when user accepts invitation
+        user.setIsTbsUser(false);
 
         user.setManager(resolveManagerForRole(roleName, request.getManagerId(), null));
 
@@ -143,11 +178,89 @@ public class UserServiceImpl implements UserService {
         user = userRepository.save(user);
 
         // Create invitation token
-        InvitationToken invitationToken = InvitationToken.create(user, 
+        InvitationToken invitationToken = InvitationToken.create(user,
                 (int) (invitationTokenValidity / (24 * 60 * 60 * 1000))); // Convert to days
         invitationTokenRepository.save(invitationToken);
 
         // Send invitation email
+        emailService.sendInvitationEmail(user, invitationToken.getToken());
+
+        return convertToResponse(user);
+    }
+
+    private UserResponse createTbsFlowUser(CreateUserRequest request, Role.RoleName roleName) {
+        tbsRoleProvisioning.ensureTbsRolesPresent();
+        Role role = roleRepository.findByName(roleName)
+                .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + request.getRole()));
+
+        long organizationId;
+        if (roleName == Role.RoleName.TBS_SVC_MANAGER) {
+            Long oid = request.getTbsOrganizationId();
+            if (oid == null) {
+                throw new BadRequestException("tbsOrganizationId is required when role is TBS_SVC_MANAGER");
+            }
+            if (!tbsUserOnboardingProperties.allowedServiceManagerOrganizationIds().contains(oid)) {
+                throw new BadRequestException(
+                        "tbsOrganizationId must be one of the configured TBS Service Manager organizations "
+                                + tbsUserOnboardingProperties.allowedServiceManagerOrganizationIds());
+            }
+            organizationId = oid;
+        } else {
+            organizationId = tbsUserOnboardingProperties.getOrgTbsTestId();
+        }
+
+        Organization homeOrg = organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization not found with id: " + organizationId));
+
+        User user = new User();
+        user.setEmail(request.getEmail());
+        user.setFirstName(request.getFirstName());
+        user.setLastName(request.getLastName());
+        user.setRole(role);
+        user.setActive(false);
+        user.setPasswordSet(false);
+        user.setPassword("TEMPORARY_PASSWORD");
+        user.setManager(null);
+        user.setManagedCategory(null);
+        user.setIsTbsUser(true);
+        user.setTbsHomeOrganization(homeOrg);
+        user = userRepository.save(user);
+
+        List<String> stageNames =
+                TbsPipelineStageTemplates.stagesFor(roleName, organizationId, tbsUserOnboardingProperties);
+
+        String pipelineBaseName = user.getDisplayName();
+        if (!StringUtils.hasText(pipelineBaseName)) {
+            pipelineBaseName = user.getEmail();
+        }
+
+        PipelineDtos.PipelineRequest pipelineRequest = new PipelineDtos.PipelineRequest();
+        pipelineRequest.setName(pipelineBaseName.trim());
+        pipelineRequest.setOrganizationId(organizationId);
+
+        PipelineDtos.PipelineResponse pipelineResponse;
+        try {
+            pipelineResponse = pipelineService.createPipelineWithNamedStages(pipelineRequest, stageNames, false);
+        } catch (BadRequestException ex) {
+            String msg = ex.getMessage();
+            if (msg != null && msg.contains("same name")) {
+                pipelineRequest.setName(pipelineBaseName.trim() + " (" + user.getEmail() + ")");
+                pipelineResponse = pipelineService.createPipelineWithNamedStages(pipelineRequest, stageNames, false);
+            } else {
+                throw ex;
+            }
+        }
+
+        final long newPipelineId = pipelineResponse.getId();
+        Pipeline pipeline = pipelineRepository.findById(newPipelineId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Pipeline not found with id: " + newPipelineId));
+        user.setTbsDefaultPipeline(pipeline);
+        user = userRepository.save(user);
+
+        InvitationToken invitationToken = InvitationToken.create(user,
+                (int) (invitationTokenValidity / (24 * 60 * 60 * 1000)));
+        invitationTokenRepository.save(invitationToken);
         emailService.sendInvitationEmail(user, invitationToken.getToken());
 
         return convertToResponse(user);
@@ -305,6 +418,14 @@ public class UserServiceImpl implements UserService {
         Role role = roleRepository.findByName(roleName)
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + request.getRole()));
 
+        boolean existingTbs = Boolean.TRUE.equals(user.getIsTbsUser());
+        if (existingTbs && !TbsRoles.isTbs(roleName)) {
+            throw new BadRequestException("TBS users must keep a TBS_PRESALES, TBS_REL_MANAGER, or TBS_SVC_MANAGER role");
+        }
+        if (!existingTbs && TbsRoles.isTbs(roleName)) {
+            throw new BadRequestException("TBS roles can only be assigned when creating a user with isTbsUser: true");
+        }
+
         // Update user fields
         user.setEmail(request.getEmail());
         user.setFirstName(request.getFirstName());
@@ -407,6 +528,14 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(Long id, Long reassignManagerId) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
+
+        if (user.getTbsDefaultPipeline() != null && user.getTbsDefaultPipeline().getId() != null) {
+            try {
+                pipelineService.deletePipeline(user.getTbsDefaultPipeline().getId(), false);
+            } catch (Exception ignored) {
+                // Pipeline may already be deleted or inaccessible; user row removal proceeds.
+            }
+        }
 
         // Check if user has any subordinates (users with this user as manager)
         User newManager = null;
@@ -701,6 +830,10 @@ public class UserServiceImpl implements UserService {
                 return Set.of(Role.RoleName.ADMIN, Role.RoleName.CATEGORY_MANAGER);
             case PRESALES:
                 return Set.of(Role.RoleName.ADMIN, Role.RoleName.CATEGORY_MANAGER, Role.RoleName.SALES);
+            case TBS_PRESALES:
+            case TBS_REL_MANAGER:
+            case TBS_SVC_MANAGER:
+                return Set.of();
             default:
                 return Set.of();
         }
@@ -733,6 +866,13 @@ public class UserServiceImpl implements UserService {
         if (user.getManagedCategory() != null) {
             response.setManagedCategoryId(user.getManagedCategory().getId());
             response.setManagedCategoryName(user.getManagedCategory().getName());
+        }
+        response.setIsTbsUser(Boolean.TRUE.equals(user.getIsTbsUser()));
+        if (user.getTbsHomeOrganization() != null) {
+            response.setTbsHomeOrganizationId(user.getTbsHomeOrganization().getId());
+        }
+        if (user.getTbsDefaultPipeline() != null) {
+            response.setTbsDefaultPipelineId(user.getTbsDefaultPipeline().getId());
         }
         return response;
     }

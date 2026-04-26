@@ -50,7 +50,13 @@ public class Role {
         ADMIN,
         CATEGORY_MANAGER,
         SALES,
-        PRESALES
+        PRESALES,
+        /** TBS flow: pre-sales pipeline and org TBS Test (117). DB-safe ENUM-style name. */
+        TBS_PRESALES,
+        /** TBS flow: relationship manager pipeline and org TBS Test (117). */
+        TBS_REL_MANAGER,
+        /** TBS flow: service manager pipeline; org chosen from Revaah / TBS Planning / TBS Venue. */
+        TBS_SVC_MANAGER
     }
 }
 

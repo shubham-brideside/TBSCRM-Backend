@@ -74,6 +74,46 @@ public class PipelineServiceImpl implements PipelineService {
         return doCreatePipeline(request, false);
     }
 
+    @Override
+    public PipelineDtos.PipelineResponse createPipelineWithNamedStages(
+            PipelineDtos.PipelineRequest request,
+            List<String> stageNames,
+            boolean requireOrganizationActive) {
+        validatePipelineName(request.getName(), null);
+        if (stageNames == null || stageNames.isEmpty()) {
+            throw new BadRequestException("At least one pipeline stage is required");
+        }
+
+        Pipeline pipeline = new Pipeline();
+        pipeline.setName(request.getName().trim());
+        pipeline.setCategory(trimToNull(request.getCategory()));
+        pipeline.setTeam(resolveTeam(request.getTeamId()));
+        pipeline.setOrganization(resolveOrganization(request.getOrganizationId(), requireOrganizationActive));
+        pipeline.setDeleted(Boolean.FALSE);
+
+        Pipeline saved = pipelineRepository.save(pipeline);
+        List<Stage> stages = createStagesFromNames(saved, stageNames);
+        return PipelineMapper.toPipelineResponse(saved, stages, true);
+    }
+
+    private List<Stage> createStagesFromNames(Pipeline pipeline, List<String> names) {
+        List<Stage> stages = new ArrayList<>();
+        for (int i = 0; i < names.size(); i++) {
+            String raw = names.get(i);
+            if (!StringUtils.hasText(raw)) {
+                throw new BadRequestException("Stage names must be non-blank");
+            }
+            Stage stage = new Stage();
+            stage.setPipeline(pipeline);
+            stage.setName(raw.trim());
+            stage.setOrderIndex(i);
+            stage.setActive(true);
+            stage.setProbability(null);
+            stages.add(stage);
+        }
+        return stageRepository.saveAll(stages);
+    }
+
     private PipelineDtos.PipelineResponse doCreatePipeline(PipelineDtos.PipelineRequest request, boolean requireOrganizationActive) {
         validatePipelineName(request.getName(), null);
 

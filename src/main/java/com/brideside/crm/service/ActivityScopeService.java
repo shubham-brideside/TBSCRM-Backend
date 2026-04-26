@@ -1,5 +1,6 @@
 package com.brideside.crm.service;
 
+import com.brideside.crm.constants.TbsRoles;
 import com.brideside.crm.entity.Organization;
 import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.Team;
@@ -236,6 +237,15 @@ public class ActivityScopeService {
                     }
                     addName(orgNames, org.getName());
                 });
+            }
+        } else if (TbsRoles.isTbs(roleName)) {
+            userIds.add(currentUser.getId());
+            addEmail(userEmails, currentUser.getEmail());
+            addUserName(userNames, currentUser);
+            Organization home = currentUser.getTbsHomeOrganization();
+            if (home != null && home.getId() != null) {
+                orgIds.add(home.getId());
+                addName(orgNames, home.getName());
             }
         }
 

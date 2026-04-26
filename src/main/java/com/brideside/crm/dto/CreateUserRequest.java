@@ -27,6 +27,19 @@ public class CreateUserRequest {
     /** When role is CATEGORY_MANAGER, {@code categories.id} for pipeline/deal visibility (e.g. Photography). */
     private Long managedCategoryId;
 
+    /**
+     * When true, this user is created via the TBS flow: {@code role} must be one of
+     * {@code TBS_PRESALES}, {@code TBS_REL_MANAGER}, or {@code TBS_SVC_MANAGER},
+     * and a default pipeline is created (see API docs).
+     */
+    private Boolean isTbsUser;
+
+    /**
+     * Required when {@code role} is {@code TBS_SVC_MANAGER}: organization id must be one of
+     * Revaah, TBS Planning, or TBS Venue (configurable via {@code app.tbs.user-onboarding.*}).
+     */
+    private Long tbsOrganizationId;
+
     // Getters and Setters
     public String getEmail() {
         return email;
@@ -74,6 +87,22 @@ public class CreateUserRequest {
 
     public void setManagedCategoryId(Long managedCategoryId) {
         this.managedCategoryId = managedCategoryId;
+    }
+
+    public Boolean getIsTbsUser() {
+        return isTbsUser;
+    }
+
+    public void setIsTbsUser(Boolean isTbsUser) {
+        this.isTbsUser = isTbsUser;
+    }
+
+    public Long getTbsOrganizationId() {
+        return tbsOrganizationId;
+    }
+
+    public void setTbsOrganizationId(Long tbsOrganizationId) {
+        this.tbsOrganizationId = tbsOrganizationId;
     }
 }
 

@@ -1,5 +1,6 @@
 package com.brideside.crm.service;
 
+import com.brideside.crm.constants.TbsRoles;
 import com.brideside.crm.entity.Category;
 import com.brideside.crm.entity.Deal;
 import com.brideside.crm.entity.Organization;
@@ -199,6 +200,20 @@ public class PipelineAccessService {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
             return new DealAccessScope(false, pipelineIds, orgIdsFromThosePipelines, false, null);
+        }
+
+        if (TbsRoles.isTbs(roleName)) {
+            Pipeline p = user.getTbsDefaultPipeline();
+            Long pipelineId = p != null ? p.getId() : null;
+            if (pipelineId == null) {
+                return DealAccessScope.noAccess();
+            }
+            Organization home = user.getTbsHomeOrganization();
+            Set<Long> orgIds = new LinkedHashSet<>();
+            if (home != null && home.getId() != null) {
+                orgIds.add(home.getId());
+            }
+            return new DealAccessScope(false, Set.of(pipelineId), orgIds, true, null);
         }
 
         return DealAccessScope.noAccess();

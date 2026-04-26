@@ -46,7 +46,9 @@ public class TeamController {
                 roleName = com.brideside.crm.entity.Role.RoleName.valueOf(forRole.toUpperCase());
             } catch (IllegalArgumentException ignored) {
                 return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Invalid role value. Allowed: ADMIN, CATEGORY_MANAGER, SALES, PRESALES"));
+                        .body(ApiResponse.error(
+                                "Invalid role value. Allowed: ADMIN, CATEGORY_MANAGER, SALES, PRESALES, "
+                                        + "TBS_PRESALES, TBS_REL_MANAGER, TBS_SVC_MANAGER"));
             }
         }
         return ResponseEntity.ok(ApiResponse.success("Team managers fetched", teamService.listManagersForRole(roleName)));

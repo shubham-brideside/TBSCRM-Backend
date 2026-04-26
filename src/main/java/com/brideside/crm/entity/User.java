@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -52,7 +52,19 @@ public class User {
     
     @Column(nullable = false)
     private Boolean passwordSet = false; // Track if password has been set
-    
+
+    /** When true, user was created via the TBS onboarding flow (see {@link #tbsHomeOrganization} / {@link #tbsDefaultPipeline}). */
+    @Column(name = "is_tbs_user", nullable = false)
+    private Boolean isTbsUser = Boolean.FALSE;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tbs_home_organization_id")
+    private Organization tbsHomeOrganization;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tbs_default_pipeline_id")
+    private Pipeline tbsDefaultPipeline;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -188,6 +200,30 @@ public class User {
 
     public void setLastLoginAt(LocalDateTime lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public Boolean getIsTbsUser() {
+        return isTbsUser;
+    }
+
+    public void setIsTbsUser(Boolean isTbsUser) {
+        this.isTbsUser = isTbsUser;
+    }
+
+    public Organization getTbsHomeOrganization() {
+        return tbsHomeOrganization;
+    }
+
+    public void setTbsHomeOrganization(Organization tbsHomeOrganization) {
+        this.tbsHomeOrganization = tbsHomeOrganization;
+    }
+
+    public Pipeline getTbsDefaultPipeline() {
+        return tbsDefaultPipeline;
+    }
+
+    public void setTbsDefaultPipeline(Pipeline tbsDefaultPipeline) {
+        this.tbsDefaultPipeline = tbsDefaultPipeline;
     }
 }
 

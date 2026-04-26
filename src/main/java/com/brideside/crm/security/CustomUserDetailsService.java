@@ -1,5 +1,7 @@
 package com.brideside.crm.security;
 
+import com.brideside.crm.constants.TbsRoles;
+import com.brideside.crm.entity.Role;
 import com.brideside.crm.entity.User;
 import com.brideside.crm.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,8 +13,9 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.List;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -42,7 +45,14 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     private Collection<? extends GrantedAuthority> getAuthorities(User user) {
-        return Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName().name()));
+        Role.RoleName name = user.getRole().getName();
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + name.name()));
+        if (TbsRoles.isTbs(name)) {
+            // Many controllers use @PreAuthorize("hasRole('SALES')"); TBS users share deal board access patterns.
+            authorities.add(new SimpleGrantedAuthority("ROLE_SALES"));
+        }
+        return authorities;
     }
 }
 
